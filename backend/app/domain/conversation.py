@@ -3,36 +3,12 @@ from enum import Enum
 
 from app.domain.utterance import Utterance
 
-
 class ConversationStatus(str, Enum):
-    """
-    Simple lifecycle state for a conversation.
-
-    Kept intentionally minimal (just ACTIVE/COMPLETED) per current
-    business requirements. Richer states (processing, analyzed, failed,
-    archived) belong to future service-layer workflows, not this domain
-    model — adding them here now would be speculative, not needed yet.
-    """
     ACTIVE = "active"
     COMPLETED = "completed"
 
-
 @dataclass
 class Conversation:
-    """
-    Represents one customer-service call: an ordered sequence of
-    Utterances plus basic lifecycle metadata.
-
-    This class only STORES conversation state — it performs no AI
-    analysis (no sentiment, complaint detection, intent, etc). Those are
-    separate service-layer concerns that will read a Conversation's
-    utterances, not live inside it.
-
-    Not frozen (unlike Utterance): a Conversation is a living object that
-    grows over the life of a call and transitions between states, unlike
-    an Utterance which represents one fact that already happened.
-    """
-
     conversation_id: str
     status: ConversationStatus = ConversationStatus.ACTIVE
     start_time: float = 0.0
@@ -53,15 +29,6 @@ class Conversation:
             raise ValueError("end_time cannot be before start_time.")
 
     def add_utterance(self, utterance: Utterance) -> None:
-        """
-        Append an utterance to the conversation, enforcing chronological
-        order.
-
-        Rejecting out-of-order utterances (rather than silently
-        re-sorting) surfaces upstream pipeline bugs immediately, instead
-        of hiding them behind an automatic reorder that a caller might
-        never notice.
-        """
         if self._utterances and utterance.start_time < self._utterances[-1].start_time:
             raise ValueError(
                 "Utterances must be added in chronological order: "
@@ -72,12 +39,6 @@ class Conversation:
 
     @property
     def utterances(self) -> tuple[Utterance, ...]:
-        """
-        Read-only view of all utterances, in chronological order.
-        Returned as a tuple (not the internal list) so callers cannot
-        mutate the conversation's utterances directly — they must use
-        add_utterance().
-        """
         return tuple(self._utterances)
 
     @property
@@ -91,24 +52,11 @@ class Conversation:
 
     @property
     def duration(self) -> float | None:
-        """
-        Conversation duration in seconds, only available once the
-        conversation has ended. Returns None while still active, rather
-        than guessing a duration from the latest utterance's timestamp.
-        """
         if self.end_time is None:
             return None
         return self.end_time - self.start_time
 
     def complete(self, end_time: float) -> None:
-        """
-        Marks the conversation as completed and records its end time.
-
-        A dedicated method (rather than letting callers set `status` and
-        `end_time` separately) keeps the two changes atomic and
-        validated together — you can't end up with status=COMPLETED but
-        end_time=None, or vice versa.
-        """
         if end_time < self.start_time:
             raise ValueError("end_time cannot be before start_time.")
         self.end_time = end_time

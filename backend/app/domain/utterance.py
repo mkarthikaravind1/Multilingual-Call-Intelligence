@@ -3,16 +3,6 @@ from enum import Enum
 from app.core.constants import SUPPORTED_LANGUAGES
 
 class SpeakerRole(str, Enum):
-    """
-    Domain-level speaker roles relevant to this business.
-
-    This is intentionally a SEPARATE enum from any AI-layer speaker role
-    representation. The domain layer must not import from `app.ai.*` —
-    even importing an enum from there would make this file depend on the
-    AI module's existence. Translating an AI-layer role into this domain
-    role is the job of the service/application layer that builds an
-    Utterance, not this file.
-    """
     ICR = "ICR"
     CUSTOMER = "CUSTOMER"
     # Extensible: a future role (e.g. SUPERVISOR) is added here as one
@@ -21,17 +11,6 @@ class SpeakerRole(str, Enum):
 
 @dataclass(frozen=True)
 class Utterance:
-    """
-    One meaningful spoken segment in a customer service conversation,
-    combining transcript, speaker role, language, timing, and confidence
-    into a single provider-independent fact.
-
-    `frozen=True` makes instances immutable after creation — an Utterance
-    represents something that already happened in the conversation; it
-    shouldn't be mutated later by unrelated code. If a corrected version
-    is needed, create a new Utterance rather than editing this one.
-    """
-
     transcript: str
     speaker_role: SpeakerRole
     languages: tuple[str, ...]
