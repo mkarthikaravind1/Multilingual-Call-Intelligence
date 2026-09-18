@@ -1,5 +1,6 @@
 # Environment variables (never commit real secrets)
 .env
+.env.example
 
 # Python virtual environment
 .venv/
@@ -7,3 +8,5 @@
 # Python cache
 __pycache__/
 *.pyc
+
+ToDoInFuture.txt
