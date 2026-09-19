@@ -1,8 +1,6 @@
 from dataclasses import dataclass, field
-
 from app.core.constants import COMPLAINT_CATEGORIES
 from app.domain.complaint_coverage import ComplaintCoverage
-
 
 @dataclass
 class ConversationCoverage:
