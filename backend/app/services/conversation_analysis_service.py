@@ -1,34 +1,45 @@
 from dataclasses import dataclass
 
+from app.ai.sentiment.provider import SentimentResult
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
-from app.domain.question_suggestion import QuestionSuggestion
 from app.services.complaint_analysis_service import ComplaintAnalysisService
-from app.services.next_question_service import NextQuestionService
+from app.services.sentiment_analysis_service import SentimentAnalysisService
 
 
 @dataclass(frozen=True)
 class ConversationAnalysisResult:
     coverage: ConversationCoverage
-    question_suggestion: QuestionSuggestion | None
+    sentiment: SentimentResult
 
 
 class ConversationAnalysisService:
     def __init__(
         self,
-        complaint_analysis: ComplaintAnalysisService,
-        next_question: NextQuestionService,
+        complaint_service: ComplaintAnalysisService,
+        sentiment_service: SentimentAnalysisService,
     ) -> None:
-        self._complaint_analysis = complaint_analysis
-        self._next_question = next_question
+        self._complaint_service = complaint_service
+        self._sentiment_service = sentiment_service
 
     def analyze(
-        self, conversation: Conversation, coverage: ConversationCoverage
+        self,
+        conversation: Conversation,
+        coverage: ConversationCoverage,
     ) -> ConversationAnalysisResult:
-        updated_coverage = self._complaint_analysis.analyze(conversation, coverage)
-        suggestion = self._next_question.suggest_next_question(
-            updated_coverage, conversation.utterances
+        if conversation.call_id != coverage.call_id:
+            raise ValueError(
+                "conversation.call_id must match coverage.call_id."
+            )
+
+        updated_coverage = self._complaint_service.analyze(
+            conversation,
+            coverage,
         )
+
+        sentiment = self._sentiment_service.analyze(conversation)
+
         return ConversationAnalysisResult(
-            coverage=updated_coverage, question_suggestion=suggestion
+            coverage=updated_coverage,
+            sentiment=sentiment,
         )

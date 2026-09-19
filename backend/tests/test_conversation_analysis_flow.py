@@ -11,6 +11,11 @@ from app.ai.question.provider import (
     QuestionGenerationContext,
     QuestionSuggestionProvider,
 )
+from app.ai.sentiment.provider import (
+    SentimentAnalysisProvider,
+    SentimentLabel,
+    SentimentResult,
+)
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
@@ -22,6 +27,7 @@ from app.services.conversation_analysis_service import (
     ConversationAnalysisService,
 )
 from app.services.next_question_service import NextQuestionService
+from app.services.sentiment_analysis_service import SentimentAnalysisService
 
 CALL_ID = "call-1"
 
@@ -46,6 +52,11 @@ _COMMUNICATION = ComplaintDetectionResult(
     "The customer said nobody called them about the delay.",
 )
 _DETECTED_CATEGORIES = {"Turnaround Time", "Communication"}
+_SENTIMENT = SentimentResult(
+    label=SentimentLabel.NEGATIVE,
+    confidence=0.9,
+    evidence="The customer reported a delayed service.",
+)
 
 
 class RecordingComplaintProvider(ComplaintDetectionProvider):
@@ -60,6 +71,15 @@ class RecordingComplaintProvider(ComplaintDetectionProvider):
         self.calls.append("detect")
         self.received_conversation = conversation
         return list(self.results)
+
+
+class RecordingSentimentProvider(SentimentAnalysisProvider):
+    def __init__(self) -> None:
+        self.received_conversation: Conversation | None = None
+
+    def analyze(self, conversation: Conversation) -> SentimentResult:
+        self.received_conversation = conversation
+        return _SENTIMENT
 
 
 class RecordingQuestionProvider(QuestionSuggestionProvider):
@@ -87,6 +107,7 @@ class _Run:
     question_provider: RecordingQuestionProvider
     calls: list[str]
     result: ConversationAnalysisResult
+    question_suggestion: QuestionSuggestion | None
 
 
 def _conversation() -> Conversation:
@@ -94,7 +115,7 @@ def _conversation() -> Conversation:
     for index, (role, text) in enumerate(_SCRIPT):
         conversation.add_utterance(
             Utterance(
-                utterance_id="1",
+                utterance_id=str(index + 1),
                 transcript=text,
                 speaker_role=role,
                 languages=("en",),
@@ -111,13 +132,20 @@ def _run(
     calls: list[str] = []
     detector = RecordingComplaintProvider(calls, detections)
     question_provider = RecordingQuestionProvider(calls)
-    service = ConversationAnalysisService(
+    analysis_service = ConversationAnalysisService(
         ComplaintAnalysisService(detector),
-        NextQuestionService(question_provider),
+        SentimentAnalysisService(RecordingSentimentProvider()),
     )
+    next_question_service = NextQuestionService(question_provider)
+
     conversation = _conversation()
-    result = service.analyze(conversation, coverage)
-    return _Run(conversation, coverage, detector, question_provider, calls, result)
+    result = analysis_service.analyze(conversation, coverage)
+    suggestion = next_question_service.suggest_next_question(
+        result.coverage, conversation.utterances
+    )
+    return _Run(
+        conversation, coverage, detector, question_provider, calls, result, suggestion
+    )
 
 
 def _statuses(coverage: ConversationCoverage) -> dict[str, ComplaintCoverageStatus]:
@@ -151,6 +179,10 @@ def test_detector_receives_the_full_conversation(new_call):
     assert new_call.conversation.utterance_count == len(_SCRIPT)
 
 
+def test_analysis_result_includes_sentiment(new_call):
+    assert new_call.result.sentiment == _SENTIMENT
+
+
 def test_both_complaints_become_detected_and_are_not_advanced(new_call):
     assert _statuses(new_call.coverage) == {
         "Turnaround Time": ComplaintCoverageStatus.DETECTED,
@@ -172,7 +204,7 @@ def test_next_question_engine_receives_updated_coverage(new_call):
 
 
 def test_question_suggestion_targets_a_detected_actionable_complaint(new_call):
-    suggestion = new_call.result.question_suggestion
+    suggestion = new_call.question_suggestion
 
     assert isinstance(suggestion, QuestionSuggestion)
     assert suggestion.target_category in _DETECTED_CATEGORIES
@@ -192,7 +224,7 @@ def test_existing_probed_complaint_is_not_reset_by_repeated_detection(probed_cal
 
 def test_question_engine_sees_probed_status_for_existing_complaint(probed_call):
     context = probed_call.question_provider.contexts[0]
-    suggestion = probed_call.result.question_suggestion
+    suggestion = probed_call.question_suggestion
 
     assert probed_call.calls == ["detect", "generate"]
     assert context.category == "Turnaround Time"
