@@ -1,7 +1,6 @@
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     app_env: str = "development"
 
@@ -10,12 +9,14 @@ class Settings(BaseSettings):
     database_url: str = "not_configured"
     redis_url: str = "not_configured"
 
+    groq_api_key: str = "not_configured"
+    groq_model: str = "llama-3.1-8b-instant"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
-
 
 @lru_cache
 def get_settings() -> Settings:
