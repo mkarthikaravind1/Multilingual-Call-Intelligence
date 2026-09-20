@@ -9,6 +9,24 @@ from app.ai.asr.sarvam_provider import SarvamASRProvider
 from app.ai.language.provider import LanguageIdentificationProvider
 from app.ai.language.sarvam_provider import SarvamLanguageProvider
 
+from collections.abc import Callable, Mapping, Sequence
+from app.ai.complaint.llm_provider import LLMComplaintProvider
+from app.ai.complaint.provider import ComplaintDetectionProvider
+from app.ai.sentiment.llm_provider import LLMSentimentProvider
+from app.ai.sentiment.provider import SentimentAnalysisProvider
+from app.ai.speaker.order_based_role_provider import (
+    DEFAULT_ROLE_ORDER,
+    OrderBasedRoleIdentificationProvider,
+)
+from app.ai.speaker.provider import (
+    DiarizationProvider,
+    DiarizedSegment,
+    RoleIdentificationProvider,
+    SpeakerRole,
+)
+from app.ai.speaker.scripted_diarization_provider import ScriptedDiarizationProvider
+from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
+
 class UnsupportedProviderError(ValueError):
     pass
 
@@ -86,3 +104,35 @@ def create_language_provider(
             f"Available: {sorted(_LANGUAGE_PROVIDER_BUILDERS)}."
         )
     return builder(settings)
+
+
+
+def create_complaint_provider(
+    llm_client: LLMClient | None = None, settings: Settings | None = None
+) -> ComplaintDetectionProvider:
+    if llm_client is None:
+        llm_client = create_llm_client(settings)
+    return LLMComplaintProvider(llm_client)
+
+
+def create_sentiment_provider(
+    llm_client: LLMClient | None = None, settings: Settings | None = None
+) -> SentimentAnalysisProvider:
+    if llm_client is None:
+        llm_client = create_llm_client(settings)
+    return LLMSentimentProvider(llm_client)
+
+
+def create_diarization_provider(
+    segments: Sequence[DiarizedSegment],
+) -> DiarizationProvider:
+    return ScriptedDiarizationProvider(segments)
+
+
+def create_role_provider(
+    role_by_speaker: Mapping[str, SpeakerRole] | None = None,
+    role_order: Sequence[SpeakerRole] = DEFAULT_ROLE_ORDER,
+) -> RoleIdentificationProvider:
+    if role_by_speaker is not None:
+        return StaticRoleIdentificationProvider(role_by_speaker)
+    return OrderBasedRoleIdentificationProvider(role_order)
