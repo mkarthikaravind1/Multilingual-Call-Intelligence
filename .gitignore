@@ -9,4 +9,12 @@
 __pycache__/
 *.pyc
 
+# Node dependencies
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 ToDoInFuture.txt
