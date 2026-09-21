@@ -5,14 +5,14 @@ from app.ai.asr.provider import ASRProvider, ASRResult
 from app.core.config import Settings, get_settings
 from app.core.constants import SUPPORTED_LANGUAGES
 from app.ai.asr.provider import ASRProvider, ASRResult, TimedText
+import re
 
 _ENDPOINT_PATH = "/speech-to-text"
 _UNCONFIGURED = "not_configured"
-
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.?!।])\s+")
 
 class SarvamASRError(Exception):
     pass
-
 
 class SarvamASRProvider(ASRProvider):
     def __init__(
@@ -61,7 +61,9 @@ class SarvamASRProvider(ASRProvider):
             ) from exc
 
         if response.status_code != 200:
-            raise SarvamASRError(f"Sarvam returned HTTP {response.status_code}.")
+            raise SarvamASRError(
+                f"Sarvam returned HTTP {response.status_code}: {response.text}"
+            )
 
         try:
             return response.json()
@@ -126,11 +128,31 @@ def _extract_timed_text(timestamps: Any) -> tuple[TimedText, ...]:
         or not all(isinstance(word, str) for word in words)
     ):
         return ()
-    return tuple(
-        TimedText(text=word, start_time=float(start), end_time=float(end))
-        for word, start, end in zip(words, starts, ends)
-        if word.strip()
-    )
+    items: list[TimedText] = []
+    for word, start, end in zip(words, starts, ends):
+        if word.strip():
+            items.extend(_split_chunk(word, float(start), float(end)))
+    return tuple(items)
+
+
+def _split_chunk(text: str, start: float, end: float) -> list[TimedText]:
+    sentences = [s for s in _SENTENCE_BOUNDARY.split(text.strip()) if s]
+    if len(sentences) <= 1 or end <= start:
+        return [TimedText(text=text, start_time=start, end_time=end)]
+
+    total = sum(len(s) for s in sentences)
+    span = end - start
+    items: list[TimedText] = []
+    cursor = start
+    consumed = 0
+    for index, sentence in enumerate(sentences):
+        consumed += len(sentence)
+        sentence_end = (
+            end if index == len(sentences) - 1 else start + span * consumed / total
+        )
+        items.append(TimedText(text=sentence, start_time=cursor, end_time=sentence_end))
+        cursor = sentence_end
+    return items
 
 def _is_valid_time(value: Any) -> bool:
     return (
