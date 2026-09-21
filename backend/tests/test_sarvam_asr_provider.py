@@ -12,6 +12,7 @@ from app.ai.asr.provider import ASRProvider
 from app.ai.asr.sarvam_provider import SarvamASRError, SarvamASRProvider
 from app.composition.providers import UnsupportedProviderError, create_asr_provider
 from app.composition import providers
+from app.ai.asr.provider import ASRProvider, ASRResult, TimedText
 
 AUDIO = b"fake-audio-bytes"
 API_KEY = "test-key"
@@ -315,3 +316,49 @@ def test_create_asr_provider_fails_fast_when_api_key_missing():
 
     with pytest.raises(SarvamASRError, match="API key"):
         create_asr_provider(settings)
+
+def _timed_payload(words) -> dict:
+    return _payload(
+        timestamps={
+            "words": words,
+            "start_time_seconds": [0.4, 1.2],
+            "end_time_seconds": [1.1, 2.1],
+        }
+    )
+
+
+def test_result_exposes_timed_text():
+    result = _provider(_respond_with(_timed_payload(["vanakkam", "sir"]))).transcribe(
+        AUDIO
+    )
+
+    assert result.timed_text == (
+        TimedText("vanakkam", 0.4, 1.1),
+        TimedText("sir", 1.2, 2.1),
+    )
+    assert (result.start_time, result.end_time) == (0.4, 2.1)
+
+
+def test_missing_words_gives_empty_timed_text():
+    payload = _payload(timestamps=_timestamps([0.4], [2.1]))
+
+    result = _provider(_respond_with(payload)).transcribe(AUDIO)
+
+    assert result.timed_text == ()
+    assert (result.start_time, result.end_time) == (0.4, 2.1)
+
+
+@pytest.mark.parametrize("words", [["a"], "text", [1, 2], None])
+def test_unusable_words_are_ignored_not_fatal(words):
+    payload = _timed_payload(words)
+
+    result = _provider(_respond_with(payload)).transcribe(AUDIO)
+
+    assert result.timed_text == ()
+    assert result.transcript == payload["transcript"]
+
+
+def test_blank_words_are_skipped():
+    result = _provider(_respond_with(_timed_payload(["a", "  "]))).transcribe(AUDIO)
+
+    assert [item.text for item in result.timed_text] == ["a"]

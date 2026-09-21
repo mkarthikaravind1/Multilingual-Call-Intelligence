@@ -26,6 +26,7 @@ from app.ai.speaker.provider import (
 )
 from app.ai.speaker.scripted_diarization_provider import ScriptedDiarizationProvider
 from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
+from app.ai.speaker.pyannote_provider import PyannoteDiarizationProvider
 
 class UnsupportedProviderError(ValueError):
     pass
@@ -124,17 +125,26 @@ def create_sentiment_provider(
 
 
 def _build_scripted_diarization(
-    segments: Sequence[DiarizedSegment],
+    segments: Sequence[DiarizedSegment], settings: Settings
 ) -> DiarizationProvider:
     return ScriptedDiarizationProvider(segments)
 
 
+def _build_pyannote_diarization(
+    segments: Sequence[DiarizedSegment], settings: Settings
+) -> DiarizationProvider:
+    return PyannoteDiarizationProvider(
+        model=settings.pyannote_model,
+        token=settings.huggingface_token or None,
+    )
+
+
 _DIARIZATION_PROVIDER_BUILDERS: dict[
-    str, Callable[[Sequence[DiarizedSegment]], DiarizationProvider]
+    str, Callable[[Sequence[DiarizedSegment], Settings], DiarizationProvider]
 ] = {
     "scripted": _build_scripted_diarization,
+    "pyannote": _build_pyannote_diarization,
 }
-
 
 def create_diarization_provider(
     segments: Sequence[DiarizedSegment], settings: Settings | None = None
@@ -147,7 +157,7 @@ def create_diarization_provider(
             f"Unsupported diarization provider: {settings.diarization_provider!r}. "
             f"Available: {sorted(_DIARIZATION_PROVIDER_BUILDERS)}."
         )
-    return builder(segments)
+    return builder(segments,settings)
 
 
 def _build_order_based_roles(

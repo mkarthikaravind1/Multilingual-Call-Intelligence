@@ -4,6 +4,7 @@ import httpx
 from app.ai.asr.provider import ASRProvider, ASRResult
 from app.core.config import Settings, get_settings
 from app.core.constants import SUPPORTED_LANGUAGES
+from app.ai.asr.provider import ASRProvider, ASRResult, TimedText
 
 _ENDPOINT_PATH = "/speech-to-text"
 _UNCONFIGURED = "not_configured"
@@ -76,13 +77,15 @@ class SarvamASRProvider(ASRProvider):
         if not isinstance(transcript, str) or not transcript.strip():
             raise SarvamASRError("Sarvam response has no transcript.")
 
-        start_time, end_time = _extract_time_range(payload.get("timestamps"))
+        timestamps = payload.get("timestamps")
+        start_time, end_time = _extract_time_range(timestamps)
         return ASRResult(
             transcript=transcript,
             detected_language=_map_language(payload.get("language_code")),
             start_time=start_time,
             end_time=end_time,
             confidence=None,
+            timed_text=_extract_timed_text(timestamps),
         )
 
 
@@ -113,6 +116,21 @@ def _extract_time_range(timestamps: Any) -> tuple[float, float]:
 
     return float(min(starts)), float(max(ends))
 
+def _extract_timed_text(timestamps: Any) -> tuple[TimedText, ...]:
+    words = timestamps.get("words")
+    starts = timestamps["start_time_seconds"]
+    ends = timestamps["end_time_seconds"]
+    if (
+        not isinstance(words, list)
+        or len(words) != len(starts)
+        or not all(isinstance(word, str) for word in words)
+    ):
+        return ()
+    return tuple(
+        TimedText(text=word, start_time=float(start), end_time=float(end))
+        for word, start, end in zip(words, starts, ends)
+        if word.strip()
+    )
 
 def _is_valid_time(value: Any) -> bool:
     return (

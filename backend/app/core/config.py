@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     language_provider: str = "not_configured"
     diarization_provider: str = "not_configured"
     role_provider: str = "not_configured"
+    pyannote_model: str = "pyannote/speaker-diarization-community-1"
+    huggingface_token: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
