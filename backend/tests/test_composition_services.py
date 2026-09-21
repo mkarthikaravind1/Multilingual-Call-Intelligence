@@ -105,7 +105,6 @@ def test_call_workflow_service_selects_llm_client_from_settings(monkeypatch):
     workflow.process_utterance("call-1", make_utterance())
 
     assert len(created) == 1
-    # assert created[0].model == "test-model"
     assert created[0].requests
 
 
@@ -124,6 +123,9 @@ def test_audio_pipeline_runs_through_shared_workflow_service():
     pipeline = build_audio_processing_pipeline(
         workflow,
         [DiarizedSegment("s0", 0.0, 2.0)],
+        settings=make_settings(
+            diarization_provider="scripted", role_provider="order_based"
+        ),
         asr_provider=FakeASRProvider(),
         language_provider=FakeLanguageProvider(),
     )
@@ -143,6 +145,8 @@ def test_audio_pipeline_builds_default_sarvam_providers_from_settings():
         asr_provider="sarvam",
         language_provider="sarvam",
         sarvam_api_key="test-key",
+        diarization_provider="scripted",
+        role_provider="order_based",
     )
     workflow = build_call_workflow_service(llm_client=FakeLLMClient())
 
@@ -160,5 +164,9 @@ def test_audio_pipeline_requires_configured_asr_provider():
         build_audio_processing_pipeline(
             workflow,
             [DiarizedSegment("s0", 0.0, 1.0)],
-            settings=make_settings(asr_provider="not_configured"),
+            settings=make_settings(
+                asr_provider="not_configured",
+                diarization_provider="scripted",
+                role_provider="order_based",
+            ),
         )

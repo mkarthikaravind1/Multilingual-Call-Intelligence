@@ -49,15 +49,23 @@ def test_llm_backed_factories_reject_unconfigured_llm_provider(builder):
 
 def test_create_diarization_provider_returns_scripted_provider():
     segments = [DiarizedSegment("s0", 0.0, 1.0), DiarizedSegment("s1", 1.0, 2.0)]
+    settings = make_settings(diarization_provider="scripted")
 
-    provider = create_diarization_provider(segments)
+    provider = create_diarization_provider(segments, settings)
 
     assert isinstance(provider, ScriptedDiarizationProvider)
     assert provider.diarize(b"audio") == segments
 
 
-def test_create_role_provider_defaults_to_order_based():
-    provider = create_role_provider()
+def test_create_diarization_provider_rejects_unconfigured_provider():
+    with pytest.raises(UnsupportedProviderError, match="diarization provider"):
+        create_diarization_provider(
+            [], make_settings(diarization_provider="not_configured")
+        )
+
+
+def test_create_role_provider_order_based():
+    provider = create_role_provider(make_settings(role_provider="order_based"))
 
     assignments = provider.identify_roles(
         [DiarizedSegment("s0", 0.0, 1.0), DiarizedSegment("s1", 1.0, 2.0)]
@@ -67,10 +75,23 @@ def test_create_role_provider_defaults_to_order_based():
     assert [a.role for a in assignments] == [SpeakerRole.ICR, SpeakerRole.CUSTOMER]
 
 
-def test_create_role_provider_uses_static_mapping_when_given():
-    provider = create_role_provider(role_by_speaker={"s0": SpeakerRole.CUSTOMER})
+def test_create_role_provider_static_uses_mapping():
+    provider = create_role_provider(
+        make_settings(role_provider="static"),
+        role_by_speaker={"s0": SpeakerRole.CUSTOMER},
+    )
 
     assignments = provider.identify_roles([DiarizedSegment("s0", 0.0, 1.0)])
 
     assert isinstance(provider, StaticRoleIdentificationProvider)
     assert assignments[0].role == SpeakerRole.CUSTOMER
+
+
+def test_create_role_provider_static_requires_mapping():
+    with pytest.raises(ValueError, match="role_by_speaker"):
+        create_role_provider(make_settings(role_provider="static"))
+
+
+def test_create_role_provider_rejects_unconfigured_provider():
+    with pytest.raises(UnsupportedProviderError, match="role provider"):
+        create_role_provider(make_settings(role_provider="not_configured"))

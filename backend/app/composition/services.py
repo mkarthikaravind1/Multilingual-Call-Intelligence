@@ -103,7 +103,9 @@ def build_audio_processing_pipeline(
         return AudioProcessingPipeline(
         asr_provider=asr_provider or create_asr_provider(settings),
         language_provider=language_provider or create_language_provider(settings),
-        diarization_provider=create_diarization_provider(diarization_segments),
-        role_provider=role_provider or create_role_provider(),
+        diarization_provider=create_diarization_provider(
+            diarization_segments, settings
+        ),
+        role_provider=role_provider or create_role_provider(settings),
         workflow_service=workflow_service,
     )

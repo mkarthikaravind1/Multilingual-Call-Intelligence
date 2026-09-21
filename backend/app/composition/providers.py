@@ -123,16 +123,73 @@ def create_sentiment_provider(
     return LLMSentimentProvider(llm_client)
 
 
-def create_diarization_provider(
+def _build_scripted_diarization(
     segments: Sequence[DiarizedSegment],
 ) -> DiarizationProvider:
     return ScriptedDiarizationProvider(segments)
 
 
+_DIARIZATION_PROVIDER_BUILDERS: dict[
+    str, Callable[[Sequence[DiarizedSegment]], DiarizationProvider]
+] = {
+    "scripted": _build_scripted_diarization,
+}
+
+
+def create_diarization_provider(
+    segments: Sequence[DiarizedSegment], settings: Settings | None = None
+) -> DiarizationProvider:
+    settings = settings or get_settings()
+    name = settings.diarization_provider.strip().lower()
+    builder = _DIARIZATION_PROVIDER_BUILDERS.get(name)
+    if builder is None:
+        raise UnsupportedProviderError(
+            f"Unsupported diarization provider: {settings.diarization_provider!r}. "
+            f"Available: {sorted(_DIARIZATION_PROVIDER_BUILDERS)}."
+        )
+    return builder(segments)
+
+
+def _build_order_based_roles(
+    role_by_speaker: Mapping[str, SpeakerRole] | None,
+    role_order: Sequence[SpeakerRole],
+) -> RoleIdentificationProvider:
+    return OrderBasedRoleIdentificationProvider(role_order)
+
+
+def _build_static_roles(
+    role_by_speaker: Mapping[str, SpeakerRole] | None,
+    role_order: Sequence[SpeakerRole],
+) -> RoleIdentificationProvider:
+    if role_by_speaker is None:
+        raise ValueError("role_by_speaker is required for the static role provider.")
+    return StaticRoleIdentificationProvider(role_by_speaker)
+
+
+_ROLE_PROVIDER_BUILDERS: dict[
+    str,
+    Callable[
+        [Mapping[str, SpeakerRole] | None, Sequence[SpeakerRole]],
+        RoleIdentificationProvider,
+    ],
+] = {
+    "order_based": _build_order_based_roles,
+    "static": _build_static_roles,
+}
+
+
 def create_role_provider(
+    settings: Settings | None = None,
+    *,
     role_by_speaker: Mapping[str, SpeakerRole] | None = None,
     role_order: Sequence[SpeakerRole] = DEFAULT_ROLE_ORDER,
 ) -> RoleIdentificationProvider:
-    if role_by_speaker is not None:
-        return StaticRoleIdentificationProvider(role_by_speaker)
-    return OrderBasedRoleIdentificationProvider(role_order)
+    settings = settings or get_settings()
+    name = settings.role_provider.strip().lower()
+    builder = _ROLE_PROVIDER_BUILDERS.get(name)
+    if builder is None:
+        raise UnsupportedProviderError(
+            f"Unsupported role provider: {settings.role_provider!r}. "
+            f"Available: {sorted(_ROLE_PROVIDER_BUILDERS)}."
+        )
+    return builder(role_by_speaker, role_order)

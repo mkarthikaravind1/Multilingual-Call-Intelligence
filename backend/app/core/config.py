@@ -10,13 +10,15 @@ class Settings(BaseSettings):
     redis_url: str = "not_configured"
 
     groq_api_key: str = "not_configured"
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-20b"
     sarvam_api_key: str = "not_configured"
     sarvam_base_url: str = "https://api.sarvam.ai"
     sarvam_stt_model: str = "saaras:v3"
     sarvam_timeout_seconds: float = 30.0
     sarvam_input_audio_codec: str | None = None
     language_provider: str = "not_configured"
+    diarization_provider: str = "not_configured"
+    role_provider: str = "not_configured"
 
     model_config = SettingsConfigDict(
         env_file=".env",
