@@ -22,3 +22,6 @@ sample_chunk_00.wav
 sample_chunk_01.wav
 sample_chunk_02.wav
 sample_two_speakers.wav
+
+# ZIP archives
+*.zip
