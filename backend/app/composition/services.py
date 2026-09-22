@@ -16,6 +16,7 @@ from app.composition.providers import (
     create_question_provider,
     create_role_provider,
     create_sentiment_provider,
+    create_summary_provider,
 )
 from app.core.config import Settings
 from app.services.audio_processing_pipeline import (
@@ -43,7 +44,16 @@ from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
 from app.estimation.provider import ServiceEstimationProvider
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
 from app.services.estimation_service import EstimationService
+from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
+from app.services.post_call_summary_service import PostCallSummaryService
 
+def build_post_call_summary_service(
+    settings: Settings | None = None,
+    llm_client: LLMClient | None = None,
+) -> PostCallSummaryService:
+    return PostCallSummaryService(
+        create_summary_provider(llm_client=llm_client, settings=settings)
+    )
 
 def build_conversation_repository() -> ConversationRepository:
     return InMemoryConversationRepository()
@@ -87,6 +97,7 @@ def build_call_workflow_service(
     call_service: CallService | None = None,
     coverage_repository: ConversationCoverageRepository | None = None,
     estimation_service: EstimationService | None = None,
+    post_call_summary_service: PostCallSummaryService | None = None,
 ) -> CallWorkflowService:
     if llm_client is None:
         llm_client = create_llm_client(settings)
@@ -102,6 +113,8 @@ def build_call_workflow_service(
             create_question_provider(llm_client)
         ),
         estimation_service=estimation_service or build_estimation_service(),
+        post_call_summary_service=post_call_summary_service
+        or build_post_call_summary_service(settings=settings, llm_client=llm_client),
     )
 
 def build_audio_processing_pipeline(

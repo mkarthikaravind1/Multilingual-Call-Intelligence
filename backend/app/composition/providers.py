@@ -27,6 +27,9 @@ from app.ai.speaker.provider import (
 from app.ai.speaker.scripted_diarization_provider import ScriptedDiarizationProvider
 from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
 from app.ai.speaker.pyannote_provider import PyannoteDiarizationProvider
+from app.ai.summary.llm_provider import LLMPostCallSummaryProvider
+from app.ai.summary.provider import SummaryGenerationProvider
+from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
 
 class UnsupportedProviderError(ValueError):
     pass
@@ -123,6 +126,40 @@ def create_sentiment_provider(
         llm_client = create_llm_client(settings)
     return LLMSentimentProvider(llm_client)
 
+def _build_rule_based_summary(
+    llm_client: LLMClient | None, settings: Settings
+) -> SummaryGenerationProvider:
+    return RuleBasedSummaryProvider()
+
+
+def _build_llm_summary(
+    llm_client: LLMClient | None, settings: Settings
+) -> SummaryGenerationProvider:
+    if llm_client is None:
+        llm_client = create_llm_client(settings)
+    return LLMPostCallSummaryProvider(llm_client)
+
+
+_SUMMARY_PROVIDER_BUILDERS: dict[
+    str, Callable[[LLMClient | None, Settings], SummaryGenerationProvider]
+] = {
+    "rule_based": _build_rule_based_summary,
+    "llm": _build_llm_summary,
+}
+
+
+def create_summary_provider(
+    llm_client: LLMClient | None = None, settings: Settings | None = None
+) -> SummaryGenerationProvider:
+    settings = settings or get_settings()
+    name = settings.summary_provider.strip().lower()
+    builder = _SUMMARY_PROVIDER_BUILDERS.get(name)
+    if builder is None:
+        raise UnsupportedProviderError(
+            f"Unsupported summary provider: {settings.summary_provider!r}. "
+            f"Available: {sorted(_SUMMARY_PROVIDER_BUILDERS)}."
+        )
+    return builder(llm_client, settings)
 
 def _build_scripted_diarization(
     segments: Sequence[DiarizedSegment], settings: Settings

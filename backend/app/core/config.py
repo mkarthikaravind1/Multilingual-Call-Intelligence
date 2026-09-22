@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     role_provider: str = "not_configured"
     pyannote_model: str = "pyannote/speaker-diarization-community-1"
     huggingface_token: str = ""
+    summary_provider: str = "rule_based"
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

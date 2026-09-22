@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
 from app.ai.sentiment.provider import SentimentResult
+from app.domain.conversation import ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
+from app.domain.post_call_summary import PostCallSummary
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.service_estimate import ServiceEstimate
 from app.domain.utterance import Utterance
@@ -12,6 +14,8 @@ from app.services.conversation_coverage_repository import (
 )
 from app.services.estimation_service import EstimationService
 from app.services.next_question_service import NextQuestionService
+from app.services.post_call_summary_service import PostCallSummaryService
+from app.ai.summary.provider import PostCallSummaryRequest
 
 
 @dataclass(frozen=True)
@@ -20,10 +24,10 @@ class CallAnalysisResult:
     sentiment: SentimentResult
     question_suggestion: QuestionSuggestion | None
     service_estimate: ServiceEstimate | None
+    post_call_summary: PostCallSummary | None = None
 
 
 class CallWorkflowService:
-
     def __init__(
         self,
         call_service: CallService,
@@ -31,12 +35,14 @@ class CallWorkflowService:
         analysis_service: ConversationAnalysisService,
         next_question_service: NextQuestionService,
         estimation_service: EstimationService,
+        post_call_summary_service: PostCallSummaryService,
     ) -> None:
         self._call_service = call_service
         self._coverage_repository = coverage_repository
         self._analysis_service = analysis_service
         self._next_question_service = next_question_service
         self._estimation_service = estimation_service
+        self._post_call_summary_service = post_call_summary_service
 
     def process_utterance(
         self,
@@ -50,7 +56,6 @@ class CallWorkflowService:
         conversation = self._call_service.get_call(call_id)
 
         coverage = self._coverage_repository.get(call_id)
-
         if coverage is None:
             coverage = ConversationCoverage(call_id=call_id)
 
@@ -70,11 +75,27 @@ class CallWorkflowService:
             conversation.latest_utterance
         )
 
+        post_call_summary = None
+
+        if conversation.status == ConversationStatus.COMPLETED:
+            summary_request = PostCallSummaryRequest(
+                call_id=conversation.call_id,
+                conversation=conversation,
+                complaint_coverages=analysis.coverage.complaints,
+                sentiment=analysis.sentiment,
+                service_estimate=service_estimate,
+            )
+
+            post_call_summary = self._post_call_summary_service.generate_summary(
+                summary_request
+            )
+
         return CallAnalysisResult(
             coverage=analysis.coverage,
             sentiment=analysis.sentiment,
             question_suggestion=suggestion,
             service_estimate=service_estimate,
+            post_call_summary=post_call_summary,
         )
 
     def _estimate_from_latest_utterance(

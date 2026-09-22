@@ -42,6 +42,15 @@ from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
 from app.services.estimation_service import EstimationService
 from app.domain.service_estimate import ServiceEstimate
+from app.ai.sentiment.provider import (
+    SentimentAnalysisProvider,
+    SentimentLabel,
+    SentimentResult,
+)
+from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
+from app.services.next_question_service import NextQuestionService
+from app.services.post_call_summary_service import PostCallSummaryService
+from app.services.sentiment_analysis_service import SentimentAnalysisService
 
 CALL_ID = "call-1"
 
@@ -114,6 +123,7 @@ class _Harness:
     sentiment_provider: FakeSentimentProvider
     question_provider: FakeQuestionProvider
     estimation_service: EstimationService
+    post_call_summary_service: PostCallSummaryService
 
 
 def _build(
@@ -132,6 +142,7 @@ def _build(
     estimation_service = EstimationService(
         RuleBasedEstimationProvider(DEFAULT_PRICING_CONFIG)
     )
+    post_call_summary_service = PostCallSummaryService(RuleBasedSummaryProvider())
     workflow = CallWorkflowService(
         call_service,
         coverage_repository,
@@ -141,6 +152,7 @@ def _build(
         ),
         NextQuestionService(question_provider),
         estimation_service,
+        post_call_summary_service,
     )
     return _Harness(
         workflow,
@@ -150,6 +162,7 @@ def _build(
         sentiment_provider,
         question_provider,
         estimation_service,
+        post_call_summary_service,
     )
 
 
@@ -376,6 +389,7 @@ def test_estimation_provider_exception_propagates():
         ),
         NextQuestionService(harness.question_provider),
         estimation_service,
+        harness.post_call_summary_service
     )
 
     with pytest.raises(RuntimeError, match="estimation failed"):
