@@ -36,6 +36,7 @@ class ComplaintLifecycleService:
         first_detected_at: float,
         status: ComplaintLifecycleStatus = ComplaintLifecycleStatus.RAISED,
         follow_up_required: bool = False,
+        customer_id: str | None = None,
     ) -> ComplaintLifecycleRecord:
         record = ComplaintLifecycleRecord(
             complaint_id=complaint_id,
@@ -45,6 +46,7 @@ class ComplaintLifecycleService:
             first_detected_at=first_detected_at,
             last_updated_at=first_detected_at,
             follow_up_required=follow_up_required,
+            customer_id=customer_id,
         )
         self._repository.save(record)
         return record

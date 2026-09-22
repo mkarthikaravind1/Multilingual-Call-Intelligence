@@ -113,3 +113,27 @@ def test_transition_to_invalid_new_status_type_rejected():
 
     with pytest.raises(TypeError):
         record.transition_to("detected", at=1.0)  # type: ignore
+
+def test_blank_customer_id_is_rejected():
+    with pytest.raises(ValueError):
+        ComplaintLifecycleRecord(
+            complaint_id="c1",
+            call_id="call-1",
+            category="Cost",
+            status=ComplaintLifecycleStatus.RAISED,
+            first_detected_at=0.0,
+            last_updated_at=0.0,
+            customer_id="   ",
+        )
+
+
+def test_customer_id_defaults_to_none():
+    record = ComplaintLifecycleRecord(
+        complaint_id="c1",
+        call_id="call-1",
+        category="Cost",
+        status=ComplaintLifecycleStatus.RAISED,
+        first_detected_at=0.0,
+        last_updated_at=0.0,
+    )
+    assert record.customer_id is None

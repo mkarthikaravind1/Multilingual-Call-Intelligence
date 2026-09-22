@@ -63,6 +63,7 @@ class ComplaintLifecycleRecord:
     first_detected_at: float
     last_updated_at: float
     follow_up_required: bool = False
+    customer_id: str | None = None
 
     def __post_init__(self) -> None:
         _require_id(self.complaint_id, "complaint_id")
@@ -82,6 +83,8 @@ class ComplaintLifecycleRecord:
             raise ValueError("last_updated_at cannot be before first_detected_at.")
 
         _require_bool(self.follow_up_required, "follow_up_required")
+        if self.customer_id is not None:
+            _require_id(self.customer_id, "customer_id")
 
     def transition_to(
         self, new_status: ComplaintLifecycleStatus, at: float, follow_up_required: bool | None = None
@@ -105,3 +108,4 @@ class ComplaintLifecycleRecord:
                 self.follow_up_required if follow_up_required is None else follow_up_required
             ),
         )
+
