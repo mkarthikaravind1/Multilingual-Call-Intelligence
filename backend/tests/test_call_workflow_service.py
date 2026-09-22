@@ -37,6 +37,11 @@ from app.services.in_memory_conversation_repository import (
 )
 from app.services.next_question_service import NextQuestionService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
+from app.domain.service_estimate import ServiceEstimate
+from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
+from app.estimation.rule_based_provider import RuleBasedEstimationProvider
+from app.services.estimation_service import EstimationService
+from app.domain.service_estimate import ServiceEstimate
 
 CALL_ID = "call-1"
 
@@ -108,6 +113,7 @@ class _Harness:
     complaint_provider: FakeComplaintProvider
     sentiment_provider: FakeSentimentProvider
     question_provider: FakeQuestionProvider
+    estimation_service: EstimationService
 
 
 def _build(
@@ -123,6 +129,9 @@ def _build(
     if start_call:
         call_service.start_call(CALL_ID)
     coverage_repository = InMemoryConversationCoverageRepository()
+    estimation_service = EstimationService(
+        RuleBasedEstimationProvider(DEFAULT_PRICING_CONFIG)
+    )
     workflow = CallWorkflowService(
         call_service,
         coverage_repository,
@@ -131,6 +140,7 @@ def _build(
             SentimentAnalysisService(sentiment_provider),
         ),
         NextQuestionService(question_provider),
+        estimation_service,
     )
     return _Harness(
         workflow,
@@ -139,6 +149,7 @@ def _build(
         complaint_provider,
         sentiment_provider,
         question_provider,
+        estimation_service,
     )
 
 
@@ -301,3 +312,81 @@ def test_call_analysis_result_is_frozen():
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         result.sentiment = _SENTIMENT  # type: ignore
+
+def test_process_utterance_returns_service_estimate_for_known_issue():
+    harness = _build()
+
+    result = harness.workflow.process_utterance(
+        CALL_ID,
+        Utterance(
+            utterance_id="1",
+            transcript="I need an oil change for my vehicle.",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=4.0,
+        ),
+    )
+
+    assert result.service_estimate is not None
+    assert isinstance(result.service_estimate, ServiceEstimate)
+    assert result.service_estimate.service_name == "Oil Change"
+
+
+def test_process_utterance_returns_no_estimate_for_unknown_issue():
+    harness = _build()
+
+    result = harness.workflow.process_utterance(
+        CALL_ID,
+        Utterance(
+            utterance_id="1",
+            transcript="I have a question about my vehicle.",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=4.0,
+        ),
+    )
+
+    assert result.service_estimate is None
+
+
+def test_estimation_provider_exception_propagates():
+    class FailingEstimationProvider(RuleBasedEstimationProvider):
+        def estimate(self, issue: str):
+            raise RuntimeError("estimation failed")
+
+    call_service = CallService(
+        ConversationService(InMemoryConversationRepository())
+    )
+    call_service.start_call(CALL_ID)
+
+    estimation_service = EstimationService(
+        FailingEstimationProvider(DEFAULT_PRICING_CONFIG)
+    )
+
+    harness = _build()
+
+    workflow = CallWorkflowService(
+        call_service,
+        harness.coverage_repository,
+        ConversationAnalysisService(
+            ComplaintAnalysisService(harness.complaint_provider),
+            SentimentAnalysisService(harness.sentiment_provider),
+        ),
+        NextQuestionService(harness.question_provider),
+        estimation_service,
+    )
+
+    with pytest.raises(RuntimeError, match="estimation failed"):
+        workflow.process_utterance(
+            CALL_ID,
+            Utterance(
+                utterance_id="1",
+                transcript="I need an oil change.",
+                speaker_role=SpeakerRole.CUSTOMER,
+                languages=("en",),
+                start_time=0.0,
+                end_time=4.0,
+            ),
+        )

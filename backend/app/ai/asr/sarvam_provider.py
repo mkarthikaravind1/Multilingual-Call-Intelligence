@@ -62,7 +62,7 @@ class SarvamASRProvider(ASRProvider):
 
         if response.status_code != 200:
             raise SarvamASRError(
-                f"Sarvam returned HTTP {response.status_code}: {response.text}"
+                f"Sarvam returned HTTP {response.status_code}."
             )
 
         try:

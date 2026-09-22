@@ -39,7 +39,10 @@ from app.services.in_memory_conversation_repository import (
 )
 from app.services.next_question_service import NextQuestionService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
-from app.services import *
+from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
+from app.estimation.provider import ServiceEstimationProvider
+from app.estimation.rule_based_provider import RuleBasedEstimationProvider
+from app.services.estimation_service import EstimationService
 
 
 def build_conversation_repository() -> ConversationRepository:
@@ -49,6 +52,14 @@ def build_conversation_repository() -> ConversationRepository:
 def build_coverage_repository() -> ConversationCoverageRepository:
     return InMemoryConversationCoverageRepository()
 
+def build_estimation_service(
+    provider: ServiceEstimationProvider | None = None,
+) -> EstimationService:
+    provider = provider or RuleBasedEstimationProvider(
+        DEFAULT_PRICING_CONFIG
+    )
+
+    return EstimationService(provider)
 
 def build_call_service(repository: ConversationRepository | None = None) -> CallService:
     return CallService(ConversationService(repository or build_conversation_repository()))
@@ -75,22 +86,23 @@ def build_call_workflow_service(
     llm_client: LLMClient | None = None,
     call_service: CallService | None = None,
     coverage_repository: ConversationCoverageRepository | None = None,
+    estimation_service: EstimationService | None = None,
 ) -> CallWorkflowService:
-        if llm_client is None:
-            llm_client = create_llm_client(settings)
+    if llm_client is None:
+        llm_client = create_llm_client(settings)
 
-        return CallWorkflowService(
-            call_service=call_service or build_call_service(),
-            coverage_repository=coverage_repository or build_coverage_repository(),
-            analysis_service=build_conversation_analysis_service(
-                complaint_provider=create_complaint_provider(llm_client),
-                sentiment_provider=create_sentiment_provider(llm_client),
-            ),
-            next_question_service=build_next_question_service(
-                create_question_provider(llm_client)
-            ),
+    return CallWorkflowService(
+        call_service=call_service or build_call_service(),
+        coverage_repository=coverage_repository or build_coverage_repository(),
+        analysis_service=build_conversation_analysis_service(
+            complaint_provider=create_complaint_provider(llm_client),
+            sentiment_provider=create_sentiment_provider(llm_client),
+        ),
+        next_question_service=build_next_question_service(
+            create_question_provider(llm_client)
+        ),
+        estimation_service=estimation_service or build_estimation_service(),
     )
-
 
 def build_audio_processing_pipeline(
     workflow_service: UtteranceProcessor,

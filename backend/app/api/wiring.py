@@ -15,6 +15,7 @@ from app.services.in_memory_conversation_repository import (
 )
 from app.services.next_question_service import NextQuestionService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
+from app.composition.services import build_estimation_service
 
 
 def build_api_services(
@@ -31,5 +32,6 @@ def build_api_services(
             SentimentAnalysisService(sentiment_provider),
         ),
         NextQuestionService(question_provider),
+        build_estimation_service(),
     )
     return ApiServices(call_service=call_service, workflow_service=workflow_service)
