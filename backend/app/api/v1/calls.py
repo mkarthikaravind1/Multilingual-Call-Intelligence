@@ -11,12 +11,17 @@ from app.api.v1.schemas import (
 )
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
+from app.api.security_dependencies import get_current_user
+from app.domain.user import User
+
+
 router = APIRouter(prefix="/calls", tags=["calls"])
 
 @router.post("", response_model=CallResponse, status_code=status.HTTP_201_CREATED)
 def start_call(
     payload: StartCallRequest,
     call_service: CallService = Depends(get_call_service),
+    _: User = Depends(get_current_user),
 ) -> CallResponse:
     return to_call_response(call_service.start_call(payload.call_id, payload.start_time))
 
@@ -24,6 +29,7 @@ def start_call(
 def get_call(
     call_id: str,
     call_service: CallService = Depends(get_call_service),
+    _: User = Depends(get_current_user),
 ) -> CallResponse:
     return to_call_response(call_service.get_call(call_id))
 
@@ -32,6 +38,7 @@ def add_utterance(
     call_id: str,
     payload: UtteranceRequest,
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    _: User = Depends(get_current_user),
 ) -> CallAnalysisResponse:
     result = workflow_service.process_utterance(call_id, to_utterance(payload))
     return to_analysis_response(call_id, result)
@@ -40,6 +47,7 @@ def add_utterance(
 def get_analysis(
     call_id: str,
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    _: User = Depends(get_current_user),
 ) -> CallAnalysisResponse:
     return to_analysis_response(call_id, workflow_service.analyze_call(call_id))
 
@@ -48,5 +56,6 @@ def complete_call(
     call_id: str,
     payload: CompleteCallRequest,
     call_service: CallService = Depends(get_call_service),
+    _: User = Depends(get_current_user),
 ) -> CallResponse:
     return to_call_response(call_service.end_call(call_id, payload.end_time))

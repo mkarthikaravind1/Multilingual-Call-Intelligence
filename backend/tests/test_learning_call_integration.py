@@ -35,6 +35,10 @@ from app.services.learning_evidence_generation_service import (
 from app.services.learning_evidence_service import LearningEvidenceService
 from app.services.learning_observation_service import LearningObservationService
 from app.services.post_call_summary_service import PostCallSummaryService
+import time
+
+from app.domain.user import User, UserRole
+from app.security.jwt import create_access_token
 
 CALL_ID = "call-1"
 QUESTION = "Could you tell me the expected completion time you were given?"
@@ -210,9 +214,31 @@ def test_analyze_call_is_read_only():
 
 
 def api_client() -> TestClient:
-    services = build_api_services(FakeComplaints(), FakeSentiment(), FakeQuestions())
-    return TestClient(create_app(services))
+    services = build_api_services(
+        FakeComplaints(),
+        FakeSentiment(),
+        FakeQuestions(),
+    )
 
+    app = create_app(services)
+
+    user = User(
+        user_id="test-icr",
+        email="test-icr@example.com",
+        password_hash="test-password-hash",
+        role=UserRole.ICR,
+        is_active=True,
+        created_at=time.time(),
+    )
+
+    app.state.services.user_repository.save(user)
+
+    token = create_access_token(user)
+
+    return TestClient(
+        app,
+        headers={"Authorization": f"Bearer {token}"},
+    )
 
 def utterance_payload() -> dict:
     return {

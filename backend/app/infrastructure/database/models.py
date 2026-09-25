@@ -223,3 +223,15 @@ class ComplaintLifecycleRecordModel(Base):
         Index("ix_complaint_lifecycle_call_id", "call_id"),
         Index("ix_complaint_lifecycle_customer_id", "customer_id"),
     )
+
+class UserModel(Base):
+    __tablename__ = "users"
+
+    user_id: Mapped[str] = mapped_column(String, primary_key=True)
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False)
+
+    __table_args__ = (Index("ix_users_email", "email"),)

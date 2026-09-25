@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     pyannote_model: str = "pyannote/speaker-diarization-community-1"
     huggingface_token: str = ""
     summary_provider: str = "rule_based"
+    auth_secret_key: str = "not_configured"
+    auth_access_token_expire_minutes: int = 30
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

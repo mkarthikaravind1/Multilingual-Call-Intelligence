@@ -109,6 +109,7 @@ def test_schema_creates_all_expected_tables(engine):
         "active_improvements",
         "improvement_usages",
         "complaint_lifecycle_records",
+        "users",
     }
 
 

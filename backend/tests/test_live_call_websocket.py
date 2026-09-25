@@ -25,9 +25,17 @@ from app.domain.conversation import Conversation
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
 from app.domain.utterance import SpeakerRole, Utterance
 from app.services.call_workflow_service import CallAnalysisResult, CallWorkflowService
+import time
+
+from app.domain.user import User, UserRole
+from app.security.jwt import create_access_token
+from app import services
 
 CALL_ID = "call-1"
 LIVE_URL = f"/api/v1/calls/{CALL_ID}/live"
+
+def _live_url(token: str) -> str:
+    return f"{LIVE_URL}?token={token}"
 
 _TURNAROUND = ComplaintDetectionResult(
     "Turnaround Time", 0.93, "The vehicle was supposed to be ready yesterday."
@@ -86,19 +94,53 @@ def _setup(
     *responses: list[ComplaintDetectionResult],
     fail_first: Exception | None = None,
     start_call: bool = True,
-) -> tuple[TestClient, SpyWorkflowService]:
-    services = build_api_services(
-        FakeComplaintProvider(*responses),
-        FakeSentimentProvider(),
-        FakeQuestionProvider(),
+) -> tuple[TestClient, SpyWorkflowService, str]:
+    api_services = build_api_services(
+        complaint_provider=FakeComplaintProvider(*responses),
+        sentiment_provider=FakeSentimentProvider(),
+        question_provider=FakeQuestionProvider(),
     )
-    spy = SpyWorkflowService(services.workflow_service, fail_first)
+
+    spy = SpyWorkflowService(
+        api_services.workflow_service,
+        fail_first=fail_first,
+    )
+
+    app = create_app(
+        ApiServices(
+            call_service=api_services.call_service,
+            workflow_service=spy,
+        )
+    )
+
+    user = User(
+        user_id="test-icr",
+        email="test-icr@example.com",
+        password_hash="test-password-hash",
+        role=UserRole.ICR,
+        is_active=True,
+        created_at=time.time(),
+    )
+
+    app.state.services.user_repository.save(user)
+
+    token = create_access_token(user)
+
     client = TestClient(
-        create_app(ApiServices(call_service=services.call_service, workflow_service=spy))
+        app,
+        headers={"Authorization": f"Bearer {token}"},
     )
+
     if start_call:
-        assert client.post("/api/v1/calls", json={"call_id": CALL_ID}).status_code == 201
-    return client, spy
+        assert (
+            client.post(
+                "/api/v1/calls",
+                json={"call_id": CALL_ID},
+            ).status_code
+            == 201
+        )
+
+    return client, spy, token
 
 
 def _message(index: int = 0, **overrides: Any) -> dict[str, Any]:
@@ -116,9 +158,9 @@ def _message(index: int = 0, **overrides: Any) -> dict[str, Any]:
 
 
 def test_valid_utterance_is_accepted():
-    client, _ = _setup()
+    client, _, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message())
         event = ws.receive_json()
 
@@ -128,9 +170,9 @@ def test_valid_utterance_is_accepted():
 
 
 def test_utterance_reaches_call_workflow_service():
-    client, spy = _setup()
+    client, spy, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message(transcript="My car is late.", languages=["en", "ta"]))
         ws.receive_json()
 
@@ -144,9 +186,9 @@ def test_utterance_reaches_call_workflow_service():
 
 
 def test_response_contains_complaint_coverage():
-    client, _ = _setup([_TURNAROUND, _COMMUNICATION])
+    client, _, token = _setup([_TURNAROUND, _COMMUNICATION])
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message())
         event = ws.receive_json()
 
@@ -160,9 +202,9 @@ def test_response_contains_complaint_coverage():
 
 
 def test_response_contains_sentiment():
-    client, _ = _setup()
+    client, _, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message())
         event = ws.receive_json()
 
@@ -174,9 +216,9 @@ def test_response_contains_sentiment():
 
 
 def test_response_contains_next_question_suggestion():
-    client, _ = _setup([_TURNAROUND])
+    client, _, token = _setup([_TURNAROUND])
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message())
         suggestion = ws.receive_json()["question_suggestion"]
 
@@ -187,9 +229,9 @@ def test_response_contains_next_question_suggestion():
 
 
 def test_suggestion_is_null_when_no_complaint_is_actionable():
-    client, _ = _setup()
+    client, _, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message())
         event = ws.receive_json()
 
@@ -198,9 +240,9 @@ def test_suggestion_is_null_when_no_complaint_is_actionable():
 
 
 def test_multiple_utterances_on_the_same_connection():
-    client, spy = _setup([_TURNAROUND], [_TURNAROUND, _COMMUNICATION])
+    client, spy, token = _setup([_TURNAROUND], [_TURNAROUND, _COMMUNICATION])
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message(0))
         first = ws.receive_json()
         ws.send_json(_message(1))
@@ -233,9 +275,9 @@ def test_multiple_utterances_on_the_same_connection():
     ],
 )
 def test_invalid_message_is_rejected_and_connection_stays_open(raw):
-    client, spy = _setup()
+    client, spy, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_text(raw)
         error = ws.receive_json()
         ws.send_json(_message())
@@ -250,9 +292,9 @@ def test_invalid_message_is_rejected_and_connection_stays_open(raw):
 
 
 def test_binary_message_is_rejected():
-    client, spy = _setup()
+    client, spy, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_bytes(b"\x00\x01")
         error = ws.receive_json()
 
@@ -265,9 +307,9 @@ def test_binary_message_is_rejected():
     [{"languages": ["xx"]}, {"start_time": 10.0, "end_time": 5.0}],
 )
 def test_utterance_violating_domain_rules_is_rejected(overrides):
-    client, spy = _setup()
+    client, spy, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message(**overrides))
         error = ws.receive_json()
 
@@ -277,9 +319,9 @@ def test_utterance_violating_domain_rules_is_rejected(overrides):
 
 
 def test_out_of_order_utterance_is_rejected():
-    client, _ = _setup()
+    client, _, token = _setup()
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message(1))
         ws.receive_json()
         ws.send_json(_message(0))
@@ -289,9 +331,9 @@ def test_out_of_order_utterance_is_rejected():
 
 
 def test_unknown_call_is_reported_and_connection_closed():
-    client, spy = _setup(start_call=False)
+    client, spy, token = _setup(start_call=False)
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         error = ws.receive_json()
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
@@ -304,9 +346,9 @@ def test_unknown_call_is_reported_and_connection_closed():
 
 
 def test_unexpected_failure_returns_generic_error_and_connection_survives():
-    client, _ = _setup(fail_first=RuntimeError("secret provider detail"))
+    client, _, token = _setup(fail_first=RuntimeError("secret provider detail"))
 
-    with client.websocket_connect(LIVE_URL) as ws:
+    with client.websocket_connect(_live_url(token)) as ws:
         ws.send_json(_message(0))
         error = ws.receive_json()
         ws.send_json(_message(1))
@@ -318,7 +360,7 @@ def test_unexpected_failure_returns_generic_error_and_connection_survives():
 
 
 def test_websocket_is_only_available_under_api_v1():
-    client, _ = _setup()
+    client, _, token = _setup()
 
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect(f"/calls/{CALL_ID}/live"):

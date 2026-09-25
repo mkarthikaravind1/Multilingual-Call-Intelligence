@@ -48,7 +48,10 @@ from app.domain.improvement_usage_repository import (
     ImprovementUsageRepository,
     InMemoryImprovementUsageRepository,
 )
-
+from app.domain.user_repository import InMemoryUserRepository, UserRepository
+from app.services.auth_service import AuthService
+from app.domain.user_repository import InMemoryUserRepository, UserRepository
+from app.services.auth_service import AuthService
 
 def build_api_services(
     complaint_provider: ComplaintDetectionProvider,
@@ -62,6 +65,8 @@ def build_api_services(
     candidate_repository: ImprovementCandidateRepository | None = None,
     active_improvement_repository: ActiveImprovementRepository | None = None,
     usage_repository: ImprovementUsageRepository | None = None,
+    user_repository: UserRepository | None = None,
+    
 ) -> ApiServices:
     """Build the services the live application uses.
 
@@ -110,6 +115,9 @@ def build_api_services(
         ),
     )
 
+    user_repository = user_repository or InMemoryUserRepository()
+    auth_service = AuthService(user_repository)
+
     return ApiServices(
         call_service=call_service,
         workflow_service=workflow_service,
@@ -118,4 +126,6 @@ def build_api_services(
             evidence_repository=evidence_repository,
             candidate_repository=candidate_repository,
         ),
+        auth=auth_service,
+        user_repository=user_repository,
     )

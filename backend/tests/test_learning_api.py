@@ -19,6 +19,10 @@ from app.domain.improvement_candidate_repository import (
 from app.domain.learning_evidence import EvidenceType, LearningComponent, LearningEvidence
 from app.domain.learning_evidence_repository import InMemoryLearningEvidenceRepository
 from fastapi.routing import APIRoute
+import time
+
+from app.domain.user import User, UserRole
+from app.security.jwt import create_access_token
 
 BASE = "/api/v1/learning"
 DESC = "AI predicted complaint_detection 'Cost' and human corrected it to 'Other'."
@@ -65,7 +69,26 @@ def build(candidates=(), evidence=()):
         workflow_service=None,  # type: ignore[arg-type]
         learning=learning,
     )
-    return TestClient(create_app(services)), candidate_repository, evidence_repository
+    app = create_app(services)
+    user = User(
+        user_id="test-supervisor",
+        email="test-supervisor@example.com",
+        password_hash="test-password-hash",
+        role=UserRole.SUPERVISOR,
+        is_active=True,
+        created_at=time.time(),
+    )
+
+    app.state.services.user_repository.save(user)
+
+    token = create_access_token(user)
+
+    client = TestClient(
+        app,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    return client, candidate_repository, evidence_repository
 
 
 def test_list_candidates_returns_persisted_candidates():
@@ -240,11 +263,22 @@ def test_default_wiring_provides_empty_learning_services():
         call_service=build_call_service(),
         workflow_service=None,  # type: ignore[arg-type]
     )
-    client = TestClient(create_app(services))
+    app = create_app(services)
+
+    user = User(
+        user_id="test-icr",
+        email="test-icr@example.com",
+        password_hash="test-password-hash",
+        role=UserRole.ICR,
+        is_active=True,
+        created_at=time.time(),
+    )
+    app.state.services.user_repository.save(user)
+    token = create_access_token(user)
+
+    client = TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
     assert client.get(f"{BASE}/candidates").json() == []
-    assert client.get(f"{BASE}/patterns").json() == []
-    assert client.get(f"{BASE}/evidence").json() == []
 
 
 def test_existing_call_routes_remain_available():

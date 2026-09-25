@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 import pytest
@@ -20,6 +21,9 @@ from app.api.app_factory import create_app
 from app.api.wiring import build_api_services
 from app.domain.conversation import Conversation
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
+from app.security.jwt import create_access_token
+from app.domain.user import *
+from tests.test_auth_helpers import authenticate_client
 
 CALL_ID = "call-1"
 BASE = "/api/v1/calls"
@@ -80,8 +84,26 @@ def _client(
         FakeSentimentProvider(),
         FakeQuestionProvider(),
     )
+
+    app = create_app(services)
+
+    user = User(
+        user_id="test-icr",
+        email="test-icr@example.com",
+        password_hash="test-password-hash",
+        role=UserRole.ICR,
+        is_active=True,
+        created_at=time.time(),
+    )
+
+    app.state.services.user_repository.save(user)
+
+    token = create_access_token(user)
+
     return TestClient(
-        create_app(services), raise_server_exceptions=raise_server_exceptions
+        app,
+        raise_server_exceptions=raise_server_exceptions,
+        headers={"Authorization": f"Bearer {token}"},
     )
 
 

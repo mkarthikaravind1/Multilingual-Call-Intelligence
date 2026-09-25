@@ -46,7 +46,10 @@ from app.infrastructure.database.repositories.learning_observation_repository im
 )
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
 from app.services.conversation_repository import ConversationRepository
-
+from app.domain.user_repository import UserRepository
+from app.infrastructure.database.repositories.user_repository import (
+    PostgresUserRepository,
+)
 
 @dataclass(frozen=True)
 class PostgresRepositories:
@@ -63,7 +66,7 @@ class PostgresRepositories:
     improvement_usage: ImprovementUsageRepository
     complaint_lifecycle: ComplaintLifecycleRepository
     complaint_customer_history: ComplaintCustomerHistoryRepository
-
+    user: UserRepository
 
 def build_postgres_repositories(
     session_factory: sessionmaker[Session],
@@ -79,6 +82,7 @@ def build_postgres_repositories(
         improvement_usage=PostgresImprovementUsageRepository(session_factory),
         complaint_lifecycle=PostgresComplaintLifecycleRepository(session_factory),
         complaint_customer_history=PostgresComplaintCustomerHistoryRepository(session_factory),
+        user=PostgresUserRepository(session_factory)
     )
 
 

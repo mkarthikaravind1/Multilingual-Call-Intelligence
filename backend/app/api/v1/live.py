@@ -4,11 +4,11 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.api.dependencies import get_live_call_handler
 from app.api.v1.live_handler import LiveCallHandler
-
+from app.api.security_dependencies import get_current_user_ws
 router = APIRouter(prefix="/calls", tags=["live"])
 
 CALL_NOT_FOUND_CLOSE_CODE = 4404
-
+AUTH_FAILED_CLOSE_CODE = 4401
 
 @router.websocket("/{call_id}/live")
 async def live_call(
@@ -16,6 +16,11 @@ async def live_call(
     call_id: str,
     handler: LiveCallHandler = Depends(get_live_call_handler),
 ) -> None:
+    user = get_current_user_ws(websocket)
+    if user is None:
+        await websocket.close(code=AUTH_FAILED_CLOSE_CODE)
+        return
+
     await websocket.accept()
 
     rejection = await run_in_threadpool(handler.open, call_id)
