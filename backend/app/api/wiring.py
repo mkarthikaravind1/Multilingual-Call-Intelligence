@@ -23,6 +23,16 @@ from app.composition.learning import build_learning_management_service
 from app.services.learning_management_service import LearningManagementService
 from app.composition.learning import build_learning_call_recorder
 from app.domain.learning_evidence_repository import InMemoryLearningEvidenceRepository
+from app.composition.learning import (
+    build_improvement_effectiveness_service,
+    build_runtime_improvement_service,
+)
+from app.domain.active_improvement_repository import (
+    InMemoryActiveImprovementRepository,
+)
+from app.domain.improvement_usage_repository import (
+    InMemoryImprovementUsageRepository,
+)
 
 def build_api_services(
     complaint_provider: ComplaintDetectionProvider,
@@ -37,6 +47,24 @@ def build_api_services(
     )
 
     evidence_repository = InMemoryLearningEvidenceRepository()
+    active_improvement_repository = (
+        InMemoryActiveImprovementRepository()
+    )
+
+    usage_repository = InMemoryImprovementUsageRepository()
+
+    runtime_improvement_service = (
+        build_runtime_improvement_service(
+            active_improvement_repository
+        )
+    )
+
+    improvement_effectiveness_service = (
+        build_improvement_effectiveness_service(
+            usage_repository=usage_repository,
+            evidence_repository=evidence_repository,
+        )
+    )
 
     workflow_service = CallWorkflowService(
         call_service,
@@ -45,7 +73,11 @@ def build_api_services(
             ComplaintAnalysisService(complaint_provider),
             SentimentAnalysisService(sentiment_provider),
         ),
-        NextQuestionService(question_provider),
+        NextQuestionService(
+            provider=question_provider,
+            runtime_improvement_service=runtime_improvement_service,
+            improvement_usage_recorder=improvement_effectiveness_service,
+        ),
         build_estimation_service(),
         build_post_call_summary_service(),
         learning_recorder=build_learning_call_recorder(evidence_repository),

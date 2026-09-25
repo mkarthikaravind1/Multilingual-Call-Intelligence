@@ -49,6 +49,21 @@ from app.services.call_workflow_service import (
     AnalysisLearningRecorder,
     CallWorkflowService,
 )
+from app.domain.active_improvement_repository import (
+    ActiveImprovementRepository,
+)
+from app.domain.improvement_usage_repository import (
+    ImprovementUsageRepository,
+)
+from app.domain.learning_evidence_repository import (
+    LearningEvidenceRepository,
+)
+from app.services.improvement_effectiveness_service import (
+    ImprovementEffectivenessService,
+)
+from app.services.runtime_improvement_service import (
+    RuntimeImprovementService,
+)
 
 def build_post_call_summary_service(
     settings: Settings | None = None,
@@ -80,9 +95,14 @@ def build_call_service(repository: ConversationRepository | None = None) -> Call
 
 def build_next_question_service(
     provider: QuestionSuggestionProvider,
+    runtime_improvement_service: RuntimeImprovementService | None = None,
+    improvement_usage_recorder: ImprovementEffectivenessService | None = None,
 ) -> NextQuestionService:
-    return NextQuestionService(provider)
-
+    return NextQuestionService(
+        provider=provider,
+        runtime_improvement_service=runtime_improvement_service,
+        improvement_usage_recorder=improvement_usage_recorder,
+    )
 
 def build_conversation_analysis_service(
     complaint_provider: ComplaintDetectionProvider,
@@ -101,7 +121,9 @@ def build_call_workflow_service(
     coverage_repository: ConversationCoverageRepository | None = None,
     estimation_service: EstimationService | None = None,
     post_call_summary_service: PostCallSummaryService | None = None,
-    learning_recorder: AnalysisLearningRecorder | None = None
+    learning_recorder: AnalysisLearningRecorder | None = None,
+    runtime_improvement_service: RuntimeImprovementService | None = None,
+    improvement_usage_recorder: ImprovementEffectivenessService | None = None,
 ) -> CallWorkflowService:
     if llm_client is None:
         llm_client = create_llm_client(settings)
@@ -114,7 +136,9 @@ def build_call_workflow_service(
             sentiment_provider=create_sentiment_provider(llm_client),
         ),
         next_question_service=build_next_question_service(
-            create_question_provider(llm_client)
+            provider=create_question_provider(llm_client),
+            runtime_improvement_service=runtime_improvement_service,
+            improvement_usage_recorder=improvement_usage_recorder,
         ),
         estimation_service=estimation_service or build_estimation_service(),
         post_call_summary_service=post_call_summary_service

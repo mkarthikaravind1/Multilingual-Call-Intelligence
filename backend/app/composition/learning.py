@@ -22,7 +22,20 @@ from app.services.learning_evidence_generation_service import (
     LearningEvidenceGenerationService,
 )
 from app.services.learning_observation_service import LearningObservationService
-
+from app.domain.active_improvement_repository import (
+    ActiveImprovementRepository,
+    InMemoryActiveImprovementRepository,
+)
+from app.domain.improvement_usage_repository import (
+    ImprovementUsageRepository,
+    InMemoryImprovementUsageRepository,
+)
+from app.services.improvement_effectiveness_service import (
+    ImprovementEffectivenessService,
+)
+from app.services.runtime_improvement_service import (
+    RuntimeImprovementService,
+)
 
 def build_learning_management_service(
     evidence_repository: LearningEvidenceRepository | None = None,
@@ -51,4 +64,24 @@ def build_learning_call_recorder(
                 evidence_repository or InMemoryLearningEvidenceRepository()
             )
         ),
+    )
+
+def build_runtime_improvement_service(
+    repository: ActiveImprovementRepository | None = None,
+) -> RuntimeImprovementService:
+    return RuntimeImprovementService(
+        repository
+        or InMemoryActiveImprovementRepository()
+    )
+
+
+def build_improvement_effectiveness_service(
+    usage_repository: ImprovementUsageRepository | None = None,
+    evidence_repository: LearningEvidenceRepository | None = None,
+) -> ImprovementEffectivenessService:
+    return ImprovementEffectivenessService(
+        usage_repository
+        or InMemoryImprovementUsageRepository(),
+        evidence_repository
+        or InMemoryLearningEvidenceRepository(),
     )
