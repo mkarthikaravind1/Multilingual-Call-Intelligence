@@ -12,7 +12,7 @@ from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
 from app.domain.utterance import SpeakerRole, Utterance
 
 VALID = {
-    "question": "When did the higher billing amount first appear?",
+    "question": "When did the higher Cost amount first appear?",
     "target_category": "Cost",
     "priority": 1,
     "reason": "The customer mentioned the bill but not when it changed.",
