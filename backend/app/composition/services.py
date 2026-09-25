@@ -24,7 +24,6 @@ from app.services.audio_processing_pipeline import (
     UtteranceProcessor,
 )
 from app.services.call_service import CallService
-from app.services.call_workflow_service import CallWorkflowService
 from app.services.complaint_analysis_service import ComplaintAnalysisService
 from app.services.conversation_analysis_service import ConversationAnalysisService
 from app.services.conversation_coverage_repository import (
@@ -46,6 +45,10 @@ from app.estimation.rule_based_provider import RuleBasedEstimationProvider
 from app.services.estimation_service import EstimationService
 from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
 from app.services.post_call_summary_service import PostCallSummaryService
+from app.services.call_workflow_service import (
+    AnalysisLearningRecorder,
+    CallWorkflowService,
+)
 
 def build_post_call_summary_service(
     settings: Settings | None = None,
@@ -98,6 +101,7 @@ def build_call_workflow_service(
     coverage_repository: ConversationCoverageRepository | None = None,
     estimation_service: EstimationService | None = None,
     post_call_summary_service: PostCallSummaryService | None = None,
+    learning_recorder: AnalysisLearningRecorder | None = None
 ) -> CallWorkflowService:
     if llm_client is None:
         llm_client = create_llm_client(settings)
@@ -115,6 +119,7 @@ def build_call_workflow_service(
         estimation_service=estimation_service or build_estimation_service(),
         post_call_summary_service=post_call_summary_service
         or build_post_call_summary_service(settings=settings, llm_client=llm_client),
+        learning_recorder=learning_recorder,
     )
 
 def build_audio_processing_pipeline(

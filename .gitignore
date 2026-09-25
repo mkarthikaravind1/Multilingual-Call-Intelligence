@@ -22,6 +22,26 @@ sample_chunk_00.wav
 sample_chunk_01.wav
 sample_chunk_02.wav
 sample_two_speakers.wav
+Old.wav
 
 # ZIP archives
 *.zip
+
+# Python virtual environments
+.venv/
+venv/
+env/
+backend/pyannote-env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+.env.*
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

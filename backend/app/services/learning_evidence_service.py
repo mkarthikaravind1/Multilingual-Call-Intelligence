@@ -50,3 +50,6 @@ class LearningEvidenceService:
             )
 
         return evidence
+
+    def list_all(self) -> tuple[LearningEvidence, ...]:
+        return self._repository.list_all()

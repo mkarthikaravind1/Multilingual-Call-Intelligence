@@ -12,6 +12,7 @@ class LearningObservation:
     predicted_value: str
     confidence: float
     created_at: float
+    entity_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip():
@@ -40,3 +41,6 @@ class LearningObservation:
 
         if self.created_at < 0:
             raise ValueError("created_at must not be negative.")
+
+        if self.entity_id is not None and not self.entity_id.strip():
+            raise ValueError("entity_id must not be blank when provided.")

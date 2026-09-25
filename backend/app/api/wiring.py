@@ -19,18 +19,24 @@ from app.services.in_memory_conversation_repository import (
 )
 from app.services.next_question_service import NextQuestionService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
-
+from app.composition.learning import build_learning_management_service
+from app.services.learning_management_service import LearningManagementService
+from app.composition.learning import build_learning_call_recorder
+from app.domain.learning_evidence_repository import InMemoryLearningEvidenceRepository
 
 def build_api_services(
     complaint_provider: ComplaintDetectionProvider,
     sentiment_provider: SentimentAnalysisProvider,
     question_provider: QuestionSuggestionProvider,
+    learning_service: LearningManagementService | None = None,
 ) -> ApiServices:
     call_service = CallService(
         ConversationService(
             InMemoryConversationRepository()
         )
     )
+
+    evidence_repository = InMemoryLearningEvidenceRepository()
 
     workflow_service = CallWorkflowService(
         call_service,
@@ -42,9 +48,12 @@ def build_api_services(
         NextQuestionService(question_provider),
         build_estimation_service(),
         build_post_call_summary_service(),
+        learning_recorder=build_learning_call_recorder(evidence_repository),
     )
 
     return ApiServices(
         call_service=call_service,
         workflow_service=workflow_service,
+        learning=learning_service
+        or build_learning_management_service(evidence_repository),
     )

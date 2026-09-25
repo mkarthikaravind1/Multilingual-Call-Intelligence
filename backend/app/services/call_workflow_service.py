@@ -16,7 +16,10 @@ from app.services.estimation_service import EstimationService
 from app.services.next_question_service import NextQuestionService
 from app.services.post_call_summary_service import PostCallSummaryService
 from app.ai.summary.provider import PostCallSummaryRequest
+import logging
+from typing import Protocol
 
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CallAnalysisResult:
@@ -26,6 +29,12 @@ class CallAnalysisResult:
     service_estimate: ServiceEstimate | None
     post_call_summary: PostCallSummary | None = None
 
+class LearningRecordingError(Exception):
+    pass
+
+
+class AnalysisLearningRecorder(Protocol):
+    def record(self, call_id: str, result: CallAnalysisResult) -> None: ...
 
 class CallWorkflowService:
     def __init__(
@@ -36,6 +45,7 @@ class CallWorkflowService:
         next_question_service: NextQuestionService,
         estimation_service: EstimationService,
         post_call_summary_service: PostCallSummaryService,
+        learning_recorder: AnalysisLearningRecorder | None = None,
     ) -> None:
         self._call_service = call_service
         self._coverage_repository = coverage_repository
@@ -43,6 +53,7 @@ class CallWorkflowService:
         self._next_question_service = next_question_service
         self._estimation_service = estimation_service
         self._post_call_summary_service = post_call_summary_service
+        self._learning_recorder = learning_recorder
 
     def process_utterance(
         self,
@@ -50,7 +61,13 @@ class CallWorkflowService:
         utterance: Utterance,
     ) -> CallAnalysisResult:
         self._call_service.add_utterance(call_id, utterance)
-        return self.analyze_call(call_id)
+        result = self.analyze_call(call_id)
+        if self._learning_recorder is not None:
+            try:
+                self._learning_recorder.record(call_id, result)
+            except LearningRecordingError:
+                logger.exception("Learning recording failed for call %r", call_id)
+        return result
 
     def analyze_call(self, call_id: str) -> CallAnalysisResult:
         conversation = self._call_service.get_call(call_id)

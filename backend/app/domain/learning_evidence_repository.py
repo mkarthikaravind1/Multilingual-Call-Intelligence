@@ -12,6 +12,10 @@ class LearningEvidenceRepository(ABC):
     def get(self, evidence_id: str) -> LearningEvidence | None:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_all(self) -> tuple[LearningEvidence, ...]:
+        raise NotImplementedError
+
 
 class InMemoryLearningEvidenceRepository(LearningEvidenceRepository):
     def __init__(self) -> None:
@@ -22,3 +26,6 @@ class InMemoryLearningEvidenceRepository(LearningEvidenceRepository):
 
     def get(self, evidence_id: str) -> LearningEvidence | None:
         return self._evidence.get(evidence_id)
+
+    def list_all(self) -> tuple[LearningEvidence, ...]:
+        return tuple(self._evidence.values())

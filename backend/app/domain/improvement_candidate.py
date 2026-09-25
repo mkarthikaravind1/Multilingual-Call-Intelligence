@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-
+from app.domain.learning_evidence import LearningComponent
 
 class ImprovementType(str, Enum):
     QUESTION_STRATEGY = "question_strategy"
@@ -27,6 +27,29 @@ def _require_timestamp(value: float, field_name: str) -> None:
     if value < 0:
         raise ValueError(f"{field_name} must not be negative.")
 
+def _require_text(value: str, field_name: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must not be empty.")
+
+
+@dataclass(frozen=True)
+class ImprovementSpecification:
+    """Structured description of a proposed improvement. Data only — it
+    describes WHAT might change, never HOW it is applied at runtime."""
+
+    component: LearningComponent
+    current_behavior: str
+    proposed_behavior: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.component, LearningComponent):
+            raise TypeError(
+                f"component must be a LearningComponent, got {type(self.component).__name__}."
+            )
+        _require_text(self.current_behavior, "current_behavior")
+        _require_text(self.proposed_behavior, "proposed_behavior")
+        _require_text(self.reason, "reason")
 
 @dataclass(frozen=True)
 class ImprovementCandidate:
@@ -44,6 +67,7 @@ class ImprovementCandidate:
     status: ImprovementReviewStatus
     created_at: float
     reviewed_at: float | None = None
+    specification: ImprovementSpecification | None = None
 
     def __post_init__(self) -> None:
         _require_id(self.candidate_id, "candidate_id")
@@ -93,3 +117,11 @@ class ImprovementCandidate:
                 raise ValueError("PENDING_REVIEW candidates must not have reviewed_at set.")
         elif self.reviewed_at is None:
             raise ValueError(f"{self.status.value} candidates must have reviewed_at set.")
+
+        if self.specification is not None and not isinstance(
+            self.specification, ImprovementSpecification
+        ):
+            raise TypeError(
+                f"specification must be an ImprovementSpecification or None, "
+                f"got {type(self.specification).__name__}."
+            )

@@ -3,6 +3,7 @@ from app.api.dependencies import ApiServices
 from app.api.errors import register_exception_handlers
 from app.api.v1.calls import router as calls_router
 from app.api.v1.live import router as live_router
+from app.api.v1.learning import router as learning_router
 API_V1_PREFIX = "/api/v1"
 
 def create_app(services: ApiServices) -> FastAPI:
@@ -14,4 +15,5 @@ def create_app(services: ApiServices) -> FastAPI:
     register_exception_handlers(app)
     app.include_router(calls_router, prefix=API_V1_PREFIX)
     app.include_router(live_router, prefix=API_V1_PREFIX)
+    app.include_router(learning_router, prefix=API_V1_PREFIX)
     return app

@@ -108,3 +108,39 @@ def test_learning_observation_is_immutable():
 
     with pytest.raises(AttributeError):
         observation.predicted_value = "Changed" # type: ignore
+
+def test_entity_id_defaults_to_none():
+    assert create_observation().entity_id is None
+
+
+def test_entity_id_is_stored():
+    observation = LearningObservation(
+        observation_id="OBS_002",
+        call_id="CALL_001",
+        component=LearningComponent.NEXT_QUESTION,
+        description="AI suggested a question.",
+        predicted_value="Was the delivery date communicated?",
+        confidence=0.7,
+        created_at=100.0,
+        entity_id="suggestion-1",
+    )
+
+    assert observation.entity_id == "suggestion-1"
+
+
+def test_blank_entity_id_is_rejected():
+    with pytest.raises(ValueError, match="entity_id"):
+        LearningObservation(
+            observation_id="OBS_002",
+            call_id="CALL_001",
+            component=LearningComponent.GENERAL,
+            description="Test observation.",
+            predicted_value="Test",
+            confidence=0.8,
+            created_at=100.0,
+            entity_id="  ",
+        )
+
+
+def test_post_call_summary_component_is_supported():
+    assert LearningComponent.POST_CALL_SUMMARY.value == "post_call_summary"

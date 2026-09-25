@@ -6,11 +6,12 @@ from uuid import uuid4
 from app.domain.improvement_candidate import (
     ImprovementCandidate,
     ImprovementReviewStatus,
+    ImprovementSpecification,
     ImprovementType,
 )
 from app.domain.learning_evidence import LearningComponent
 from app.domain.learning_pattern import LearningPattern
-
+from app.domain.improvement_candidate_repository import ImprovementCandidateRepository
 
 class ImprovementCandidateService:
     """Creates reviewable improvement candidates from LearningPatterns.
@@ -18,6 +19,9 @@ class ImprovementCandidateService:
     This service does not modify AI behaviour, access an LLM, or persist data.
     It only converts a discovered pattern into a human-reviewable candidate.
     """
+
+    def __init__(self, repository: ImprovementCandidateRepository | None = None) -> None:
+        self._repository = repository
 
     _COMPONENT_TO_IMPROVEMENT_TYPE = {
         LearningComponent.NEXT_QUESTION: ImprovementType.QUESTION_STRATEGY,
@@ -43,8 +47,8 @@ class ImprovementCandidateService:
         improvement_type = self._get_improvement_type(pattern.component)
 
         timestamp = time.time() if created_at is None else created_at
-
-        return ImprovementCandidate(
+        specification = self._build_specification(pattern)
+        candidate = ImprovementCandidate(
             candidate_id=f"candidate-{uuid4()}",
             improvement_type=improvement_type,
             title=self._build_title(pattern),
@@ -54,7 +58,13 @@ class ImprovementCandidateService:
             confidence=confidence,
             status=ImprovementReviewStatus.PENDING_REVIEW,
             created_at=timestamp,
+            specification=specification,
+            
         )
+        if self._repository is not None:
+            self._repository.save(candidate)
+        
+        return candidate
 
     @classmethod
     def _get_improvement_type(
@@ -69,6 +79,21 @@ class ImprovementCandidateService:
             raise ValueError(
                 f"No ImprovementType mapping exists for component: {component}"
             ) from exc
+
+    @staticmethod
+    def _build_specification(pattern: LearningPattern) -> ImprovementSpecification:
+        """Derives the structured representation from the pattern's own
+        description/suggested_improvement — no new data is invented here."""
+
+        return ImprovementSpecification(
+            component=pattern.component,
+            current_behavior=pattern.description,
+            proposed_behavior=pattern.suggested_improvement,
+            reason=(
+                f"Pattern recurred {pattern.occurrence_count} time(s), "
+                "indicating this is not a one-off occurrence."
+            ),
+        )
 
     @staticmethod
     def _build_title(pattern: LearningPattern) -> str:

@@ -14,6 +14,7 @@ class LearningComponent(str, Enum):
     SENTIMENT_ANALYSIS = "sentiment_analysis"
     NEXT_QUESTION = "next_question"
     ESTIMATION = "estimation"
+    POST_CALL_SUMMARY = "post_call_summary"
     GENERAL = "general"
 
 
