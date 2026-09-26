@@ -1,0 +1,45 @@
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/barlow-condensed/500.css';
+@import '@fontsource/barlow-condensed/600.css';
+@import '@fontsource/barlow-condensed/700.css';
+
+:root {
+  --font-sans: 'Inter', 'Segoe UI', sans-serif;
+  --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+
+  --color-bg: #eff3f7;
+  --color-bg-elevated: #ffffff;
+  --color-surface: #f8fafc;
+  --color-surface-strong: #eaf0f6;
+  --color-border: #d5dee9;
+  --color-primary: #0f3b5c;
+  --color-primary-strong: #0a2d45;
+  --color-accent: #2a7ae2;
+  --color-accent-soft: #eaf3ff;
+  --color-text: #102436;
+  --color-text-muted: #5b7085;
+  --color-success: #1a8f5a;
+  --color-warning: #d97706;
+  --color-danger: #c93b3b;
+
+  --shadow-soft: 0 12px 30px rgba(15, 59, 92, 0.08);
+  --shadow-card: 0 10px 24px rgba(15, 59, 92, 0.05);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --sidebar-width: 280px;
+}
