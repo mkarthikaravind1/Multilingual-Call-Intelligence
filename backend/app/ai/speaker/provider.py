@@ -31,6 +31,10 @@ class SpeakerSegment:
     confidence: float | None = None
 
 
+class DiarizationError(RuntimeError):
+    pass
+
+
 class DiarizationProvider(ABC):
     @abstractmethod
     def diarize(self, audio: bytes) -> list[DiarizedSegment]:

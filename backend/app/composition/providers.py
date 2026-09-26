@@ -1,4 +1,6 @@
+import logging
 from collections.abc import Callable
+
 from app.ai.llm.client import LLMClient
 from app.ai.llm.groq_client import GroqLLMClient
 from app.ai.question.llm_provider import LLMQuestionProvider
@@ -14,10 +16,6 @@ from app.ai.complaint.llm_provider import LLMComplaintProvider
 from app.ai.complaint.provider import ComplaintDetectionProvider
 from app.ai.sentiment.llm_provider import LLMSentimentProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider
-from app.ai.speaker.order_based_role_provider import (
-    DEFAULT_ROLE_ORDER,
-    OrderBasedRoleIdentificationProvider,
-)
 from app.ai.speaker.provider import (
     DiarizationProvider,
     DiarizedSegment,
@@ -46,6 +44,9 @@ from app.services.redis_telephony_call_mapping_repository import (
 )
 from app.telephony.plivo.provider import PlivoTelephonyProvider
 from app.telephony.provider import TelephonyProvider
+
+logger = logging.getLogger(__name__)
+
 
 class UnsupportedProviderError(ValueError):
     pass
@@ -203,6 +204,17 @@ def create_diarization_provider(
     segments: Sequence[DiarizedSegment], settings: Settings | None = None
 ) -> DiarizationProvider:
     settings = settings or get_settings()
+    if not settings.diarization_enabled:
+        logger.warning(
+            "Diarization is disabled in configuration; the pipeline will continue without real diarization output."
+        )
+        return ScriptedDiarizationProvider(())
+
+    if settings.diarization_provider.strip().lower() == "not_configured":
+        raise UnsupportedProviderError(
+            "Diarization provider is not configured; set diarization_provider to a valid provider."
+        )
+
     name = settings.diarization_provider.strip().lower()
     builder = _DIARIZATION_PROVIDER_BUILDERS.get(name)
     if builder is None:
@@ -210,14 +222,7 @@ def create_diarization_provider(
             f"Unsupported diarization provider: {settings.diarization_provider!r}. "
             f"Available: {sorted(_DIARIZATION_PROVIDER_BUILDERS)}."
         )
-    return builder(segments,settings)
-
-
-def _build_order_based_roles(
-    role_by_speaker: Mapping[str, SpeakerRole] | None,
-    role_order: Sequence[SpeakerRole],
-) -> RoleIdentificationProvider:
-    return OrderBasedRoleIdentificationProvider(role_order)
+    return builder(segments, settings)
 
 
 def _build_static_roles(
@@ -236,7 +241,6 @@ _ROLE_PROVIDER_BUILDERS: dict[
         RoleIdentificationProvider,
     ],
 ] = {
-    "order_based": _build_order_based_roles,
     "static": _build_static_roles,
 }
 
@@ -245,17 +249,21 @@ def create_role_provider(
     settings: Settings | None = None,
     *,
     role_by_speaker: Mapping[str, SpeakerRole] | None = None,
-    role_order: Sequence[SpeakerRole] = DEFAULT_ROLE_ORDER,
+    role_order: Sequence[SpeakerRole] | None = None,
 ) -> RoleIdentificationProvider:
     settings = settings or get_settings()
     name = settings.role_provider.strip().lower()
+    if name == "order_based":
+        raise UnsupportedProviderError(
+            "role_provider='order_based' is no longer supported; use a static role mapping or the session-scoped role registry."
+        )
     builder = _ROLE_PROVIDER_BUILDERS.get(name)
     if builder is None:
         raise UnsupportedProviderError(
             f"Unsupported role provider: {settings.role_provider!r}. "
             f"Available: {sorted(_ROLE_PROVIDER_BUILDERS)}."
         )
-    return builder(role_by_speaker, role_order)
+    return builder(role_by_speaker, role_order or ())
 def _build_in_memory_coverage_repository(
     settings: Settings,
 ) -> ConversationCoverageRepository:

@@ -7,6 +7,7 @@ from app.ai.asr.provider import ASRProvider
 from app.ai.language.provider import LanguageIdentificationProvider
 from app.ai.llm.client import LLMClient
 from app.ai.speaker.provider import DiarizedSegment
+from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
 from app.composition.providers import UnsupportedProviderError
 from app.composition.services import (
     build_audio_processing_pipeline,
@@ -15,7 +16,7 @@ from app.composition.services import (
 )
 from app.core.config import Settings
 from app.core.constants import COMPLAINT_CATEGORIES
-from app.domain.utterance import Utterance
+from app.domain.utterance import SpeakerRole, Utterance
 from app.services.audio_ingestion_service import (
     AudioIngestionError,
     AudioIngestionService,
@@ -34,7 +35,7 @@ class RunnerOutput:
 
 
 def build_dev_settings() -> Settings:
-    return Settings(diarization_provider="scripted", role_provider="order_based")
+    return Settings(diarization_provider="scripted", role_provider="static")
 
 
 def run_audio_file(
@@ -59,6 +60,9 @@ def run_audio_file(
         settings=settings,
         asr_provider=asr_provider,
         language_provider=language_provider,
+        role_provider=StaticRoleIdentificationProvider(
+            {DEV_SPEAKER_ID: SpeakerRole.ICR}
+        ),
     )
 
     call_service.start_call(call_id)

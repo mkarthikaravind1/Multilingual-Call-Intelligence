@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 
-from app.ai.speaker.order_based_role_provider import DEFAULT_ROLE_ORDER
 from app.ai.speaker.provider import SpeakerRole
 from app.ai.speaker.session_role_provider import SessionRoleIdentificationProvider
 from app.domain.speaker_session import SpeakerSession
@@ -13,6 +12,6 @@ def build_speaker_session_registry() -> SpeakerSessionRegistry:
 
 def build_session_role_provider(
     session: SpeakerSession,
-    role_order: Sequence[SpeakerRole] = DEFAULT_ROLE_ORDER,
+    role_order: Sequence[SpeakerRole] | None = None,
 ) -> SessionRoleIdentificationProvider:
     return SessionRoleIdentificationProvider(session, role_order)

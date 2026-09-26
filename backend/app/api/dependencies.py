@@ -10,6 +10,7 @@ from app.services.auth_service import AuthService
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.learning_management_service import LearningManagementService
+from app.services.live_chunk_processing_service import LiveChunkProcessingService
 from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import TelephonyProvider
 from starlette.requests import HTTPConnection
@@ -25,6 +26,7 @@ class ApiServices:
 
     telephony_provider: TelephonyProvider | None = None
     telephony_call_service: TelephonyCallService | None = None
+    live_chunk_processing_service: LiveChunkProcessingService | None = None
     asr_provider: ASRProvider | None = None
     telephony_stream_flush_seconds: float = 4.0
 
@@ -62,8 +64,16 @@ def get_telephony_provider(connection: HTTPConnection) -> TelephonyProvider | No
 def get_asr_provider(connection: HTTPConnection) -> ASRProvider | None:
     return connection.app.state.services.asr_provider
 
+
+def get_live_chunk_processing_service(
+    connection: HTTPConnection,
+) -> LiveChunkProcessingService | None:
+    return connection.app.state.services.live_chunk_processing_service
+
+
 def get_call_service(connection: HTTPConnection) -> CallService:
     return connection.app.state.services.call_service
+
 
 def get_workflow_service(connection: HTTPConnection) -> CallWorkflowService:
     return connection.app.state.services.workflow_service

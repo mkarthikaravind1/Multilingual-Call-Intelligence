@@ -8,6 +8,11 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.ai.asr.provider import ASRProvider, ASRResult
 from app.ai.complaint.provider import ComplaintDetectionProvider, ComplaintDetectionResult
+from app.ai.language.provider import (
+    LanguageIdentificationProvider,
+    LanguageIdentificationResult,
+    LanguageSpan,
+)
 from app.ai.question.provider import QuestionGenerationContext, QuestionSuggestionProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider, SentimentLabel, SentimentResult
 from app.api.app_factory import create_app
@@ -467,6 +472,16 @@ class _FakeASRProvider(ASRProvider):
         )
 
 
+class _FakeLanguageProvider(LanguageIdentificationProvider):
+    def __init__(self, language: str = "en") -> None:
+        self.calls: list[str] = []
+        self._language = language
+
+    def identify(self, text: str) -> LanguageIdentificationResult:
+        self.calls.append(text)
+        return LanguageIdentificationResult([LanguageSpan(self._language, 0.99)])
+
+
 def _build_client(monkeypatch=None, asr_provider=None, **settings_overrides) -> tuple[TestClient, ApiServices]:
     """Build a full app via the real composition root (build_api_services),
     optionally overriding the ASR provider so streamed audio can be
@@ -478,7 +493,9 @@ def _build_client(monkeypatch=None, asr_provider=None, **settings_overrides) -> 
         **settings_overrides,
     )
     if monkeypatch is not None and asr_provider is not None:
+        fake_language = _FakeLanguageProvider()
         monkeypatch.setattr("app.api.wiring.create_asr_provider", lambda s: asr_provider)
+        monkeypatch.setattr("app.api.wiring.create_language_provider", lambda s: fake_language)
 
     services = build_api_services(
         _FakeComplaintProvider(), _FakeSentimentProvider(), _FakeQuestionProvider(), settings

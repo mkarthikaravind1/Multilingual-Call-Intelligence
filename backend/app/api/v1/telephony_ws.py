@@ -1,16 +1,14 @@
 import json
 import logging
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, WebSocket
 from fastapi.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketDisconnect
 
-from app.ai.asr.provider import ASRProvider
 from app.api.dependencies import (
-    get_asr_provider,
     get_call_service,
     get_live_call_handler,
+    get_live_chunk_processing_service,
     get_telephony_provider,
     get_telephony_stream_flush_seconds,
     get_workflow_service,
@@ -18,10 +16,13 @@ from app.api.dependencies import (
 from app.api.v1.live import CALL_NOT_FOUND_CLOSE_CODE
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.conversation import ConversationAlreadyCompletedError, ConversationStatus
-from app.domain.utterance import SpeakerRole, Utterance
+from app.services.audio_chunking_service import AudioChunk
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.conversation_service import ConversationNotFoundError
+from app.services.live_chunk_processing_service import (
+    LiveChunkProcessingService,
+)
 from app.services.telephony_audio_buffer import (
     BufferedAudioChunk,
     TelephonyAudioBuffer,
@@ -48,7 +49,9 @@ async def telephony_stream(
     call_id: str,
     handler: LiveCallHandler = Depends(get_live_call_handler),
     provider: TelephonyProvider | None = Depends(get_telephony_provider),
-    asr_provider: ASRProvider | None = Depends(get_asr_provider),
+    live_chunk_processing_service: LiveChunkProcessingService | None = Depends(
+        get_live_chunk_processing_service
+    ),
     call_service: CallService = Depends(get_call_service),
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
     flush_after_seconds: float = Depends(get_telephony_stream_flush_seconds),
@@ -69,7 +72,16 @@ async def telephony_stream(
         await websocket.close(code=STREAM_INTERNAL_ERROR_CLOSE_CODE)
         return
 
+    if live_chunk_processing_service is None:
+        logger.error(
+            "Telephony stream for call %r cannot be processed: live audio pipeline is unavailable.",
+            call_id,
+        )
+        await websocket.close(code=STREAM_INTERNAL_ERROR_CLOSE_CODE)
+        return
+
     buffer: TelephonyAudioBuffer | None = None
+    next_chunk_sequence = 0
 
     try:
         while True:
@@ -99,14 +111,15 @@ async def telephony_stream(
                     # A second "start" on the same connection (e.g. a
                     # provider-side stream restart) without a "stop" first
                     # must not silently discard whatever was already buffered.
-                    await _flush_and_process(
+                    next_chunk_sequence = await _flush_and_process(
                         buffer,
                         force=True,
                         min_duration=_MIN_FLUSH_AUDIO_SECONDS,
                         call_id=call_id,
-                        asr_provider=asr_provider,
+                        chunk_sequence=next_chunk_sequence,
                         call_service=call_service,
-                        workflow_service=workflow_service,
+                        live_chunk_processing_service=live_chunk_processing_service,
+                        is_final=False,
                     )
                 buffer = TelephonyAudioBuffer(
                     sample_rate=stream_event.sample_rate or 8000,
@@ -117,26 +130,28 @@ async def telephony_stream(
                 if buffer is not None:
                     accepted = buffer.accept(stream_event.sequence, stream_event.audio or b"")
                     if accepted:
-                        await _flush_and_process(
+                        next_chunk_sequence = await _flush_and_process(
                             buffer,
                             force=False,
                             min_duration=0.0,
                             call_id=call_id,
-                            asr_provider=asr_provider,
+                            chunk_sequence=next_chunk_sequence,
                             call_service=call_service,
-                            workflow_service=workflow_service,
+                            live_chunk_processing_service=live_chunk_processing_service,
+                            is_final=False,
                         )
 
             elif stream_event.event_type == "stop":
                 if buffer is not None:
-                    await _flush_and_process(
+                    next_chunk_sequence = await _flush_and_process(
                         buffer,
                         force=True,
                         min_duration=_MIN_FLUSH_AUDIO_SECONDS,
                         call_id=call_id,
-                        asr_provider=asr_provider,
+                        chunk_sequence=next_chunk_sequence,
                         call_service=call_service,
-                        workflow_service=workflow_service,
+                        live_chunk_processing_service=live_chunk_processing_service,
+                        is_final=True,
                     )
                     buffer = None
 
@@ -146,14 +161,15 @@ async def telephony_stream(
             # arrive would otherwise strand any further buffered audio.
             if await _call_is_completed(call_id, call_service):
                 if buffer is not None:
-                    await _flush_and_process(
+                    next_chunk_sequence = await _flush_and_process(
                         buffer,
                         force=True,
                         min_duration=_MIN_FLUSH_AUDIO_SECONDS,
                         call_id=call_id,
-                        asr_provider=asr_provider,
+                        chunk_sequence=next_chunk_sequence,
                         call_service=call_service,
-                        workflow_service=workflow_service,
+                        live_chunk_processing_service=live_chunk_processing_service,
+                        is_final=True,
                     )
                     buffer = None
                 await websocket.close(code=STREAM_CALL_COMPLETED_CLOSE_CODE)
@@ -182,36 +198,46 @@ async def _flush_and_process(
     force: bool,
     min_duration: float,
     call_id: str,
-    asr_provider: ASRProvider | None,
+    chunk_sequence: int,
     call_service: CallService,
-    workflow_service: CallWorkflowService,
-) -> None:
+    live_chunk_processing_service: LiveChunkProcessingService | None,
+    is_final: bool,
+) -> int:
     try:
         chunk = buffer.flush(force=force)
     except TelephonyAudioBufferError as exc:
         # A single malformed buffer flush must never take down the whole
         # stream — drop this chunk's audio and keep the phone call alive.
         logger.warning("Dropping unencodable audio buffer for call %r: %s", call_id, exc)
-        return
+        return chunk_sequence
 
     if chunk is None:
-        return
+        return chunk_sequence
     if min_duration and chunk.duration < min_duration:
-        return
+        return chunk_sequence
 
-    await _process_chunk(call_id, chunk, asr_provider, call_service, workflow_service)
+    await _process_chunk(
+        call_id,
+        chunk,
+        chunk_sequence,
+        call_service,
+        live_chunk_processing_service,
+        is_final,
+    )
+    return chunk_sequence + 1
 
 
 async def _process_chunk(
     call_id: str,
     chunk: BufferedAudioChunk,
-    asr_provider: ASRProvider | None,
+    chunk_sequence: int,
     call_service: CallService,
-    workflow_service: CallWorkflowService,
+    live_chunk_processing_service: LiveChunkProcessingService | None,
+    is_final: bool,
 ) -> None:
-    if asr_provider is None:
+    if live_chunk_processing_service is None:
         logger.error(
-            "Cannot transcribe telephony audio for call %r: no ASR provider is configured.",
+            "Cannot process telephony audio for call %r: live chunk processing is not configured.",
             call_id,
         )
         return
@@ -228,36 +254,24 @@ async def _process_chunk(
         return
 
     try:
-        asr_result = await run_in_threadpool(asr_provider.transcribe, chunk.audio)
-    except Exception as exc:
-        logger.warning("ASR transcription failed for call %r: %s", call_id, exc)
-        return
-
-    try:
-        utterance = Utterance(
-            utterance_id=str(uuid4()),
-            transcript=asr_result.transcript,
-            speaker_role=SpeakerRole.CUSTOMER,
-            languages=(asr_result.detected_language,),
-            start_time=chunk.start_time,
-            end_time=chunk.end_time,
-            confidence=asr_result.confidence,
+        await run_in_threadpool(
+            live_chunk_processing_service.process_chunk,
+            call_id,
+            AudioChunk(
+                sequence=chunk_sequence,
+                start_time=chunk.start_time,
+                end_time=chunk.end_time,
+                audio=chunk.audio,
+                is_final=is_final,
+            ),
         )
-    except ValueError as exc:
-        logger.warning("Skipping unusable utterance for call %r: %s", call_id, exc)
-        return
-
-    try:
-        await run_in_threadpool(workflow_service.process_utterance, call_id, utterance)
     except ConversationNotFoundError:
         return
     except ConversationAlreadyCompletedError:
-        # The call completed between our status check above and this point
-        # (e.g. the status webhook landed mid-transcription) — drop this
-        # one utterance rather than reopening a finished conversation.
         logger.info(
-            "Dropping utterance for call %r: call completed mid-transcription", call_id
+            "Dropping telephony chunk for call %r: call completed mid-processing",
+            call_id,
         )
         return
     except Exception:
-        logger.exception("Workflow processing failed for call %r", call_id)
+        logger.exception("Live pipeline processing failed for call %r", call_id)

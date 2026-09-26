@@ -4,6 +4,7 @@ from app.ai.complaint.provider import ComplaintDetectionProvider
 from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider
 from app.api.dependencies import ApiServices
+from app.composition.live_processing import build_live_chunk_processing_service
 from app.composition.services import (
     build_estimation_service,
     build_post_call_summary_service,
@@ -11,9 +12,11 @@ from app.composition.services import (
 from app.composition.providers import (
     create_asr_provider,
     create_call_mapping_repository,
+    create_language_provider,
     create_telephony_provider,
 )
 from app.core.config import Settings, get_settings
+from app.composition.speaker_sessions import build_speaker_session_registry
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.complaint_analysis_service import ComplaintAnalysisService
@@ -159,6 +162,27 @@ def build_api_services(
         logger.warning("ASR provider is not available: %s", exc)
         asr_provider = None
 
+    try:
+        language_provider = create_language_provider(settings)
+    except Exception as exc:
+        logger.warning("Language provider is not available: %s", exc)
+        language_provider = None
+
+    live_chunk_processing_service = None
+    if asr_provider is not None and language_provider is not None:
+        try:
+            live_chunk_processing_service = build_live_chunk_processing_service(
+                workflow_service=workflow_service,
+                diarization_segments=(),
+                settings=settings,
+                asr_provider=asr_provider,
+                language_provider=language_provider,
+                registry=build_speaker_session_registry(),
+            )
+        except Exception as exc:
+            logger.warning("Live chunk processing is not available: %s", exc)
+            live_chunk_processing_service = None
+
     return ApiServices(
         call_service=call_service,
         workflow_service=workflow_service,
@@ -171,6 +195,7 @@ def build_api_services(
         user_repository=user_repository,
         telephony_provider=telephony_provider,
         telephony_call_service=telephony_call_service,
+        live_chunk_processing_service=live_chunk_processing_service,
         asr_provider=asr_provider,
         telephony_stream_flush_seconds=settings.plivo_stream_flush_seconds,
     )

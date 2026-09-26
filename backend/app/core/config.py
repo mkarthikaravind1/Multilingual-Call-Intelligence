@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     sarvam_timeout_seconds: float = 30.0
     sarvam_input_audio_codec: str | None = None
     language_provider: str = "not_configured"
+    diarization_enabled: bool = True
     diarization_provider: str = "not_configured"
     role_provider: str = "not_configured"
     pyannote_model: str = "pyannote/speaker-diarization-community-1"

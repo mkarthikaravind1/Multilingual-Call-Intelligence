@@ -1,10 +1,17 @@
-from app.ai.asr.provider import ASRProvider, ASRResult
+import logging
+from collections.abc import Callable
+from dataclasses import replace
+from typing import Protocol
+from uuid import uuid4
+
+from app.ai.asr.provider import ASRProvider, ASRResult, TimedText
 from app.ai.language.provider import (
     LanguageIdentificationProvider,
     LanguageIdentificationResult,
     LanguageSpan,
 )
 from app.ai.speaker.provider import (
+    DiarizationError,
     DiarizationProvider,
     DiarizedSegment,
     RoleIdentificationProvider,
@@ -13,16 +20,14 @@ from app.ai.speaker.provider import (
 )
 from app.domain.utterance import SpeakerRole, Utterance
 from app.services.call_workflow_service import CallAnalysisResult
-from collections.abc import Callable
-from uuid import uuid4
-from typing import Protocol
-from dataclasses import replace
-from app.ai.asr.provider import ASRProvider, ASRResult, TimedText
 from app.services.speaker_alignment import align_timed_text_to_speakers
+
+logger = logging.getLogger(__name__)
 
 _AI_TO_DOMAIN_ROLE: dict[AISpeakerRole, SpeakerRole] = {
     AISpeakerRole.ICR: SpeakerRole.ICR,
     AISpeakerRole.CUSTOMER: SpeakerRole.CUSTOMER,
+    AISpeakerRole.UNKNOWN: SpeakerRole.UNKNOWN,
 }
 
 
@@ -73,16 +78,42 @@ class AudioProcessingPipeline:
         if not all(isinstance(item, TimedText) for item in asr_result.timed_text):
             raise AudioPipelineError("ASR provider returned invalid timed text.")
 
-        segments, roles = self._diarize(audio)
-        turns = align_timed_text_to_speakers(asr_result.timed_text, segments)
-        if not turns:
-            raise AudioPipelineError(
-                "No diarized segment overlaps the transcribed speech."
+        segments: list[DiarizedSegment] | None = None
+        roles: dict[str, AISpeakerRole] | None = None
+        try:
+            segments, roles = self._diarize(audio)
+            turns = align_timed_text_to_speakers(asr_result.timed_text, segments)
+        except (AudioPipelineError, DiarizationError):
+            logger.warning(
+                "Diarization or speaker alignment failed; falling back to an unknown-role single utterance."
             )
+            return [
+                self._build_single_utterance(
+                    audio,
+                    asr_result,
+                    start_offset,
+                    diarization_segments=segments,
+                    role_map=roles,
+                )
+            ]
 
-        turn_roles = [self._domain_role(turn.speaker_id, roles) for turn in turns]
+        if not turns:
+            logger.warning(
+                "No diarized segments overlap the transcribed speech; falling back to an unknown-role utterance."
+            )
+            return [
+                self._build_single_utterance(
+                    audio,
+                    asr_result,
+                    start_offset,
+                    diarization_segments=segments,
+                    role_map=roles,
+                )
+            ]
+
         utterances: list[Utterance] = []
-        for turn, role in zip(turns, turn_roles):
+        for turn in turns:
+            role = self._safe_domain_role(turn.speaker_id, roles)
             turn_result = replace(
                 asr_result,
                 transcript=turn.text,
@@ -103,10 +134,21 @@ class AudioProcessingPipeline:
             raise AudioPipelineError("start_offset must not be negative.")
 
     def _build_single_utterance(
-        self, audio: bytes, asr_result: ASRResult, start_offset: float
+        self,
+        audio: bytes,
+        asr_result: ASRResult,
+        start_offset: float,
+        *,
+        diarization_segments: list[DiarizedSegment] | None = None,
+        role_map: dict[str, AISpeakerRole] | None = None,
     ) -> Utterance:
         languages = self._identify_languages(asr_result)
-        role = self._resolve_role(audio, asr_result)
+        role = self._resolve_role(
+            audio,
+            asr_result,
+            diarization_segments=diarization_segments,
+            role_map=role_map,
+        )
         return self._create_utterance(asr_result, role, languages, start_offset)
 
     def _create_utterance(
@@ -155,9 +197,27 @@ class AudioProcessingPipeline:
 
         return tuple(codes) if codes else (asr_result.detected_language,)
 
-    def _resolve_role(self, audio: bytes, asr_result: ASRResult) -> SpeakerRole:
-        segments, roles = self._diarize(audio)
-        return self._domain_role(self._dominant_speaker(segments, asr_result), roles)
+    def _resolve_role(
+        self,
+        audio: bytes,
+        asr_result: ASRResult,
+        *,
+        diarization_segments: list[DiarizedSegment] | None = None,
+        role_map: dict[str, AISpeakerRole] | None = None,
+    ) -> SpeakerRole:
+        try:
+            if diarization_segments is None or role_map is None:
+                segments, roles = self._diarize(audio)
+            else:
+                segments, roles = diarization_segments, role_map
+            return self._safe_domain_role(
+                self._dominant_speaker(segments, asr_result), roles
+            )
+        except (AudioPipelineError, DiarizationError):
+            logger.warning(
+                "Unable to resolve a reliable speaker role for ASR result; using UNKNOWN."
+            )
+            return SpeakerRole.UNKNOWN
 
     def _diarize(
         self, audio: bytes
@@ -179,15 +239,17 @@ class AudioProcessingPipeline:
         return segments, {a.speaker_id: a.role for a in assignments}
 
     @staticmethod
-    def _domain_role(
+    def _safe_domain_role(
         speaker_id: str, roles: dict[str, AISpeakerRole]
     ) -> SpeakerRole:
         ai_role = roles.get(speaker_id)
         role = _AI_TO_DOMAIN_ROLE.get(ai_role) if ai_role is not None else None
         if role is None:
-            raise AudioPipelineError(
-                f"No usable role was assigned to speaker {speaker_id!r}."
+            logger.warning(
+                "Speaker %r has no usable role mapping; preserving UNKNOWN state.",
+                speaker_id,
             )
+            return SpeakerRole.UNKNOWN
         return role
 
     @staticmethod

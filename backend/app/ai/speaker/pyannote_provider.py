@@ -4,10 +4,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app.ai.speaker.provider import DiarizationProvider, DiarizedSegment
+from app.ai.speaker.provider import DiarizationProvider, DiarizationError, DiarizedSegment
 
 
-class PyannoteDiarizationError(RuntimeError):
+class PyannoteDiarizationError(DiarizationError):
     pass
 
 

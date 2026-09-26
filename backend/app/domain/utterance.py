@@ -5,6 +5,7 @@ from app.core.constants import SUPPORTED_LANGUAGES
 class SpeakerRole(str, Enum):
     ICR = "ICR"
     CUSTOMER = "CUSTOMER"
+    UNKNOWN = "UNKNOWN"
 
 
 @dataclass(frozen=True)
