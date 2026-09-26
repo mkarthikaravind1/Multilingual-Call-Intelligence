@@ -1,13 +1,21 @@
 from collections.abc import Mapping
+from typing import Any
 
 from app.core.config import Settings, get_settings
+from app.telephony.plivo.audio import (
+    PlivoAudioDecodingError,
+    decode_media_payload,
+    is_supported_encoding,
+)
 from app.telephony.plivo.signature import validate_signature as _validate_plivo_signature
 from app.telephony.provider import (
     CallProviderStatus,
     CallStatusEvent,
     InboundCallEvent,
+    MediaStreamEvent,
     TelephonyProvider,
     TelephonyResponse,
+    TelephonyStreamError,
     TelephonyWebhookError,
 )
 
@@ -21,6 +29,8 @@ _STATUS_MAP: dict[str, CallProviderStatus] = {
     "busy": CallProviderStatus.BUSY,
     "no-answer": CallProviderStatus.NO_ANSWER,
 }
+
+_DEFAULT_SAMPLE_RATE = 8000
 
 
 class PlivoConfigurationError(Exception):
@@ -81,3 +91,53 @@ class PlivoTelephonyProvider(TelephonyProvider):
             "</Response>"
         )
         return TelephonyResponse(content=xml, content_type="application/xml")
+
+    def parse_media_stream_event(self, raw_event: Mapping[str, Any]) -> MediaStreamEvent:
+        event_type = str(raw_event.get("event", "")).strip().lower()
+
+        if event_type == "start":
+            return self._parse_start(raw_event)
+        if event_type == "media":
+            return self._parse_media(raw_event)
+        if event_type == "stop":
+            return MediaStreamEvent(event_type="stop")
+
+        raise TelephonyStreamError(f"Unknown Plivo stream event: {event_type!r}.")
+
+    @staticmethod
+    def _parse_start(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
+        start = raw_event.get("start") or {}
+        media_format = start.get("mediaFormat") or {}
+        encoding = media_format.get("encoding")
+
+        if not is_supported_encoding(encoding):
+            raise TelephonyStreamError(
+                f"Unsupported Plivo media encoding: {encoding!r}. Only mu-law is supported."
+            )
+
+        try:
+            sample_rate = int(media_format.get("sampleRate", _DEFAULT_SAMPLE_RATE))
+        except (TypeError, ValueError):
+            sample_rate = _DEFAULT_SAMPLE_RATE
+
+        return MediaStreamEvent(event_type="start", sample_rate=sample_rate)
+
+    @staticmethod
+    def _parse_media(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
+        media = raw_event.get("media") or {}
+        payload = media.get("payload")
+        if not isinstance(payload, str) or not payload:
+            raise TelephonyStreamError("Plivo media event is missing an audio payload.")
+
+        raw_chunk = media.get("chunk")
+        try:
+            sequence = int(raw_chunk) if raw_chunk is not None else None
+        except (TypeError, ValueError):
+            sequence = None
+
+        try:
+            audio = decode_media_payload(payload)
+        except PlivoAudioDecodingError as exc:
+            raise TelephonyStreamError(str(exc)) from exc
+
+        return MediaStreamEvent(event_type="media", sequence=sequence, audio=audio)

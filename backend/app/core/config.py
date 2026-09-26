@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     plivo_validate_signatures: bool = True
     plivo_stream_base_url: str = "not_configured"
     plivo_public_base_url: str = ""
+    plivo_stream_flush_seconds: float = 4.0
     call_mapping_store_provider: str = "in_memory"
     call_mapping_key_prefix: str = "telephony_call_mapping"
 

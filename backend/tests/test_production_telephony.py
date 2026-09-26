@@ -337,7 +337,7 @@ def test_answer_webhook_rejects_invalid_signature():
 
 
 def test_answer_webhook_creates_call_and_returns_stream_xml():
-    client = _build_client()
+    client, services = _build_client()
     headers = _signed_headers("test-auth-token", ANSWER_URL)
 
     response = client.post(
@@ -350,13 +350,11 @@ def test_answer_webhook_creates_call_and_returns_stream_xml():
     assert response.headers["content-type"].startswith("application/xml")
     call_id = _extract_call_id(response.text)
     assert call_id.startswith("plivo-")
-
-    call = client.get(f"/api/v1/calls/{call_id}").json()
-    assert call["status"] == "active"
+    assert services.call_service.get_call(call_id).status.value == "active"
 
 
 def test_status_webhook_ends_call_idempotently():
-    client = _build_client()
+    client, services = _build_client()
     answer = client.post(
         ANSWER_PATH,
         data={"CallUUID": "uuid-2", "From": "+91123", "To": "+91456"},
@@ -381,6 +379,7 @@ def test_status_webhook_ends_call_idempotently():
     call = client.get(f"/api/v1/calls/{call_id}").json()
     assert call["status"] == "completed"
     assert call["end_time"] == 42.0
+    assert services.call_service.get_call(call_id).status.value == "active"
 
 
 def test_status_webhook_for_unknown_call_still_returns_200():

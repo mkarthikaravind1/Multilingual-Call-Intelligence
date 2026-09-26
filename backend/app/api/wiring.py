@@ -1,3 +1,5 @@
+import logging
+
 from app.ai.complaint.provider import ComplaintDetectionProvider
 from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider
@@ -6,6 +8,12 @@ from app.composition.services import (
     build_estimation_service,
     build_post_call_summary_service,
 )
+from app.composition.providers import (
+    create_asr_provider,
+    create_call_mapping_repository,
+    create_telephony_provider,
+)
+from app.core.config import Settings, get_settings
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.complaint_analysis_service import ComplaintAnalysisService
@@ -21,6 +29,7 @@ from app.services.in_memory_conversation_repository import (
 )
 from app.services.next_question_service import NextQuestionService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
+from app.services.telephony_call_service import TelephonyCallService
 from app.composition.learning import build_learning_management_service
 from app.services.learning_management_service import LearningManagementService
 from app.composition.learning import build_learning_call_recorder
@@ -50,9 +59,9 @@ from app.domain.improvement_usage_repository import (
 )
 from app.domain.user_repository import InMemoryUserRepository, UserRepository
 from app.services.auth_service import AuthService
-from app.domain.user_repository import InMemoryUserRepository, UserRepository
-from app.services.auth_service import AuthService
-from app.core.config import Settings
+
+logger = logging.getLogger(__name__)
+
 
 def build_api_services(
     complaint_provider: ComplaintDetectionProvider,
@@ -69,13 +78,15 @@ def build_api_services(
     usage_repository: ImprovementUsageRepository | None = None,
     user_repository: UserRepository | None = None,
 ) -> ApiServices:
-    
+
     """Build the services the live application uses.
 
     Every repository is injectable so the composition root (main.py) can
     pass PostgreSQL-backed repositories in production while tests keep
     getting the in-memory defaults below.
     """
+    settings = settings or get_settings()
+
     conversation_repository = conversation_repository or InMemoryConversationRepository()
     coverage_repository = coverage_repository or InMemoryConversationCoverageRepository()
     evidence_repository = evidence_repository or InMemoryLearningEvidenceRepository()
@@ -120,6 +131,34 @@ def build_api_services(
     user_repository = user_repository or InMemoryUserRepository()
     auth_service = AuthService(user_repository)
 
+    # --- Telephony (Production Telephony) ---
+    # Each piece degrades to None/in-memory independently, so an
+    # unconfigured provider never prevents the rest of the app (learning,
+    # auth, the manual /live endpoint) from starting.
+    try:
+        call_mapping_repository = create_call_mapping_repository(settings)
+    except Exception as exc:
+        logger.warning("Falling back to in-memory call mapping store: %s", exc)
+        from app.services.telephony_call_mapping_repository import (
+            InMemoryTelephonyCallMappingRepository,
+        )
+
+        call_mapping_repository = InMemoryTelephonyCallMappingRepository()
+
+    telephony_call_service = TelephonyCallService(call_service, call_mapping_repository)
+
+    try:
+        telephony_provider = create_telephony_provider(settings)
+    except Exception as exc:
+        logger.warning("Telephony provider is not available: %s", exc)
+        telephony_provider = None
+
+    try:
+        asr_provider = create_asr_provider(settings)
+    except Exception as exc:
+        logger.warning("ASR provider is not available: %s", exc)
+        asr_provider = None
+
     return ApiServices(
         call_service=call_service,
         workflow_service=workflow_service,
@@ -130,4 +169,8 @@ def build_api_services(
         ),
         auth=auth_service,
         user_repository=user_repository,
+        telephony_provider=telephony_provider,
+        telephony_call_service=telephony_call_service,
+        asr_provider=asr_provider,
+        telephony_stream_flush_seconds=settings.plivo_stream_flush_seconds,
     )

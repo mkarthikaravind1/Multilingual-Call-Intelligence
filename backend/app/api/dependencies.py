@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from fastapi import Request
 from starlette.requests import HTTPConnection
 
+from app.ai.asr.provider import ASRProvider
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
@@ -11,7 +12,7 @@ from app.services.call_workflow_service import CallWorkflowService
 from app.services.learning_management_service import LearningManagementService
 from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import TelephonyProvider
-
+from starlette.requests import HTTPConnection
 
 @dataclass(frozen=True)
 class ApiServices:
@@ -24,15 +25,12 @@ class ApiServices:
 
     telephony_provider: TelephonyProvider | None = None
     telephony_call_service: TelephonyCallService | None = None
+    asr_provider: ASRProvider | None = None
+    telephony_stream_flush_seconds: float = 4.0
 
 
-def get_call_service(request: Request) -> CallService:
-    return request.app.state.services.call_service
-
-
-def get_workflow_service(request: Request) -> CallWorkflowService:
-    return request.app.state.services.workflow_service
-
+def get_telephony_stream_flush_seconds(connection: HTTPConnection) -> float:
+    return connection.app.state.services.telephony_stream_flush_seconds
 
 def get_learning_service(request: Request) -> LearningManagementService:
     return request.app.state.services.learning
@@ -53,14 +51,19 @@ def get_auth_service(request: Request) -> AuthService:
 def get_user_repository(request: Request) -> UserRepository:
     return request.app.state.services.user_repository
 
-
-def get_telephony_provider(
-    request: Request,
-) -> TelephonyProvider | None:
-    return request.app.state.services.telephony_provider
-
-
 def get_telephony_call_service(
     request: Request,
 ) -> TelephonyCallService:
     return request.app.state.services.telephony_call_service
+
+def get_telephony_provider(connection: HTTPConnection) -> TelephonyProvider | None:
+    return connection.app.state.services.telephony_provider
+
+def get_asr_provider(connection: HTTPConnection) -> ASRProvider | None:
+    return connection.app.state.services.asr_provider
+
+def get_call_service(connection: HTTPConnection) -> CallService:
+    return connection.app.state.services.call_service
+
+def get_workflow_service(connection: HTTPConnection) -> CallWorkflowService:
+    return connection.app.state.services.workflow_service

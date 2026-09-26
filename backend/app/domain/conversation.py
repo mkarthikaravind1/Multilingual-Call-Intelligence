@@ -6,6 +6,18 @@ class ConversationStatus(str, Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
 
+
+class ConversationAlreadyCompletedError(Exception):
+    """Raised when something tries to mutate a call that has already ended
+    (e.g. an utterance arriving after the status webhook completed the
+    call). Distinct from ConversationNotFoundError: the call exists, it's
+    just no longer open for new activity."""
+
+    def __init__(self, call_id: str) -> None:
+        self.call_id = call_id
+        super().__init__(f"Call is already completed: {call_id!r}")
+
+
 @dataclass
 class Conversation:
     """Represents one complete call, holding its utterances in chronological order."""
@@ -25,6 +37,8 @@ class Conversation:
             raise ValueError("end_time cannot be before start_time.")
 
     def add_utterance(self, utterance: Utterance) -> None:
+        if self.status == ConversationStatus.COMPLETED:
+            raise ConversationAlreadyCompletedError(self.call_id)
         if self._utterances and utterance.start_time < self._utterances[-1].start_time:
             raise ValueError(
                 f"Utterances must be chronological: new utterance starts at "

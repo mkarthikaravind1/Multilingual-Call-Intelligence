@@ -28,6 +28,7 @@ def build_app():
         complaint_provider=create_complaint_provider(llm_client, settings),
         sentiment_provider=create_sentiment_provider(llm_client, settings),
         question_provider=create_question_provider(llm_client, settings),
+        settings=settings,
         conversation_repository=repositories.conversation,
         coverage_repository=repositories.conversation_coverage,
         evidence_repository=repositories.learning_evidence,
