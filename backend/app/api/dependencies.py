@@ -9,6 +9,7 @@ from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
+from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
 from app.services.learning_management_service import LearningManagementService
 from app.services.live_chunk_processing_service import LiveChunkProcessingService
 from app.services.telephony_call_service import TelephonyCallService
@@ -27,6 +28,7 @@ class ApiServices:
     telephony_provider: TelephonyProvider | None = None
     telephony_call_service: TelephonyCallService | None = None
     live_chunk_processing_service: LiveChunkProcessingService | None = None
+    customer_summary_delivery_service: CustomerSummaryDeliveryService | None = None
     asr_provider: ASRProvider | None = None
     telephony_stream_flush_seconds: float = 4.0
 

@@ -1,8 +1,12 @@
 from dataclasses import dataclass
+import logging
+from typing import Callable, Protocol
 
 from app.ai.sentiment.provider import SentimentResult
+from app.ai.summary.provider import PostCallSummaryRequest
 from app.domain.conversation import ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
+from app.domain.customer_contact import CustomerContact
 from app.domain.post_call_summary import PostCallSummary
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.service_estimate import ServiceEstimate
@@ -12,12 +16,10 @@ from app.services.conversation_analysis_service import ConversationAnalysisServi
 from app.services.conversation_coverage_repository import (
     ConversationCoverageRepository,
 )
+from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
 from app.services.estimation_service import EstimationService
 from app.services.next_question_service import NextQuestionService
 from app.services.post_call_summary_service import PostCallSummaryService
-from app.ai.summary.provider import PostCallSummaryRequest
-import logging
-from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,8 @@ class CallWorkflowService:
         next_question_service: NextQuestionService,
         estimation_service: EstimationService,
         post_call_summary_service: PostCallSummaryService,
+        customer_summary_delivery_service: CustomerSummaryDeliveryService | None = None,
+        customer_contact_resolver: Callable[[str], CustomerContact | None] | None = None,
         learning_recorder: AnalysisLearningRecorder | None = None,
     ) -> None:
         self._call_service = call_service
@@ -53,6 +57,8 @@ class CallWorkflowService:
         self._next_question_service = next_question_service
         self._estimation_service = estimation_service
         self._post_call_summary_service = post_call_summary_service
+        self._customer_summary_delivery_service = customer_summary_delivery_service
+        self._customer_contact_resolver = customer_contact_resolver
         self._learning_recorder = learning_recorder
 
     def process_utterance(
@@ -106,6 +112,24 @@ class CallWorkflowService:
             post_call_summary = self._post_call_summary_service.generate_summary(
                 summary_request
             )
+
+            if (
+                post_call_summary is not None
+                and self._customer_summary_delivery_service is not None
+                and self._customer_contact_resolver is not None
+            ):
+                try:
+                    contact = self._customer_contact_resolver(conversation.call_id)
+                    if contact is not None:
+                        self._customer_summary_delivery_service.send_summary_to_customer(
+                            summary=post_call_summary,
+                            contact=contact,
+                        )
+                except Exception:
+                    logger.exception(
+                        "Customer summary delivery failed for call %r",
+                        conversation.call_id,
+                    )
 
         return CallAnalysisResult(
             coverage=analysis.coverage,

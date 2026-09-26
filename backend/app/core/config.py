@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     plivo_stream_flush_seconds: float = 4.0
     call_mapping_store_provider: str = "in_memory"
     call_mapping_key_prefix: str = "telephony_call_mapping"
+    customer_summary_enabled: bool = False
+    customer_summary_delivery_provider: str = "disabled"
+    customer_summary_default_channel: str = "sms"
+    customer_summary_consent_required: bool = True
+    customer_summary_sms_provider: str = "disabled"
+    customer_summary_sms_sender_id: str = ""
+    customer_summary_sms_timeout_seconds: float = 10.0
+    customer_summary_sms_retry_attempts: int = 0
+    customer_summary_whatsapp_provider: str = "disabled"
+    customer_summary_whatsapp_sender_id: str = ""
+    customer_summary_whatsapp_timeout_seconds: float = 10.0
+    customer_summary_whatsapp_retry_attempts: int = 0
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

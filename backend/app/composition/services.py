@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from uuid import uuid4
 
 from app.ai.asr.provider import ASRProvider
 from app.ai.complaint.provider import ComplaintDetectionProvider
@@ -42,7 +43,13 @@ from app.estimation.provider import ServiceEstimationProvider
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
 from app.services.estimation_service import EstimationService
 from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
+from app.domain.customer_contact import CustomerContact, MessagingChannel
 from app.services.post_call_summary_service import PostCallSummaryService
+from app.services.customer_summary_delivery_service import (
+    CustomerSummaryDeliveryProvider,
+    CustomerSummaryDeliveryService,
+)
+from app.services.customer_summary_message_service import CustomerSummaryMessageService
 from app.services.call_workflow_service import (
     AnalysisLearningRecorder,
     CallWorkflowService,
@@ -70,6 +77,45 @@ def build_post_call_summary_service(
     return PostCallSummaryService(
         create_summary_provider(llm_client=llm_client, settings=settings)
     )
+
+
+class NullCustomerSummaryDeliveryProvider(CustomerSummaryDeliveryProvider):
+    def send_summary(
+        self,
+        contact: CustomerContact,
+        message: str,
+        channel: MessagingChannel,
+    ) -> str:
+        return f"noop-{uuid4()}"
+
+
+def create_customer_summary_delivery_provider(
+    settings: Settings | None = None,
+) -> CustomerSummaryDeliveryProvider:
+    settings = settings or Settings()
+    provider_name = settings.customer_summary_delivery_provider.strip().lower()
+    if provider_name in {"disabled", "none", "null", "noop"}:
+        return NullCustomerSummaryDeliveryProvider()
+    raise ValueError(
+        f"Unsupported customer summary delivery provider: {provider_name!r}. "
+        "Configure customer_summary_delivery_provider to one of: disabled, noop."
+    )
+
+
+def build_customer_summary_delivery_service(
+    settings: Settings | None = None,
+    provider: CustomerSummaryDeliveryProvider | None = None,
+) -> CustomerSummaryDeliveryService:
+    settings = settings or Settings()
+    provider = provider or create_customer_summary_delivery_provider(settings)
+    return CustomerSummaryDeliveryService(
+        provider=provider,
+        message_service=CustomerSummaryMessageService(
+            default_channel=MessagingChannel(settings.customer_summary_default_channel)
+        ),
+        require_consent=settings.customer_summary_consent_required,
+    )
+
 
 def build_conversation_repository() -> ConversationRepository:
     return InMemoryConversationRepository()
@@ -121,6 +167,8 @@ def build_call_workflow_service(
     coverage_repository: ConversationCoverageRepository | None = None,
     estimation_service: EstimationService | None = None,
     post_call_summary_service: PostCallSummaryService | None = None,
+    customer_summary_delivery_service: CustomerSummaryDeliveryService | None = None,
+    customer_contact_resolver: Callable[[str], CustomerContact | None] | None = None,
     learning_recorder: AnalysisLearningRecorder | None = None,
     runtime_improvement_service: RuntimeImprovementService | None = None,
     improvement_usage_recorder: ImprovementEffectivenessService | None = None,
@@ -143,6 +191,8 @@ def build_call_workflow_service(
         estimation_service=estimation_service or build_estimation_service(),
         post_call_summary_service=post_call_summary_service
         or build_post_call_summary_service(settings=settings, llm_client=llm_client),
+        customer_summary_delivery_service=customer_summary_delivery_service,
+        customer_contact_resolver=customer_contact_resolver,
         learning_recorder=learning_recorder,
     )
 

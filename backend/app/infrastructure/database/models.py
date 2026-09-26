@@ -224,6 +224,32 @@ class ComplaintLifecycleRecordModel(Base):
         Index("ix_complaint_lifecycle_customer_id", "customer_id"),
     )
 
+
+class CustomerSummaryDeliveryModel(Base):
+    __tablename__ = "customer_summary_deliveries"
+
+    delivery_id: Mapped[str] = mapped_column(String, primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String, nullable=False)
+    call_id: Mapped[str] = mapped_column(String, nullable=False)
+    channel: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_at: Mapped[float] = mapped_column(Float, nullable=False)
+    failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        Index("ix_customer_summary_deliveries_call_id", "call_id"),
+        Index("ix_customer_summary_deliveries_customer_id", "customer_id"),
+        Index("ix_customer_summary_deliveries_idempotency_key", "idempotency_key"),
+    )
+
+
 class UserModel(Base):
     __tablename__ = "users"
 

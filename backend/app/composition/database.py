@@ -29,6 +29,9 @@ from app.infrastructure.database.repositories.conversation_coverage_repository i
 from app.infrastructure.database.repositories.conversation_repository import (
     PostgresConversationRepository,
 )
+from app.infrastructure.database.repositories.customer_summary_delivery_repository import (
+    PostgresCustomerSummaryDeliveryRepository,
+)
 from app.infrastructure.database.repositories.improvement_candidate_repository import (
     PostgresImprovementCandidateRepository,
 )
@@ -46,6 +49,7 @@ from app.infrastructure.database.repositories.learning_observation_repository im
 )
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
 from app.services.conversation_repository import ConversationRepository
+from app.services.customer_summary_repository import CustomerSummaryDeliveryRepository
 from app.domain.user_repository import UserRepository
 from app.infrastructure.database.repositories.user_repository import (
     PostgresUserRepository,
@@ -66,6 +70,7 @@ class PostgresRepositories:
     improvement_usage: ImprovementUsageRepository
     complaint_lifecycle: ComplaintLifecycleRepository
     complaint_customer_history: ComplaintCustomerHistoryRepository
+    customer_summary_delivery: CustomerSummaryDeliveryRepository
     user: UserRepository
 
 def build_postgres_repositories(
@@ -82,7 +87,8 @@ def build_postgres_repositories(
         improvement_usage=PostgresImprovementUsageRepository(session_factory),
         complaint_lifecycle=PostgresComplaintLifecycleRepository(session_factory),
         complaint_customer_history=PostgresComplaintCustomerHistoryRepository(session_factory),
-        user=PostgresUserRepository(session_factory)
+        customer_summary_delivery=PostgresCustomerSummaryDeliveryRepository(session_factory),
+        user=PostgresUserRepository(session_factory),
     )
 
 
