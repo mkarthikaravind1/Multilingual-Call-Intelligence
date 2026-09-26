@@ -24,8 +24,21 @@ class Settings(BaseSettings):
     pyannote_model: str = "pyannote/speaker-diarization-community-1"
     huggingface_token: str = ""
     summary_provider: str = "rule_based"
+    redis_key_prefix: str = "conversation_coverage"
+    redis_ttl_seconds: float = 86400.0
+    redis_socket_timeout_seconds: float = 5.0
     auth_secret_key: str = "not_configured"
     auth_access_token_expire_minutes: int = 30
+    coverage_store_provider: str = "in_memory"
+
+    telephony_provider: str = "plivo"
+    plivo_auth_id: str = "not_configured"
+    plivo_auth_token: str = "not_configured"
+    plivo_validate_signatures: bool = True
+    plivo_stream_base_url: str = "not_configured"
+    plivo_public_base_url: str = ""
+    call_mapping_store_provider: str = "in_memory"
+    call_mapping_key_prefix: str = "telephony_call_mapping"
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

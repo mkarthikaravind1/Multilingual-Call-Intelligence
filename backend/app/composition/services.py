@@ -31,9 +31,7 @@ from app.services.conversation_coverage_repository import (
 )
 from app.services.conversation_repository import ConversationRepository
 from app.services.conversation_service import ConversationService
-from app.services.in_memory_conversation_coverage_repository import (
-    InMemoryConversationCoverageRepository,
-)
+from app.composition.providers import create_coverage_repository
 from app.services.in_memory_conversation_repository import (
     InMemoryConversationRepository,
 )
@@ -77,8 +75,10 @@ def build_conversation_repository() -> ConversationRepository:
     return InMemoryConversationRepository()
 
 
-def build_coverage_repository() -> ConversationCoverageRepository:
-    return InMemoryConversationCoverageRepository()
+def build_coverage_repository(
+    settings: Settings | None = None,
+) -> ConversationCoverageRepository:
+    return create_coverage_repository(settings)
 
 def build_estimation_service(
     provider: ServiceEstimationProvider | None = None,
@@ -130,7 +130,7 @@ def build_call_workflow_service(
 
     return CallWorkflowService(
         call_service=call_service or build_call_service(),
-        coverage_repository=coverage_repository or build_coverage_repository(),
+        coverage_repository=coverage_repository or build_coverage_repository(settings),
         analysis_service=build_conversation_analysis_service(
             complaint_provider=create_complaint_provider(llm_client),
             sentiment_provider=create_sentiment_provider(llm_client),

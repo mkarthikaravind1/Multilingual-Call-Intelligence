@@ -30,6 +30,22 @@ from app.ai.speaker.pyannote_provider import PyannoteDiarizationProvider
 from app.ai.summary.llm_provider import LLMPostCallSummaryProvider
 from app.ai.summary.provider import SummaryGenerationProvider
 from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
+from app.services.conversation_coverage_repository import ConversationCoverageRepository
+from app.services.in_memory_conversation_coverage_repository import (
+    InMemoryConversationCoverageRepository,
+)
+from app.services.redis_conversation_coverage_repository import (
+    RedisConversationCoverageRepository,
+)
+from app.services.telephony_call_mapping_repository import (
+    InMemoryTelephonyCallMappingRepository,
+    TelephonyCallMappingRepository,
+)
+from app.services.redis_telephony_call_mapping_repository import (
+    RedisTelephonyCallMappingRepository,
+)
+from app.telephony.plivo.provider import PlivoTelephonyProvider
+from app.telephony.provider import TelephonyProvider
 
 class UnsupportedProviderError(ValueError):
     pass
@@ -240,3 +256,89 @@ def create_role_provider(
             f"Available: {sorted(_ROLE_PROVIDER_BUILDERS)}."
         )
     return builder(role_by_speaker, role_order)
+def _build_in_memory_coverage_repository(
+    settings: Settings,
+) -> ConversationCoverageRepository:
+    return InMemoryConversationCoverageRepository()
+
+
+def _build_redis_coverage_repository(
+    settings: Settings,
+) -> ConversationCoverageRepository:
+    return RedisConversationCoverageRepository(settings)
+
+
+_COVERAGE_REPOSITORY_BUILDERS: dict[
+    str, Callable[[Settings], ConversationCoverageRepository]
+] = {
+    "in_memory": _build_in_memory_coverage_repository,
+    "redis": _build_redis_coverage_repository,
+}
+
+
+def create_coverage_repository(
+    settings: Settings | None = None,
+) -> ConversationCoverageRepository:
+    settings = settings or get_settings()
+    name = settings.coverage_store_provider.strip().lower()
+    builder = _COVERAGE_REPOSITORY_BUILDERS.get(name)
+    if builder is None:
+        raise UnsupportedProviderError(
+            f"Unsupported coverage store provider: {settings.coverage_store_provider!r}. "
+            f"Available: {sorted(_COVERAGE_REPOSITORY_BUILDERS)}."
+        )
+    return builder(settings)
+
+def _build_plivo_telephony_provider(settings: Settings) -> TelephonyProvider:
+    return PlivoTelephonyProvider(settings)
+
+
+_TELEPHONY_PROVIDER_BUILDERS: dict[str, Callable[[Settings], TelephonyProvider]] = {
+    "plivo": _build_plivo_telephony_provider,
+}
+
+
+def create_telephony_provider(settings: Settings | None = None) -> TelephonyProvider:
+    settings = settings or get_settings()
+    name = settings.telephony_provider.strip().lower()
+    builder = _TELEPHONY_PROVIDER_BUILDERS.get(name)
+    if builder is None:
+        raise UnsupportedProviderError(
+            f"Unsupported telephony provider: {settings.telephony_provider!r}. "
+            f"Available: {sorted(_TELEPHONY_PROVIDER_BUILDERS)}."
+        )
+    return builder(settings)
+
+
+def _build_in_memory_call_mapping_repository(
+    settings: Settings,
+) -> TelephonyCallMappingRepository:
+    return InMemoryTelephonyCallMappingRepository()
+
+
+def _build_redis_call_mapping_repository(
+    settings: Settings,
+) -> TelephonyCallMappingRepository:
+    return RedisTelephonyCallMappingRepository(settings)
+
+
+_CALL_MAPPING_REPOSITORY_BUILDERS: dict[
+    str, Callable[[Settings], TelephonyCallMappingRepository]
+] = {
+    "in_memory": _build_in_memory_call_mapping_repository,
+    "redis": _build_redis_call_mapping_repository,
+}
+
+
+def create_call_mapping_repository(
+    settings: Settings | None = None,
+) -> TelephonyCallMappingRepository:
+    settings = settings or get_settings()
+    name = settings.call_mapping_store_provider.strip().lower()
+    builder = _CALL_MAPPING_REPOSITORY_BUILDERS.get(name)
+    if builder is None:
+        raise UnsupportedProviderError(
+            f"Unsupported call mapping store provider: {settings.call_mapping_store_provider!r}. "
+            f"Available: {sorted(_CALL_MAPPING_REPOSITORY_BUILDERS)}."
+        )
+    return builder(settings)

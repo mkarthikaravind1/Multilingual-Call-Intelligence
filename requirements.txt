@@ -90,6 +90,7 @@ python-dateutil==2.9.0.post0
 pytorch-lightning==2.6.6
 pytorch-metric-learning==2.9.0
 PyYAML==6.0.3
+redis==5.2.1
 requests==2.34.2
 rich==15.0.0
 safetensors==0.8.0

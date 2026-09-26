@@ -52,11 +52,13 @@ from app.domain.user_repository import InMemoryUserRepository, UserRepository
 from app.services.auth_service import AuthService
 from app.domain.user_repository import InMemoryUserRepository, UserRepository
 from app.services.auth_service import AuthService
+from app.core.config import Settings
 
 def build_api_services(
     complaint_provider: ComplaintDetectionProvider,
     sentiment_provider: SentimentAnalysisProvider,
     question_provider: QuestionSuggestionProvider,
+    settings: Settings | None = None,
     learning_service: LearningManagementService | None = None,
     conversation_repository: ConversationRepository | None = None,
     coverage_repository: ConversationCoverageRepository | None = None,
@@ -66,8 +68,8 @@ def build_api_services(
     active_improvement_repository: ActiveImprovementRepository | None = None,
     usage_repository: ImprovementUsageRepository | None = None,
     user_repository: UserRepository | None = None,
-    
 ) -> ApiServices:
+    
     """Build the services the live application uses.
 
     Every repository is injectable so the composition root (main.py) can
