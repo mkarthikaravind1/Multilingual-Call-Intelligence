@@ -36,6 +36,7 @@ def build_app():
         candidate_repository=repositories.improvement_candidate,
         active_improvement_repository=repositories.active_improvement,
         usage_repository=repositories.improvement_usage,
+        user_repository=repositories.user,
     )
     return create_app(services)
 

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.api.dependencies import ApiServices
 from app.api.errors import register_exception_handlers
 from app.api.v1.calls import router as calls_router
@@ -13,6 +14,15 @@ def create_app(services: ApiServices) -> FastAPI:
     app = FastAPI(
         title="Multilingual Customer Interaction Intelligence API",
         version="1.0.0",
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:5173",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     app.state.services = services
     register_exception_handlers(app)

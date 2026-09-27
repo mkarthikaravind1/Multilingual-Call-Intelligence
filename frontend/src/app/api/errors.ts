@@ -40,3 +40,18 @@ export function getErrorMessage(payload: unknown, fallback: string): string {
 
   return fallback
 }
+
+export function toUserErrorMessage(
+  error: unknown,
+  fallback: string,
+): string {
+  if (error instanceof ApiError) {
+    return error.message
+  }
+
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return getErrorMessage(error, fallback)
+}
