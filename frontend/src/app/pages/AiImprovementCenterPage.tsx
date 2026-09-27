@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-
+import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/errors'
 
 import { learningRestService } from '../features/ai-improvement/services/learningRestService'
@@ -11,6 +11,8 @@ import type {
 } from '../features/ai-improvement/types/dto'
 
 export function AiImprovementCenterPage() {
+  const { session } = useAuth()
+  const canReviewCandidates = session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
   const [candidates, setCandidates] = useState<LearningCandidateDto[]>([])
   const [patterns, setPatterns] = useState<LearningPatternDto[]>([])
   const [evidence, setEvidence] = useState<LearningEvidenceDto[]>([])
@@ -196,7 +198,7 @@ export function AiImprovementCenterPage() {
                           </span>
                         </div>
 
-                        {candidate.status === 'pending_review' && (
+                        {candidate.status === 'pending_review' && canReviewCandidates && (
                           <div
                             className="live-call__call-selector"
                             style={{ marginTop: '1rem' }}
