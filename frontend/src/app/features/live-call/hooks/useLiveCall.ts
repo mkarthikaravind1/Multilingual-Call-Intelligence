@@ -271,6 +271,7 @@ export function useLiveCall(
         await refreshCallState(
           targetCallId,
         )
+        liveCallSocket.disconnect()
       } catch (completeError) {
         if (
           activeCallIdRef.current ===
