@@ -89,7 +89,8 @@ def get_analysis(
 def complete_call(
     call_id: str,
     payload: CompleteCallRequest,
-    call_service: CallService = Depends(get_call_service),
+    workflow_service: CallWorkflowService = Depends(get_workflow_service),
     _: User = Depends(get_current_user),
 ) -> CallResponse:
-    return to_call_response(call_service.end_call(call_id, payload.end_time))
+    completion = workflow_service.complete_call(call_id, payload.end_time)
+    return to_call_response(completion.conversation)

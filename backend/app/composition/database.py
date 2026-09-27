@@ -47,9 +47,13 @@ from app.infrastructure.database.repositories.learning_feedback_repository impor
 from app.infrastructure.database.repositories.learning_observation_repository import (
     PostgresLearningObservationRepository,
 )
+from app.infrastructure.database.repositories.post_call_summary_repository import (
+    PostgresPostCallSummaryRepository,
+)
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
 from app.services.conversation_repository import ConversationRepository
 from app.services.customer_summary_repository import CustomerSummaryDeliveryRepository
+from app.services.post_call_summary_repository import PostCallSummaryRepository
 from app.domain.user_repository import UserRepository
 from app.infrastructure.database.repositories.user_repository import (
     PostgresUserRepository,
@@ -71,6 +75,7 @@ class PostgresRepositories:
     complaint_lifecycle: ComplaintLifecycleRepository
     complaint_customer_history: ComplaintCustomerHistoryRepository
     customer_summary_delivery: CustomerSummaryDeliveryRepository
+    post_call_summary: PostCallSummaryRepository
     user: UserRepository
 
 def build_postgres_repositories(
@@ -88,6 +93,7 @@ def build_postgres_repositories(
         complaint_lifecycle=PostgresComplaintLifecycleRepository(session_factory),
         complaint_customer_history=PostgresComplaintCustomerHistoryRepository(session_factory),
         customer_summary_delivery=PostgresCustomerSummaryDeliveryRepository(session_factory),
+        post_call_summary=PostgresPostCallSummaryRepository(session_factory),
         user=PostgresUserRepository(session_factory),
     )
 

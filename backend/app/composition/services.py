@@ -50,6 +50,8 @@ from app.services.customer_summary_delivery_service import (
     CustomerSummaryDeliveryService,
 )
 from app.services.customer_summary_message_service import CustomerSummaryMessageService
+from app.services.customer_summary_repository import CustomerSummaryDeliveryRepository
+from app.services.post_call_summary_repository import PostCallSummaryRepository
 from app.services.call_workflow_service import (
     AnalysisLearningRecorder,
     CallWorkflowService,
@@ -105,6 +107,7 @@ def create_customer_summary_delivery_provider(
 def build_customer_summary_delivery_service(
     settings: Settings | None = None,
     provider: CustomerSummaryDeliveryProvider | None = None,
+    repository: CustomerSummaryDeliveryRepository | None = None,
 ) -> CustomerSummaryDeliveryService:
     settings = settings or Settings()
     provider = provider or create_customer_summary_delivery_provider(settings)
@@ -113,6 +116,7 @@ def build_customer_summary_delivery_service(
         message_service=CustomerSummaryMessageService(
             default_channel=MessagingChannel(settings.customer_summary_default_channel)
         ),
+        repository=repository,
         require_consent=settings.customer_summary_consent_required,
     )
 
@@ -170,6 +174,7 @@ def build_call_workflow_service(
     customer_summary_delivery_service: CustomerSummaryDeliveryService | None = None,
     customer_contact_resolver: Callable[[str], CustomerContact | None] | None = None,
     learning_recorder: AnalysisLearningRecorder | None = None,
+    post_call_summary_repository: PostCallSummaryRepository | None = None,
     runtime_improvement_service: RuntimeImprovementService | None = None,
     improvement_usage_recorder: ImprovementEffectivenessService | None = None,
 ) -> CallWorkflowService:
@@ -194,6 +199,8 @@ def build_call_workflow_service(
         customer_summary_delivery_service=customer_summary_delivery_service,
         customer_contact_resolver=customer_contact_resolver,
         learning_recorder=learning_recorder,
+        post_call_summary_repository=post_call_summary_repository,
+        customer_summary_enabled=(settings or Settings()).customer_summary_enabled,
     )
 
 def build_audio_processing_pipeline(

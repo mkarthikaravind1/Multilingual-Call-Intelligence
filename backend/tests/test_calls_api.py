@@ -78,9 +78,10 @@ def _client(
     *responses: list[ComplaintDetectionResult],
     error: Exception | None = None,
     raise_server_exceptions: bool = True,
+    complaint_provider: FakeComplaintProvider | None = None,
 ) -> TestClient:
     services = build_api_services(
-        FakeComplaintProvider(*responses, error=error),
+        complaint_provider or FakeComplaintProvider(*responses, error=error),
         FakeSentimentProvider(),
         FakeQuestionProvider(),
     )
@@ -435,3 +436,58 @@ def test_call_collection_endpoints_require_authentication(path):
     response = client.get(path)
 
     assert response.status_code == 401
+
+
+def test_complete_call_generates_post_call_summary_visible_in_analysis():
+    client = _client([_TURNAROUND])
+    _start_call(client)
+    client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance())
+
+    assert client.post(f"{BASE}/{CALL_ID}/complete", json={"end_time": 30.0}).status_code == 200
+    body = client.get(f"{BASE}/{CALL_ID}/analysis").json()
+
+    assert body["post_call_summary"]["call_id"] == CALL_ID
+    assert body["post_call_summary"]["complaints"][0]["category"] == "Turnaround Time"
+    assert body["sentiment"] == body["post_call_summary"]["sentiment"]
+    assert body["question_suggestion"] is None
+
+
+def test_repeated_complete_keeps_original_end_time():
+    client = _client()
+    _start_call(client)
+    client.post(f"{BASE}/{CALL_ID}/complete", json={"end_time": 30.0})
+
+    response = client.post(f"{BASE}/{CALL_ID}/complete", json={"end_time": 99.0})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["end_time"] == 30.0
+    assert client.get(f"{BASE}/{CALL_ID}").json()["end_time"] == 30.0
+
+
+def test_completed_call_analysis_makes_no_provider_calls():
+    complaint_provider = FakeComplaintProvider([_TURNAROUND])
+    client = _client(complaint_provider=complaint_provider)
+    _start_call(client)
+    client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance())
+    client.post(f"{BASE}/{CALL_ID}/complete", json={"end_time": 30.0})
+    calls_after_completion = complaint_provider._calls
+
+    first = client.get(f"{BASE}/{CALL_ID}/analysis").json()
+    second = client.get(f"{BASE}/{CALL_ID}/analysis").json()
+
+    assert complaint_provider._calls == calls_after_completion
+    assert first == second
+
+
+def test_completed_call_without_stored_summary_returns_null_post_call_fields():
+    client = _client()
+    _start_call(client)
+    client.post(f"{BASE}/{CALL_ID}/complete", json={"end_time": 30.0})
+
+    body = client.get(f"{BASE}/{CALL_ID}/analysis").json()
+
+    assert body["post_call_summary"] is None
+    assert body["sentiment"] is None
+    assert body["service_estimate"] is None
+    assert body["question_suggestion"] is None

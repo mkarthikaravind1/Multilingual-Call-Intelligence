@@ -1,4 +1,5 @@
 import threading
+from dataclasses import dataclass
 
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.utterance import Utterance
@@ -8,6 +9,12 @@ class ConversationNotFoundError(Exception):
     def __init__(self, call_id: str) -> None:
         self.call_id = call_id
         super().__init__(f"No conversation found with id: {call_id!r}")
+
+
+@dataclass(frozen=True)
+class ConversationCompletion:
+    conversation: Conversation
+    completed_now: bool
 
 
 class ConversationService:
@@ -55,9 +62,13 @@ class ConversationService:
             self._repository.save(conversation)
             return conversation
 
-    def complete_conversation(self, call_id: str, end_time: float) -> Conversation:
+    def complete_conversation(self, call_id: str, end_time: float) -> ConversationCompletion:
+        # ACTIVE -> COMPLETED happens once; repeats return the call unchanged,
+        # keeping the original end_time.
         with self._lock_for(call_id):
             conversation = self.get_conversation(call_id)
+            if conversation.status == ConversationStatus.COMPLETED:
+                return ConversationCompletion(conversation, completed_now=False)
             conversation.complete(end_time)
             self._repository.save(conversation)
-            return conversation
+            return ConversationCompletion(conversation, completed_now=True)

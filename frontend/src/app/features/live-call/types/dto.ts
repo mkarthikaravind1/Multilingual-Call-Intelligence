@@ -109,7 +109,8 @@ export interface PostCallSummaryDto {
 export interface CallAnalysisResponseDto {
   call_id: string
   coverage: ComplaintCoverageDto
-  sentiment: SentimentDto
+  // null for a completed call whose post-call summary was never stored
+  sentiment: SentimentDto | null
   question_suggestion: QuestionSuggestionDto | null
   service_estimate?: ServiceEstimateDto | null
   post_call_summary?: PostCallSummaryDto | null

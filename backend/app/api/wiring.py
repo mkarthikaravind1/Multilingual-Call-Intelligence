@@ -23,6 +23,14 @@ from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.complaint_analysis_service import ComplaintAnalysisService
 from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
+from app.services.customer_summary_repository import (
+    CustomerSummaryDeliveryRepository,
+    InMemoryCustomerSummaryDeliveryRepository,
+)
+from app.services.post_call_summary_repository import (
+    InMemoryPostCallSummaryRepository,
+    PostCallSummaryRepository,
+)
 from app.services.conversation_analysis_service import ConversationAnalysisService
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
 from app.services.conversation_repository import ConversationRepository
@@ -85,6 +93,8 @@ def build_api_services(
     usage_repository: ImprovementUsageRepository | None = None,
     user_repository: UserRepository | None = None,
     customer_contact_resolver: Callable[[str], CustomerContact | None] | None = None,
+    post_call_summary_repository: PostCallSummaryRepository | None = None,
+    customer_summary_delivery_repository: CustomerSummaryDeliveryRepository | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -121,7 +131,9 @@ def build_api_services(
 
     try:
         customer_summary_delivery_service = build_customer_summary_delivery_service(
-            settings=settings
+            settings=settings,
+            repository=customer_summary_delivery_repository
+            or InMemoryCustomerSummaryDeliveryRepository(),
         )
     except Exception as exc:
         logger.warning("Customer summary delivery is not available: %s", exc)
@@ -147,6 +159,9 @@ def build_api_services(
             evidence_repository=evidence_repository,
             observation_repository=observation_repository,
         ),
+        post_call_summary_repository=post_call_summary_repository
+        or InMemoryPostCallSummaryRepository(),
+        customer_summary_enabled=settings.customer_summary_enabled,
     )
 
     # --- Telephony (Production Telephony) ---

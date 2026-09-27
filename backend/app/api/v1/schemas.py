@@ -128,7 +128,7 @@ class PostCallSummaryResponse(_Response):
 class CallAnalysisResponse(_Response):
     call_id: str
     coverage: CoverageResponse
-    sentiment: SentimentResponse
+    sentiment: SentimentResponse | None
     question_suggestion: QuestionSuggestionResponse | None
     service_estimate: ServiceEstimateResponse | None = None
     post_call_summary: PostCallSummaryResponse | None = None

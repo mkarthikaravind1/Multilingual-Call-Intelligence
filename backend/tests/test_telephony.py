@@ -26,6 +26,7 @@ from app.core.config import Settings
 from app.domain.conversation import Conversation
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.telephony_call_mapping import TelephonyCallMapping
+from app.domain.utterance import SpeakerRole, Utterance
 from app.services.call_service import CallService
 from app.services.conversation_service import ConversationService
 from app.services.in_memory_conversation_repository import InMemoryConversationRepository
@@ -839,3 +840,125 @@ def test_telephony_stream_drops_buffered_audio_when_call_already_completed(monke
     conversation = services.call_service.get_call(call_id)
     assert conversation.status.value == "completed"
     assert conversation.utterance_count == 0
+
+
+# ---- Phase D: terminal statuses and post-call scheduling ----
+
+@pytest.mark.parametrize(
+    "raw_status, expected",
+    [("cancel", CallProviderStatus.CANCELLED), ("timeout", CallProviderStatus.TIMEOUT)],
+)
+def test_parse_call_status_maps_cancel_and_timeout(raw_status, expected):
+    provider = PlivoTelephonyProvider(_plivo_settings())
+
+    event = provider.parse_call_status({"CallUUID": "uuid-1", "CallStatus": raw_status})
+
+    assert event.status is expected
+
+
+@pytest.mark.parametrize(
+    "status", [CallProviderStatus.CANCELLED, CallProviderStatus.TIMEOUT]
+)
+def test_cancel_and_timeout_are_terminal(status):
+    call_service = _call_service()
+    telephony_call_service = TelephonyCallService(
+        call_service, InMemoryTelephonyCallMappingRepository()
+    )
+    call_id = telephony_call_service.start_call_from_provider(
+        "plivo", InboundCallEvent("uuid-1", "+91123", "+91456")
+    )
+
+    telephony_call_service.handle_status_event(CallStatusEvent("uuid-1", status))
+
+    assert call_service.get_call(call_id).status.value == "completed"
+
+
+def test_status_event_notifies_completion_only_once():
+    call_service = _call_service()
+    telephony_call_service = TelephonyCallService(
+        call_service, InMemoryTelephonyCallMappingRepository()
+    )
+    call_id = telephony_call_service.start_call_from_provider(
+        "plivo", InboundCallEvent("uuid-1", "+91123", "+91456")
+    )
+    completed: list[str] = []
+
+    for status in (
+        CallProviderStatus.RINGING,
+        CallProviderStatus.COMPLETED,
+        CallProviderStatus.COMPLETED,
+        CallProviderStatus.CANCELLED,
+    ):
+        telephony_call_service.handle_status_event(
+            CallStatusEvent("uuid-1", status, duration_seconds=10.0), completed.append
+        )
+
+    assert completed == [call_id]
+
+
+def test_status_event_after_api_completion_does_not_notify():
+    call_service = _call_service()
+    telephony_call_service = TelephonyCallService(
+        call_service, InMemoryTelephonyCallMappingRepository()
+    )
+    call_id = telephony_call_service.start_call_from_provider(
+        "plivo", InboundCallEvent("uuid-1", "+91123", "+91456")
+    )
+    call_service.end_call(call_id, 20.0)
+    completed: list[str] = []
+
+    telephony_call_service.handle_status_event(
+        CallStatusEvent("uuid-1", CallProviderStatus.COMPLETED, duration_seconds=99.0),
+        completed.append,
+    )
+
+    assert completed == []
+    assert call_service.get_call(call_id).end_time == 20.0
+
+
+def test_status_webhook_schedules_post_call_processing_once(monkeypatch):
+    client, services = _build_client()
+    call_id = _answer_call(client, "uuid-3")
+    processed: list[str] = []
+    monkeypatch.setattr(
+        services.workflow_service, "process_completed_call", processed.append
+    )
+    headers = _signed_headers("test-auth-token", STATUS_URL)
+
+    for status in ("in-progress", "completed", "completed", "timeout"):
+        response = client.post(
+            STATUS_PATH,
+            data={"CallUUID": "uuid-3", "CallStatus": status, "Duration": "12"},
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+    assert processed == [call_id]
+    assert services.call_service.get_call(call_id).status.value == "completed"
+
+
+def test_status_webhook_runs_post_call_processing_in_background():
+    client, services = _build_client()
+    call_id = _answer_call(client, "uuid-4")
+    services.workflow_service.process_utterance(
+        call_id,
+        Utterance(
+            utterance_id="u1",
+            transcript="The car is still not ready.",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=2.0,
+        ),
+    )
+
+    response = client.post(
+        STATUS_PATH,
+        data={"CallUUID": "uuid-4", "CallStatus": "completed", "Duration": "30"},
+        headers=_signed_headers("test-auth-token", STATUS_URL),
+    )
+
+    assert response.status_code == 200
+    summary = services.workflow_service.analyze_call(call_id).post_call_summary
+    assert summary is not None
+    assert summary.call_id == call_id

@@ -52,6 +52,15 @@ from app.services.next_question_service import NextQuestionService
 from app.services.post_call_summary_service import PostCallSummaryService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
 
+from app.domain.customer_contact import ConsentStatus, CustomerContact
+from app.domain.customer_summary_delivery import DeliveryStatus
+from app.services.customer_summary_delivery_service import (
+    CustomerSummaryDeliveryProvider,
+    CustomerSummaryDeliveryService,
+)
+from app.services.customer_summary_repository import InMemoryCustomerSummaryDeliveryRepository
+from app.services.post_call_summary_repository import InMemoryPostCallSummaryRepository
+
 CALL_ID = "call-1"
 
 _TURNAROUND = ComplaintDetectionResult(
@@ -404,3 +413,333 @@ def test_estimation_provider_exception_propagates():
                 end_time=4.0,
             ),
         )
+
+
+# ---- Post-call completion workflow (Phase D) ----
+
+
+class CountingSummaryProvider(RuleBasedSummaryProvider):
+    def __init__(self, error: Exception | None = None, returns_none: bool = False) -> None:
+        self._error = error
+        self._returns_none = returns_none
+        self.calls = 0
+
+    def generate_summary(self, request):
+        self.calls += 1
+        if self._error is not None:
+            raise self._error
+        if self._returns_none:
+            return None
+        return super().generate_summary(request)
+
+
+class CountingNextQuestionService(NextQuestionService):
+    def __init__(self, provider) -> None:
+        super().__init__(provider)
+        self.calls = 0
+
+    def suggest_next_question(self, *args, **kwargs):
+        self.calls += 1
+        return super().suggest_next_question(*args, **kwargs)
+
+
+class CountingCoverageRepository(InMemoryConversationCoverageRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.saves = 0
+
+    def save(self, coverage):
+        self.saves += 1
+        super().save(coverage)
+
+
+class FailingSummaryRepository(InMemoryPostCallSummaryRepository):
+    def add_if_absent(self, summary):
+        raise RuntimeError("database unavailable")
+
+
+class RecordingDeliveryProvider(CustomerSummaryDeliveryProvider):
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error
+        self.sent: list[str] = []
+
+    def send_summary(self, contact, message, channel):
+        if self._error is not None:
+            raise self._error
+        self.sent.append(message)
+        return f"msg-{len(self.sent)}"
+
+
+_CONTACT = CustomerContact(
+    customer_id="cust-1",
+    phone_number="+10000000000",
+    consent_status=ConsentStatus.GRANTED,
+)
+
+
+@dataclass
+class _PostCallHarness:
+    workflow: CallWorkflowService
+    call_service: CallService
+    coverage_repository: CountingCoverageRepository
+    summary_repository: InMemoryPostCallSummaryRepository
+    summary_provider: CountingSummaryProvider
+    complaint_provider: FakeComplaintProvider
+    sentiment_provider: FakeSentimentProvider
+    next_question_service: CountingNextQuestionService
+    delivery_provider: RecordingDeliveryProvider
+    delivery_repository: InMemoryCustomerSummaryDeliveryRepository
+
+
+def _build_post_call(
+    summary_provider: CountingSummaryProvider | None = None,
+    summary_repository: InMemoryPostCallSummaryRepository | None = None,
+    delivery_provider: RecordingDeliveryProvider | None = None,
+    contact: CustomerContact | None = _CONTACT,
+    customer_summary_enabled: bool = True,
+) -> _PostCallHarness:
+    call_service = CallService(ConversationService(InMemoryConversationRepository()))
+    call_service.start_call(CALL_ID)
+    complaint_provider = FakeComplaintProvider([_TURNAROUND])
+    sentiment_provider = FakeSentimentProvider()
+    next_question_service = CountingNextQuestionService(FakeQuestionProvider())
+    coverage_repository = CountingCoverageRepository()
+    summary_provider = summary_provider or CountingSummaryProvider()
+    summary_repository = summary_repository or InMemoryPostCallSummaryRepository()
+    delivery_provider = delivery_provider or RecordingDeliveryProvider()
+    delivery_repository = InMemoryCustomerSummaryDeliveryRepository()
+    workflow = CallWorkflowService(
+        call_service,
+        coverage_repository,
+        ConversationAnalysisService(
+            ComplaintAnalysisService(complaint_provider),
+            SentimentAnalysisService(sentiment_provider),
+        ),
+        next_question_service,
+        EstimationService(RuleBasedEstimationProvider(DEFAULT_PRICING_CONFIG)),
+        PostCallSummaryService(summary_provider),
+        customer_summary_delivery_service=CustomerSummaryDeliveryService(
+            delivery_provider, repository=delivery_repository
+        ),
+        customer_contact_resolver=lambda call_id: contact,
+        post_call_summary_repository=summary_repository,
+        customer_summary_enabled=customer_summary_enabled,
+    )
+    return _PostCallHarness(
+        workflow,
+        call_service,
+        coverage_repository,
+        summary_repository,
+        summary_provider,
+        complaint_provider,
+        sentiment_provider,
+        next_question_service,
+        delivery_provider,
+        delivery_repository,
+    )
+
+
+def _complete_with_speech(harness: _PostCallHarness, end_time: float = 30.0):
+    harness.workflow.process_utterance(CALL_ID, _utterance(0))
+    return harness.workflow.complete_call(CALL_ID, end_time)
+
+
+def test_first_completion_generates_and_stores_summary():
+    harness = _build_post_call()
+
+    completion = _complete_with_speech(harness)
+
+    assert completion.completed_now is True
+    assert completion.conversation.status.value == "completed"
+    stored = harness.summary_repository.get(CALL_ID)
+    assert stored is not None
+    assert stored.call_id == CALL_ID
+    assert harness.summary_provider.calls == 1
+
+
+def test_repeated_completion_keeps_end_time_and_does_not_reprocess():
+    harness = _build_post_call()
+    _complete_with_speech(harness, end_time=30.0)
+
+    repeat = harness.workflow.complete_call(CALL_ID, 999.0)
+
+    assert repeat.completed_now is False
+    assert repeat.conversation.end_time == 30.0
+    assert harness.call_service.get_call(CALL_ID).end_time == 30.0
+    assert harness.summary_provider.calls == 1
+    assert len(harness.delivery_provider.sent) == 1
+
+
+def test_process_completed_call_does_not_regenerate_a_stored_summary():
+    harness = _build_post_call()
+    _complete_with_speech(harness)
+    stored = harness.summary_repository.get(CALL_ID)
+
+    again = harness.workflow.process_completed_call(CALL_ID)
+
+    assert again is stored
+    assert harness.summary_provider.calls == 1
+    assert len(harness.delivery_provider.sent) == 1
+
+
+def test_process_completed_call_ignores_active_calls():
+    harness = _build_post_call()
+    harness.workflow.process_utterance(CALL_ID, _utterance(0))
+
+    assert harness.workflow.process_completed_call(CALL_ID) is None
+    assert harness.summary_provider.calls == 0
+
+
+def test_calls_without_utterances_get_no_summary():
+    harness = _build_post_call()
+
+    completion = harness.workflow.complete_call(CALL_ID, 5.0)
+
+    assert completion.completed_now is True
+    assert harness.summary_repository.get(CALL_ID) is None
+    assert harness.summary_provider.calls == 0
+    assert harness.delivery_provider.sent == []
+
+
+@pytest.mark.parametrize(
+    "summary_provider",
+    [
+        CountingSummaryProvider(error=RuntimeError("llm down")),
+        CountingSummaryProvider(returns_none=True),
+    ],
+)
+def test_summary_failure_keeps_call_completed_without_delivery(summary_provider):
+    harness = _build_post_call(summary_provider=summary_provider)
+
+    completion = _complete_with_speech(harness)
+
+    assert completion.conversation.status.value == "completed"
+    assert harness.call_service.get_call(CALL_ID).status.value == "completed"
+    assert harness.summary_repository.get(CALL_ID) is None
+    assert harness.delivery_provider.sent == []
+
+
+def test_summary_persistence_failure_keeps_call_completed_without_delivery():
+    harness = _build_post_call(summary_repository=FailingSummaryRepository())
+
+    completion = _complete_with_speech(harness)
+
+    assert completion.conversation.status.value == "completed"
+    assert harness.summary_provider.calls == 1
+    assert harness.delivery_provider.sent == []
+    assert harness.delivery_repository.get_by_call_id(CALL_ID) == ()
+
+
+def test_completed_call_analysis_is_read_only():
+    harness = _build_post_call()
+    _complete_with_speech(harness)
+    stored = harness.summary_repository.get(CALL_ID)
+    complaint_calls = harness.complaint_provider.calls
+    sentiment_calls = harness.sentiment_provider.calls
+    question_calls = harness.next_question_service.calls
+    coverage_saves = harness.coverage_repository.saves
+
+    result = harness.workflow.analyze_call(CALL_ID)
+
+    assert result.post_call_summary is stored
+    assert result.sentiment == stored.sentiment
+    assert result.service_estimate == stored.service_estimate
+    assert result.question_suggestion is None
+    assert _statuses(result.coverage) == {"Turnaround Time": ComplaintCoverageStatus.DETECTED}
+    assert harness.complaint_provider.calls == complaint_calls
+    assert harness.sentiment_provider.calls == sentiment_calls
+    assert harness.next_question_service.calls == question_calls
+    assert harness.coverage_repository.saves == coverage_saves
+    assert harness.summary_provider.calls == 1
+    assert len(harness.delivery_provider.sent) == 1
+    assert len(harness.delivery_repository.get_by_call_id(CALL_ID)) == 1
+
+
+def test_completed_call_without_stored_summary_is_not_regenerated_on_read():
+    harness = _build_post_call(summary_provider=CountingSummaryProvider(returns_none=True))
+    _complete_with_speech(harness)
+    provider_calls = harness.summary_provider.calls
+
+    result = harness.workflow.analyze_call(CALL_ID)
+
+    assert result.post_call_summary is None
+    assert result.sentiment is None
+    assert result.service_estimate is None
+    assert result.question_suggestion is None
+    assert harness.summary_provider.calls == provider_calls
+    assert harness.summary_repository.get(CALL_ID) is None
+
+
+def test_active_call_analysis_still_runs_live_analysis():
+    harness = _build_post_call()
+    harness.workflow.process_utterance(CALL_ID, _utterance(0))
+
+    result = harness.workflow.analyze_call(CALL_ID)
+
+    assert result.sentiment == _SENTIMENT
+    assert result.question_suggestion is not None
+    assert result.post_call_summary is None
+    assert harness.summary_provider.calls == 0
+
+
+def test_delivery_happens_only_after_summary_is_stored():
+    harness = _build_post_call()
+
+    _complete_with_speech(harness)
+
+    (delivery,) = harness.delivery_repository.get_by_call_id(CALL_ID)
+    assert delivery.status == DeliveryStatus.SENT
+    assert delivery.call_id == CALL_ID
+    assert harness.summary_repository.get(CALL_ID) is not None
+
+
+def test_disabled_customer_summary_prevents_delivery():
+    harness = _build_post_call(customer_summary_enabled=False)
+
+    _complete_with_speech(harness)
+
+    assert harness.summary_repository.get(CALL_ID) is not None
+    assert harness.delivery_provider.sent == []
+    assert harness.delivery_repository.get_by_call_id(CALL_ID) == ()
+
+
+def test_delivery_still_enforces_consent():
+    harness = _build_post_call(
+        contact=CustomerContact(customer_id="cust-1", phone_number="+10000000000")
+    )
+
+    _complete_with_speech(harness)
+
+    (delivery,) = harness.delivery_repository.get_by_call_id(CALL_ID)
+    assert delivery.status == DeliveryStatus.REJECTED
+    assert delivery.failure_reason == "customer_consent_missing"
+    assert harness.delivery_provider.sent == []
+
+
+def test_duplicate_delivery_is_prevented_by_idempotency():
+    harness = _build_post_call()
+    _complete_with_speech(harness)
+    summary = harness.summary_repository.get(CALL_ID)
+
+    delivery_service = CustomerSummaryDeliveryService(
+        harness.delivery_provider, repository=harness.delivery_repository
+    )
+    repeat = delivery_service.send_summary_to_customer(summary=summary, contact=_CONTACT)
+
+    assert repeat.status == DeliveryStatus.SENT
+    assert len(harness.delivery_provider.sent) == 1
+    assert len(harness.delivery_repository.get_by_call_id(CALL_ID)) == 1
+
+
+def test_delivery_failure_is_recorded_and_call_stays_completed():
+    harness = _build_post_call(
+        delivery_provider=RecordingDeliveryProvider(error=RuntimeError("gateway down"))
+    )
+
+    completion = _complete_with_speech(harness)
+
+    assert completion.conversation.status.value == "completed"
+    assert harness.summary_repository.get(CALL_ID) is not None
+    (delivery,) = harness.delivery_repository.get_by_call_id(CALL_ID)
+    assert delivery.status == DeliveryStatus.FAILED
+    assert delivery.failure_reason == "provider_delivery_failed"

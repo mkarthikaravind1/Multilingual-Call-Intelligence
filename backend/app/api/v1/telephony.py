@@ -1,7 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 
-from app.api.dependencies import get_telephony_call_service, get_telephony_provider
+from app.api.dependencies import (
+    get_telephony_call_service,
+    get_telephony_provider,
+    get_workflow_service,
+)
 from app.core.config import get_settings
+from app.services.call_workflow_service import CallWorkflowService
 from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import TelephonyProvider, TelephonyWebhookError
 
@@ -60,8 +66,10 @@ async def plivo_answer(
 @router.post("/status")
 async def plivo_status(
     request: Request,
+    background_tasks: BackgroundTasks,
     provider: TelephonyProvider | None = Depends(get_telephony_provider),
     telephony_call_service: TelephonyCallService = Depends(get_telephony_call_service),
+    workflow_service: CallWorkflowService = Depends(get_workflow_service),
 ) -> Response:
     provider = _require_provider(provider)
     params = await _form_params(request)
@@ -74,5 +82,13 @@ async def plivo_status(
     except TelephonyWebhookError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    telephony_call_service.handle_status_event(event)
+    # Completion is quick; post-call processing (possibly an LLM summary)
+    # runs after the response so the provider callback returns promptly.
+    await run_in_threadpool(
+        telephony_call_service.handle_status_event,
+        event,
+        lambda call_id: background_tasks.add_task(
+            workflow_service.process_completed_call, call_id
+        ),
+    )
     return Response(status_code=200)

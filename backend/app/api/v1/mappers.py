@@ -53,7 +53,11 @@ def to_analysis_response(
     return CallAnalysisResponse(
         call_id=call_id,
         coverage=CoverageResponse.model_validate(result.coverage),
-        sentiment=SentimentResponse.model_validate(result.sentiment),
+        sentiment=(
+            SentimentResponse.model_validate(result.sentiment)
+            if result.sentiment is not None
+            else None
+        ),
         question_suggestion=(
             QuestionSuggestionResponse.model_validate(suggestion)
             if suggestion is not None

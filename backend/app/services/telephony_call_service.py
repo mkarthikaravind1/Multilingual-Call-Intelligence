@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 from uuid import uuid4
 
 from app.domain.conversation import ConversationStatus
@@ -13,6 +14,8 @@ _TERMINAL_STATUSES = frozenset(
         CallProviderStatus.FAILED,
         CallProviderStatus.BUSY,
         CallProviderStatus.NO_ANSWER,
+        CallProviderStatus.CANCELLED,
+        CallProviderStatus.TIMEOUT,
     }
 )
 
@@ -43,7 +46,14 @@ class TelephonyCallService:
         mapping = self._mapping_repository.get_by_provider_call_id(provider_call_id)
         return mapping.call_id if mapping is not None else None
 
-    def handle_status_event(self, event: CallStatusEvent) -> bool:
+    def handle_status_event(
+        self,
+        event: CallStatusEvent,
+        on_call_completed: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Complete the call on a terminal status. `on_call_completed` is
+        invoked only when this event is the one that completed the call, so
+        duplicate or late callbacks never trigger post-call processing twice."""
         call_id = self.resolve_call_id(event.provider_call_id)
         if call_id is None:
             return False
@@ -58,5 +68,9 @@ class TelephonyCallService:
         end_time = conversation.start_time
         if event.duration_seconds is not None:
             end_time = conversation.start_time + event.duration_seconds
-        self._call_service.end_call(call_id, max(end_time, conversation.start_time))
+        completion = self._call_service.end_call(
+            call_id, max(end_time, conversation.start_time)
+        )
+        if completion.completed_now and on_call_completed is not None:
+            on_call_completed(call_id)
         return True

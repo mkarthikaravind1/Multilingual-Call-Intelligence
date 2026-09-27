@@ -28,6 +28,8 @@ _STATUS_MAP: dict[str, CallProviderStatus] = {
     "failed": CallProviderStatus.FAILED,
     "busy": CallProviderStatus.BUSY,
     "no-answer": CallProviderStatus.NO_ANSWER,
+    "cancel": CallProviderStatus.CANCELLED,
+    "timeout": CallProviderStatus.TIMEOUT,
 }
 
 _DEFAULT_SAMPLE_RATE = 8000

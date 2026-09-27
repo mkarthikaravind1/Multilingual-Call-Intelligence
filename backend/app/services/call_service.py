@@ -1,6 +1,6 @@
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.utterance import Utterance
-from app.services.conversation_service import ConversationService
+from app.services.conversation_service import ConversationCompletion, ConversationService
 
 
 class CallService:
@@ -43,7 +43,7 @@ class CallService:
         self,
         call_id: str,
         end_time: float,
-    ) -> Conversation:
+    ) -> ConversationCompletion:
         return self._conversation_service.complete_conversation(
             call_id=call_id,
             end_time=end_time,

@@ -8,6 +8,7 @@ path is exercised against a real PostgreSQL server in production.
 
 import dataclasses
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, event, inspect, select
@@ -16,7 +17,13 @@ from sqlalchemy.pool import StaticPool
 
 from app.domain.active_improvement import ActiveImprovement, ActiveImprovementStatus
 from app.domain.complaint_lifecycle import ComplaintLifecycleRecord, ComplaintLifecycleStatus
+from app.ai.sentiment.provider import SentimentLabel, SentimentResult
+from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.customer_contact import MessagingChannel
+from app.domain.customer_summary_delivery import CustomerSummaryDelivery, DeliveryStatus
+from app.domain.post_call_summary import ComplaintSummary, PostCallSummary
+from app.domain.service_estimate import EstimatedPart, LabourEstimate, ServiceEstimate
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.improvement_candidate import (
     ImprovementCandidate,
@@ -51,6 +58,12 @@ from app.infrastructure.database.repositories.conversation_coverage_repository i
 )
 from app.infrastructure.database.repositories.conversation_repository import (
     PostgresConversationRepository,
+)
+from app.infrastructure.database.repositories.customer_summary_delivery_repository import (
+    PostgresCustomerSummaryDeliveryRepository,
+)
+from app.infrastructure.database.repositories.post_call_summary_repository import (
+    PostgresPostCallSummaryRepository,
 )
 from app.infrastructure.database.repositories.improvement_candidate_repository import (
     PostgresImprovementCandidateRepository,
@@ -110,6 +123,7 @@ def test_schema_creates_all_expected_tables(engine):
         "active_improvements",
         "improvement_usages",
         "complaint_lifecycle_records",
+        "post_call_summaries",
         "users",
     }
 
@@ -601,3 +615,107 @@ def test_conversation_counts(session_factory):
         ConversationStatus.ACTIVE: 2,
         ConversationStatus.COMPLETED: 1,
     }
+
+
+# 11. Post-call summaries -----------------------------------------------------
+
+
+def _post_call_summary(call_id="call-summary", overall_summary="First summary."):
+    return PostCallSummary(
+        call_id=call_id,
+        overall_summary=overall_summary,
+        languages=("en", "ta"),
+        sentiment=SentimentResult(SentimentLabel.NEGATIVE, 0.82, "Customer sounded upset."),
+        complaints=(
+            ComplaintSummary(
+                category="Turnaround Time",
+                description="Vehicle was late.",
+                status=ComplaintCoverageStatus.UNRESOLVED,
+                evidence="It was supposed to be ready yesterday.",
+                confidence=0.9,
+            ),
+            ComplaintSummary(
+                category="Communication",
+                description="Nobody called back.",
+                status=ComplaintCoverageStatus.COVERED,
+                evidence="No one called me.",
+            ),
+        ),
+        unresolved_issues=("Vehicle was late.",),
+        actions_promised=("Call the customer tomorrow.",),
+        follow_up_required=True,
+        customer_summary="We will call you tomorrow.",
+        service_estimate=ServiceEstimate(
+            service_name="Brake Pad Replacement",
+            currency="INR",
+            parts=(EstimatedPart("Brake pad set", 2, Decimal("1400.55")),),
+            labour=LabourEstimate(hours=1.5, hourly_rate=Decimal("600.10")),
+            estimated_duration_hours=3.0,
+        ),
+    )
+
+
+def test_post_call_summary_round_trips_with_nested_data_and_decimals(session_factory):
+    repo = PostgresPostCallSummaryRepository(session_factory)
+    summary = _post_call_summary()
+
+    repo.add_if_absent(summary)
+    loaded = repo.get("call-summary")
+
+    assert loaded == summary
+    assert loaded.service_estimate.parts[0].unit_price == Decimal("1400.55")
+    assert loaded.service_estimate.labour.hourly_rate == Decimal("600.10")
+    assert loaded.service_estimate.estimated_cost == summary.service_estimate.estimated_cost
+    assert loaded.complaints[1].confidence is None
+    assert repo.get("missing") is None
+
+
+def test_post_call_summary_without_estimate_round_trips(session_factory):
+    repo = PostgresPostCallSummaryRepository(session_factory)
+    summary = dataclasses.replace(_post_call_summary(), service_estimate=None)
+
+    repo.add_if_absent(summary)
+
+    assert repo.get("call-summary") == summary
+
+
+def test_post_call_summary_add_if_absent_keeps_the_first_summary(session_factory):
+    repo = PostgresPostCallSummaryRepository(session_factory)
+    first = _post_call_summary(overall_summary="First summary.")
+    second = _post_call_summary(overall_summary="Second summary.")
+
+    assert repo.add_if_absent(first) == first
+    assert repo.add_if_absent(second) == first
+    assert repo.get("call-summary").overall_summary == "First summary."
+
+
+def test_post_call_summary_survives_conversation_rewrites(session_factory):
+    conversations = PostgresConversationRepository(session_factory)
+    summaries = PostgresPostCallSummaryRepository(session_factory)
+    conversation = Conversation(call_id="call-summary")
+    conversations.save(conversation)
+    summaries.add_if_absent(_post_call_summary())
+
+    conversation.complete(end_time=5.0)
+    conversations.save(conversation)
+
+    assert summaries.get("call-summary") == _post_call_summary()
+
+
+def test_customer_summary_delivery_idempotency_key_is_unique(session_factory):
+    repo = PostgresCustomerSummaryDeliveryRepository(session_factory)
+    delivery = CustomerSummaryDelivery(
+        delivery_id="delivery-1",
+        customer_id="cust-1",
+        call_id="call-summary",
+        channel=MessagingChannel.SMS,
+        status=DeliveryStatus.SENT,
+        message="Summary",
+        idempotency_key="customer-summary:call-summary:cust-1:sms",
+    )
+    repo.save(delivery)
+
+    assert repo.get_by_idempotency_key(delivery.idempotency_key) == delivery
+    with pytest.raises(IntegrityError):
+        repo.save(dataclasses.replace(delivery, delivery_id="delivery-2"))
+    assert repo.get_by_call_id("call-summary") == (delivery,)

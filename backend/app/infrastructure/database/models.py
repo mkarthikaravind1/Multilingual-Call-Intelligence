@@ -258,6 +258,28 @@ class CustomerSummaryDeliveryModel(Base):
     )
 
 
+class PostCallSummaryModel(Base):
+    # Keyed by call_id without a foreign key: conversation saves delete and
+    # re-insert the conversation row, which must not remove the summary.
+    __tablename__ = "post_call_summaries"
+
+    call_id: Mapped[str] = mapped_column(String, primary_key=True)
+    overall_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    customer_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    languages: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    sentiment_label: Mapped[str] = mapped_column(String, nullable=False)
+    sentiment_confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    sentiment_evidence: Mapped[str] = mapped_column(Text, nullable=False)
+    complaints: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
+    unresolved_issues: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    actions_promised: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    follow_up_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    service_estimate: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class UserModel(Base):
     __tablename__ = "users"
 

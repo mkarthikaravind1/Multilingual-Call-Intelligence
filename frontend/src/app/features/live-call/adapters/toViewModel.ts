@@ -145,9 +145,9 @@ export function toCallAnalysisViewModel(
         toComplaintViewModel,
       ),
 
-    sentiment: toSentimentViewModel(
-      analysis.sentiment,
-    ),
+    sentiment: analysis.sentiment
+      ? toSentimentViewModel(analysis.sentiment)
+      : null,
 
     questionSuggestion:
       analysis.question_suggestion

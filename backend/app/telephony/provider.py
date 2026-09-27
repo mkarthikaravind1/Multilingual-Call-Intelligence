@@ -17,6 +17,8 @@ class CallProviderStatus(str, Enum):
     FAILED = "failed"
     BUSY = "busy"
     NO_ANSWER = "no_answer"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
     UNKNOWN = "unknown"
 
 
