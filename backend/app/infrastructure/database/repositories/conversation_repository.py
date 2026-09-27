@@ -1,4 +1,5 @@
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.utterance import SpeakerRole, Utterance
@@ -19,14 +20,17 @@ def _utterance_to_domain(model: UtteranceModel) -> Utterance:
 
 
 def _conversation_to_domain(model: ConversationModel) -> Conversation:
+    # Rebuild as ACTIVE so add_utterance() accepts the stored utterances,
+    # then restore the persisted status (a completed call rejects new ones).
     conversation = Conversation(
         call_id=model.call_id,
-        status=ConversationStatus(model.status),
+        status=ConversationStatus.ACTIVE,
         start_time=model.start_time,
         end_time=model.end_time,
     )
     for utterance_model in model.utterances:
         conversation.add_utterance(_utterance_to_domain(utterance_model))
+    conversation.status = ConversationStatus(model.status)
     return conversation
 
 
@@ -37,6 +41,8 @@ class PostgresConversationRepository(ConversationRepository):
     def save(self, conversation: Conversation) -> None:
         with self._session_factory() as session, session.begin():
             existing = session.get(ConversationModel, conversation.call_id)
+            # Persistence-only creation time; carried across the delete/re-insert.
+            created_at = None if existing is None else existing.created_at
             if existing is not None:
                 session.delete(existing)
                 session.flush()
@@ -60,9 +66,41 @@ class PostgresConversationRepository(ConversationRepository):
                     for utterance in conversation.utterances
                 ],
             )
+            if created_at is not None:
+                model.created_at = created_at
             session.add(model)
 
     def get(self, call_id: str) -> Conversation | None:
         with self._session_factory() as session:
             model = session.get(ConversationModel, call_id)
             return None if model is None else _conversation_to_domain(model)
+
+    def list_page(self, limit: int, offset: int) -> tuple[Conversation, ...]:
+        with self._session_factory() as session:
+            models = session.scalars(
+                select(ConversationModel)
+                .options(selectinload(ConversationModel.utterances))
+                .order_by(
+                    ConversationModel.created_at.desc(),
+                    ConversationModel.call_id,
+                )
+                .limit(limit)
+                .offset(offset)
+            ).all()
+            return tuple(_conversation_to_domain(model) for model in models)
+
+    def count(self) -> int:
+        with self._session_factory() as session:
+            return session.scalar(select(func.count()).select_from(ConversationModel)) or 0
+
+    def count_by_status(self) -> dict[ConversationStatus, int]:
+        counts = {status: 0 for status in ConversationStatus}
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(ConversationModel.status, func.count()).group_by(
+                    ConversationModel.status
+                )
+            ).all()
+        for status, total in rows:
+            counts[ConversationStatus(status)] = total
+        return counts

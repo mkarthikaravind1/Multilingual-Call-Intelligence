@@ -7,6 +7,7 @@ path is exercised against a real PostgreSQL server in production.
 """
 
 import dataclasses
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine, event, inspect, select
@@ -15,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.domain.active_improvement import ActiveImprovement, ActiveImprovementStatus
 from app.domain.complaint_lifecycle import ComplaintLifecycleRecord, ComplaintLifecycleStatus
-from app.domain.conversation import Conversation
+from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.improvement_candidate import (
     ImprovementCandidate,
@@ -498,3 +499,105 @@ def test_end_to_end_call_and_learning_flow(session_factory):
     assert usage_repo.list_for_call(call_id)[0].output_value == "Cost"
     assert history_repo.get_active_for_customer("cust-1")[0].complaint_id == "complaint-e2e"
     assert history_repo.get_history_for_customer("cust-1")[0].category == "Cost"
+
+
+# 10. Call history listing ----------------------------------------------------
+
+
+def _set_created_at(session_factory, call_id, created_at):
+    with session_factory() as session, session.begin():
+        session.get(ConversationModel, call_id).created_at = created_at
+
+
+def _created_at(session_factory, call_id):
+    with session_factory() as session:
+        return session.get(ConversationModel, call_id).created_at
+
+
+def test_conversation_list_page_orders_newest_created_first_and_paginates(session_factory):
+    repo = PostgresConversationRepository(session_factory)
+    for index, call_id in enumerate(["call-a", "call-b", "call-c"]):
+        repo.save(Conversation(call_id=call_id))
+        _set_created_at(session_factory, call_id, datetime(2026, 1, 1, 12, index))
+
+    assert [c.call_id for c in repo.list_page(limit=2, offset=0)] == ["call-c", "call-b"]
+    assert [c.call_id for c in repo.list_page(limit=2, offset=2)] == ["call-a"]
+    assert repo.list_page(limit=2, offset=3) == ()
+
+
+def test_conversation_list_page_breaks_created_at_ties_by_call_id(session_factory):
+    repo = PostgresConversationRepository(session_factory)
+    same_time = datetime(2026, 1, 1, 12, 0)
+    for call_id in ["call-b", "call-a"]:
+        repo.save(Conversation(call_id=call_id))
+        _set_created_at(session_factory, call_id, same_time)
+
+    assert [c.call_id for c in repo.list_page(limit=10, offset=0)] == ["call-a", "call-b"]
+
+
+def test_conversation_save_preserves_created_at(session_factory):
+    repo = PostgresConversationRepository(session_factory)
+    conversation = Conversation(call_id="call-keep")
+    repo.save(conversation)
+    original = datetime(2026, 1, 1, 9, 30)
+    _set_created_at(session_factory, "call-keep", original)
+
+    conversation.add_utterance(
+        Utterance(
+            utterance_id="u-keep",
+            transcript="hello",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=1.0,
+        )
+    )
+    repo.save(conversation)
+    conversation.complete(end_time=2.0)
+    repo.save(conversation)
+
+    assert _created_at(session_factory, "call-keep") == original
+
+
+def test_conversation_list_page_loads_completed_calls_with_utterances(session_factory):
+    repo = PostgresConversationRepository(session_factory)
+    conversation = Conversation(call_id="call-done")
+    conversation.add_utterance(
+        Utterance(
+            utterance_id="u-done",
+            transcript="thanks",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=1.0,
+        )
+    )
+    conversation.complete(end_time=3.0)
+    repo.save(conversation)
+
+    (loaded,) = repo.list_page(limit=10, offset=0)
+
+    assert loaded.status == ConversationStatus.COMPLETED
+    assert loaded.utterance_count == 1
+    assert loaded.end_time == 3.0
+
+
+def test_conversation_counts(session_factory):
+    repo = PostgresConversationRepository(session_factory)
+    assert repo.count() == 0
+    assert repo.count_by_status() == {
+        ConversationStatus.ACTIVE: 0,
+        ConversationStatus.COMPLETED: 0,
+    }
+
+    repo.save(Conversation(call_id="call-1"))
+    repo.save(Conversation(call_id="call-2"))
+    completed = Conversation(call_id="call-3")
+    completed.complete(end_time=1.0)
+    repo.save(completed)
+
+    assert repo.count() == 3
+    assert repo.count_by_status() == {
+        ConversationStatus.ACTIVE: 2,
+        ConversationStatus.COMPLETED: 1,
+    }

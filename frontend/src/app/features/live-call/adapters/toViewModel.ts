@@ -1,6 +1,6 @@
 import type {
   CallAnalysisResponseDto,
-  CallResponseDto,
+  CallSummaryDto,
   ComplaintDto,
   ComplaintSummaryDto,
   PostCallSummaryDto,
@@ -37,7 +37,7 @@ export function toTranscriptTurnViewModel(
 }
 
 export function toCallMetadataViewModel(
-  call: CallResponseDto,
+  call: CallSummaryDto,
 ): CallMetadataViewModel {
   return {
     callId: call.call_id,

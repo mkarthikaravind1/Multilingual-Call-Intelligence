@@ -355,3 +355,83 @@ def test_unexpected_provider_error_returns_500():
     response = client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance())
 
     assert response.status_code == 500
+
+
+def test_list_calls_is_empty_without_calls():
+    client = _client()
+
+    response = client.get(BASE)
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+
+
+def test_list_calls_returns_newest_first_with_pagination():
+    client = _client()
+    for call_id in ["call-a", "call-b", "call-c"]:
+        _start_call(client, call_id)
+    client.post(f"{BASE}/call-a/utterances", json=_utterance())
+
+    first_page = client.get(BASE, params={"limit": 2, "offset": 0}).json()
+    second_page = client.get(BASE, params={"limit": 2, "offset": 2}).json()
+
+    assert [item["call_id"] for item in first_page["items"]] == ["call-c", "call-b"]
+    assert [item["call_id"] for item in second_page["items"]] == ["call-a"]
+    assert first_page["total"] == second_page["total"] == 3
+    assert second_page["items"][0] == {
+        "call_id": "call-a",
+        "status": "active",
+        "start_time": 0.0,
+        "end_time": None,
+        "utterance_count": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"limit": 0}, {"limit": 101}, {"offset": -1}],
+)
+def test_list_calls_rejects_out_of_range_pagination(params):
+    client = _client()
+
+    response = client.get(BASE, params=params)
+
+    assert response.status_code == 422
+
+
+def test_call_stats_counts_calls_by_status():
+    client = _client()
+    assert client.get("/api/v1/call-stats").json() == {
+        "total": 0,
+        "active": 0,
+        "completed": 0,
+    }
+
+    _start_call(client, "call-a")
+    _start_call(client, "call-b")
+    client.post(f"{BASE}/call-a/complete", json={"end_time": 10.0})
+
+    response = client.get("/api/v1/call-stats")
+
+    assert response.status_code == 200
+    assert response.json() == {"total": 2, "active": 1, "completed": 1}
+
+
+def test_call_named_stats_is_still_retrievable():
+    client = _client()
+    _start_call(client, "stats")
+
+    response = client.get(f"{BASE}/stats")
+
+    assert response.status_code == 200
+    assert response.json()["call_id"] == "stats"
+
+
+@pytest.mark.parametrize("path", [BASE, "/api/v1/call-stats"])
+def test_call_collection_endpoints_require_authentication(path):
+    client = _client()
+    client.headers.pop("Authorization")
+
+    response = client.get(path)
+
+    assert response.status_code == 401

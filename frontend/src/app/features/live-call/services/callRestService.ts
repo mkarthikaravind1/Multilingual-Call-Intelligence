@@ -2,7 +2,9 @@ import { apiClient } from '../../../api/client'
 
 import type {
   CallAnalysisResponseDto,
+  CallListResponseDto,
   CallResponseDto,
+  CallStatsResponseDto,
   CompleteCallRequestDto,
   UtteranceRequestDto,
 } from '../types/dto'
@@ -17,6 +19,22 @@ export class CallRestService {
     return apiClient.post<CallResponseDto>(
       '/api/v1/calls',
       request,
+    )
+  }
+
+  listCalls(limit: number, offset: number) {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return apiClient.get<CallListResponseDto>(
+      `/api/v1/calls?${query.toString()}`,
+    )
+  }
+
+  getCallStats() {
+    return apiClient.get<CallStatsResponseDto>(
+      '/api/v1/call-stats',
     )
   }
 

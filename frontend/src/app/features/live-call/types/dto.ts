@@ -10,13 +10,29 @@ export interface UtteranceRequestDto {
 
 export type UtteranceDto = UtteranceRequestDto
 
-export interface CallResponseDto {
+export interface CallSummaryDto {
   call_id: string
   status: string
   start_time: number
   end_time: number | null
   utterance_count: number
+}
+
+export interface CallResponseDto extends CallSummaryDto {
   utterances: UtteranceDto[]
+}
+
+export interface CallListResponseDto {
+  items: CallSummaryDto[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface CallStatsResponseDto {
+  total: number
+  active: number
+  completed: number
 }
 
 export interface ComplaintCoverageDto {

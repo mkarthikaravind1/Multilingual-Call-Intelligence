@@ -5,8 +5,11 @@ separate set of classes: the domain layer must never import SQLAlchemy, and
 these models carry no business logic. Repositories map ORM <-> domain.
 """
 
+from datetime import datetime
+
 from sqlalchemy import (
     Boolean,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -17,6 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from app.infrastructure.database.base import Base
 
@@ -28,6 +32,10 @@ class ConversationModel(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     start_time: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     end_time: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Persistence-only: orders call history; not part of the domain model.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
 
     utterances: Mapped[list["UtteranceModel"]] = relationship(
         back_populates="conversation",

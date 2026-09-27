@@ -46,6 +46,24 @@ class CallResponse(_Response):
     utterance_count: int
     utterances: list[UtteranceResponse]
 
+class CallSummaryResponse(_Response):
+    call_id: str
+    status: ConversationStatus
+    start_time: float
+    end_time: float | None
+    utterance_count: int
+
+class CallListResponse(BaseModel):
+    items: list[CallSummaryResponse]
+    total: int
+    limit: int
+    offset: int
+
+class CallStatsResponse(BaseModel):
+    total: int
+    active: int
+    completed: int
+
 class ComplaintCoverageResponse(_Response):
     category: str
     status: ComplaintCoverageStatus

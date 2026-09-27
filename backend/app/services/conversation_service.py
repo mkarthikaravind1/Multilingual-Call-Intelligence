@@ -1,6 +1,6 @@
 import threading
 
-from app.domain.conversation import Conversation
+from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.utterance import Utterance
 from app.services.conversation_repository import ConversationRepository
 
@@ -38,6 +38,15 @@ class ConversationService:
         if conversation is None:
             raise ConversationNotFoundError(call_id)
         return conversation
+
+    def list_conversations(self, limit: int, offset: int) -> tuple[Conversation, ...]:
+        return self._repository.list_page(limit, offset)
+
+    def count_conversations(self) -> int:
+        return self._repository.count()
+
+    def count_conversations_by_status(self) -> dict[ConversationStatus, int]:
+        return self._repository.count_by_status()
 
     def add_utterance(self, call_id: str, utterance: Utterance) -> Conversation:
         with self._lock_for(call_id):

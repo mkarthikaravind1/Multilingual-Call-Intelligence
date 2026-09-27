@@ -1,6 +1,9 @@
 from app.api.v1.schemas import (
     CallAnalysisResponse,
+    CallListResponse,
     CallResponse,
+    CallStatsResponse,
+    CallSummaryResponse,
     CoverageResponse,
     PostCallSummaryResponse,
     QuestionSuggestionResponse,
@@ -8,7 +11,7 @@ from app.api.v1.schemas import (
     ServiceEstimateResponse,
     UtteranceRequest,
 )
-from app.domain.conversation import Conversation
+from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.utterance import Utterance
 from app.services.call_workflow_service import CallAnalysisResult
 
@@ -25,6 +28,21 @@ def to_utterance(payload: UtteranceRequest) -> Utterance:
 
 def to_call_response(conversation: Conversation) -> CallResponse:
     return CallResponse.model_validate(conversation)
+
+def to_call_list_response(
+    conversations: tuple[Conversation, ...], total: int, limit: int, offset: int
+) -> CallListResponse:
+    return CallListResponse(
+        items=[CallSummaryResponse.model_validate(c) for c in conversations],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+def to_call_stats_response(counts: dict[ConversationStatus, int]) -> CallStatsResponse:
+    active = counts.get(ConversationStatus.ACTIVE, 0)
+    completed = counts.get(ConversationStatus.COMPLETED, 0)
+    return CallStatsResponse(total=sum(counts.values()), active=active, completed=completed)
 
 def to_analysis_response(
     call_id: str, result: CallAnalysisResult

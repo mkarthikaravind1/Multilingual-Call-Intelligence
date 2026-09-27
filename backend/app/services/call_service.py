@@ -1,4 +1,4 @@
-from app.domain.conversation import Conversation
+from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.utterance import Utterance
 from app.services.conversation_service import ConversationService
 
@@ -19,6 +19,15 @@ class CallService:
 
     def get_call(self, call_id: str) -> Conversation:
         return self._conversation_service.get_conversation(call_id)
+
+    def list_calls(self, limit: int, offset: int) -> tuple[Conversation, ...]:
+        return self._conversation_service.list_conversations(limit, offset)
+
+    def count_calls(self) -> int:
+        return self._conversation_service.count_conversations()
+
+    def count_calls_by_status(self) -> dict[ConversationStatus, int]:
+        return self._conversation_service.count_conversations_by_status()
 
     def add_utterance(
         self,
