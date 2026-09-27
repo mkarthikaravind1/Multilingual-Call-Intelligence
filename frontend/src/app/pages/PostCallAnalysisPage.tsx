@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { ApiError } from '../api/errors'
+import { formatUnixTimestamp } from '../format/time'
 
 import {
   toCallAnalysisViewModel,
@@ -168,9 +169,9 @@ export function PostCallAnalysisPage() {
                 <p className="panel__label">Call {call.callId}</p>
                 <div className="info-list">
                   <span>Status: {call.status}</span>
-                  <span>Start time: {call.startTime}</span>
+                  <span>Start time: {formatUnixTimestamp(call.startTime)}</span>
                   <span>
-                    End time: {call.endTime ?? '—'}
+                    End time: {call.endTime != null ? formatUnixTimestamp(call.endTime) : '—'}
                   </span>
                   <span>
                     Utterance count: {call.utteranceCount}

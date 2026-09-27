@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/errors'
 
@@ -301,7 +302,10 @@ export function AiImprovementCenterPage() {
 
                     <div className="info-list">
                       <span>
-                        Call: {item.call_id}
+                        Call:{' '}
+                        <Link to={`/post-call-analysis?call_id=${encodeURIComponent(item.call_id)}`}>
+                          {item.call_id}
+                        </Link>
                       </span>
 
                       {item.expected_value && (

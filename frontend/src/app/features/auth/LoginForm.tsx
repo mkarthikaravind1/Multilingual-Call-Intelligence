@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { ApiError } from '../../api/errors'
 import { useAuth } from '../../auth/useAuth'
 
 export function LoginForm() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { login, isLoading, statusMessage } = useAuth()
 
   const [email, setEmail] = useState('')
@@ -30,7 +31,8 @@ export function LoginForm() {
 
     try {
       await login(trimmedEmail, password)
-      navigate('/dashboard', { replace: true })
+      const from = (location.state as { from?: string } | null)?.from
+      navigate(from || '/dashboard', { replace: true })
     } catch (error) {
       if (error instanceof ApiError) {
         setFieldError(error.message)

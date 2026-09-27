@@ -5,6 +5,7 @@ import { callRestService } from '../features/live-call/services/callRestService'
 import { toCallMetadataViewModel } from '../features/live-call/adapters/toViewModel'
 import type { CallMetadataViewModel } from '../features/live-call/types/view-models'
 import { ApiError } from '../api/errors'
+import { formatUnixTimestamp } from '../format/time'
 
 export function CallHistoryPage() {
   const [searchParams] = useSearchParams()
@@ -84,8 +85,8 @@ export function CallHistoryPage() {
           <p className="panel__label">Call {call.callId}</p>
           <div className="info-list">
             <span>Status: {call.status}</span>
-            <span>Start time: {call.startTime}</span>
-            <span>End time: {call.endTime ?? '—'}</span>
+            <span>Start time: {formatUnixTimestamp(call.startTime)}</span>
+            <span>End time: {call.endTime != null ? formatUnixTimestamp(call.endTime) : '—'}</span>
             <span>Utterance count: {call.utteranceCount}</span>
           </div>
 

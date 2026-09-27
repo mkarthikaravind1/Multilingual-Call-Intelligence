@@ -9,3 +9,11 @@ export function formatElapsedSeconds(seconds: number): string {
 
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
+
+export function formatUnixTimestamp(seconds: number): string {
+  if (!Number.isFinite(seconds)) {
+    return '—'
+  }
+
+  return new Date(seconds * 1000).toLocaleString()
+}
