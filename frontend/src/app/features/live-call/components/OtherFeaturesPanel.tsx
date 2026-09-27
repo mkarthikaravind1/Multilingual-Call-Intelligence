@@ -4,13 +4,16 @@ import { EscalationStatus } from './EscalationStatus'
 import { PostCallSummaryLink } from './PostCallSummaryLink'
 import { ServiceEstimatePanel } from './ServiceEstimatePanel'
 import { VehicleInfoPanel } from './VehicleInfoPanel'
+import type { ServiceEstimateViewModel } from '../types/view-models'
 
 type OtherFeaturesPanelProps = {
   callId?: string | null
+  serviceEstimate?: ServiceEstimateViewModel | null
 }
 
 export function OtherFeaturesPanel({
   callId,
+  serviceEstimate = null,
 }: OtherFeaturesPanelProps) {
   const [isOpen, setIsOpen] =
     useState(false)
@@ -48,7 +51,7 @@ export function OtherFeaturesPanel({
       {isOpen && (
         <div className="live-call__reserved-list">
           <EscalationStatus />
-          <ServiceEstimatePanel />
+          <ServiceEstimatePanel estimate={serviceEstimate} />
           <VehicleInfoPanel />
           <PostCallSummaryLink callId={callId} />
         </div>

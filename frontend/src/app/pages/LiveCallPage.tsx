@@ -116,7 +116,12 @@ export function LiveCallPage() {
             </aside>
           </div>
 
-          <OtherFeaturesPanel callId={callId} />
+          <OtherFeaturesPanel
+            callId={callId}
+            serviceEstimate={
+              liveCall.analysis?.serviceEstimate ?? null
+            }
+          />
         </>
       )}
     </section>

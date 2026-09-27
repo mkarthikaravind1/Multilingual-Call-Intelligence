@@ -36,8 +36,56 @@ export interface CallMetadataViewModel {
   utteranceCount: number
 }
 
+// Monetary values are kept as the backend's Decimal strings; never recalculated here.
+export interface EstimatedPartViewModel {
+  name: string
+  quantity: number
+  unitPrice: string
+  totalPrice: string
+}
+
+export interface LabourEstimateViewModel {
+  hours: number
+  hourlyRate: string
+  totalCost: string
+}
+
+export interface ServiceEstimateViewModel {
+  serviceName: string
+  currency: string
+  parts: EstimatedPartViewModel[]
+  labour: LabourEstimateViewModel
+  estimatedDurationHours: number
+  partsCost: string
+  labourCost: string
+  estimatedCost: string
+}
+
+export interface ComplaintSummaryViewModel {
+  category: string
+  description: string
+  status: string
+  evidence: string
+  confidence: number | null
+}
+
+export interface PostCallSummaryViewModel {
+  callId: string
+  overallSummary: string
+  languages: string[]
+  sentiment: SentimentViewModel
+  complaints: ComplaintSummaryViewModel[]
+  unresolvedIssues: string[]
+  actionsPromised: string[]
+  followUpRequired: boolean
+  customerSummary: string
+  serviceEstimate: ServiceEstimateViewModel | null
+}
+
 export interface CallAnalysisViewModel {
   complaints: ComplaintViewModel[]
   sentiment: SentimentViewModel | null
   questionSuggestion: QuestionSuggestionViewModel | null
+  serviceEstimate: ServiceEstimateViewModel | null
+  postCallSummary: PostCallSummaryViewModel | null
 }

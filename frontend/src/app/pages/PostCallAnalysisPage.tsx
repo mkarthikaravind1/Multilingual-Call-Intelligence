@@ -16,6 +16,7 @@ import {
 
 import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
 import { NextQuestionPanel } from '../features/live-call/components/NextQuestionPanel'
+import { ServiceEstimatePanel } from '../features/live-call/components/ServiceEstimatePanel'
 import { ToneIndicator } from '../features/live-call/components/ToneIndicator'
 import { TranscriptPanel } from '../features/live-call/components/TranscriptPanel'
 
@@ -204,6 +205,80 @@ export function PostCallAnalysisPage() {
               suggestion={analysis.questionSuggestion}
             />
           </div>
+
+          <div className="panel">
+            <ServiceEstimatePanel estimate={analysis.serviceEstimate} />
+          </div>
+
+          {analysis.postCallSummary && (
+            <div className="panel">
+              <p className="panel__label">Post-call summary</p>
+              <p>{analysis.postCallSummary.overallSummary}</p>
+
+              <div className="info-list">
+                <span>
+                  Customer summary: {analysis.postCallSummary.customerSummary}
+                </span>
+                <span>
+                  Languages: {analysis.postCallSummary.languages.join(', ')}
+                </span>
+                <span>
+                  Sentiment: {analysis.postCallSummary.sentiment.label} (
+                  {Math.round(analysis.postCallSummary.sentiment.confidence * 100)}%)
+                </span>
+                <span>
+                  Follow-up required:{' '}
+                  {analysis.postCallSummary.followUpRequired ? 'Yes' : 'No'}
+                </span>
+              </div>
+
+              {analysis.postCallSummary.complaints.length > 0 && (
+                <>
+                  <p className="panel__label">Complaints</p>
+                  <ul>
+                    {analysis.postCallSummary.complaints.map((complaint) => (
+                      <li key={complaint.category}>
+                        {complaint.category} · {complaint.status}:{' '}
+                        {complaint.description}
+                        {complaint.confidence !== null &&
+                          ` (${Math.round(complaint.confidence * 100)}%)`}
+                        <br />
+                        <small>Evidence: {complaint.evidence}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              {analysis.postCallSummary.unresolvedIssues.length > 0 && (
+                <>
+                  <p className="panel__label">Unresolved issues</p>
+                  <ul>
+                    {analysis.postCallSummary.unresolvedIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              {analysis.postCallSummary.actionsPromised.length > 0 && (
+                <>
+                  <p className="panel__label">Actions promised</p>
+                  <ul>
+                    {analysis.postCallSummary.actionsPromised.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              {analysis.postCallSummary.serviceEstimate && (
+                <ServiceEstimatePanel
+                  estimate={analysis.postCallSummary.serviceEstimate}
+                />
+              )}
+            </div>
+          )}
         </>
       )}
     </section>

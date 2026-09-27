@@ -44,11 +44,59 @@ export interface QuestionSuggestionDto {
   confidence: number | null
 }
 
+// Monetary fields are backend Decimals, serialized as JSON strings.
+export interface EstimatedPartDto {
+  name: string
+  quantity: number
+  unit_price: string
+  total_price: string
+}
+
+export interface LabourEstimateDto {
+  hours: number
+  hourly_rate: string
+  total_cost: string
+}
+
+export interface ServiceEstimateDto {
+  service_name: string
+  currency: string
+  parts: EstimatedPartDto[]
+  labour: LabourEstimateDto
+  estimated_duration_hours: number
+  parts_cost: string
+  labour_cost: string
+  estimated_cost: string
+}
+
+export interface ComplaintSummaryDto {
+  category: string
+  description: string
+  status: string
+  evidence: string
+  confidence: number | null
+}
+
+export interface PostCallSummaryDto {
+  call_id: string
+  overall_summary: string
+  languages: string[]
+  sentiment: SentimentDto
+  complaints: ComplaintSummaryDto[]
+  unresolved_issues: string[]
+  actions_promised: string[]
+  follow_up_required: boolean
+  customer_summary: string
+  service_estimate: ServiceEstimateDto | null
+}
+
 export interface CallAnalysisResponseDto {
   call_id: string
   coverage: ComplaintCoverageDto
   sentiment: SentimentDto
   question_suggestion: QuestionSuggestionDto | null
+  service_estimate?: ServiceEstimateDto | null
+  post_call_summary?: PostCallSummaryDto | null
 }
 
 export interface CompleteCallRequestDto {

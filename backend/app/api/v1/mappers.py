@@ -2,8 +2,10 @@ from app.api.v1.schemas import (
     CallAnalysisResponse,
     CallResponse,
     CoverageResponse,
+    PostCallSummaryResponse,
     QuestionSuggestionResponse,
     SentimentResponse,
+    ServiceEstimateResponse,
     UtteranceRequest,
 )
 from app.domain.conversation import Conversation
@@ -28,6 +30,8 @@ def to_analysis_response(
     call_id: str, result: CallAnalysisResult
 ) -> CallAnalysisResponse:
     suggestion = result.question_suggestion
+    estimate = result.service_estimate
+    summary = result.post_call_summary
     return CallAnalysisResponse(
         call_id=call_id,
         coverage=CoverageResponse.model_validate(result.coverage),
@@ -35,6 +39,16 @@ def to_analysis_response(
         question_suggestion=(
             QuestionSuggestionResponse.model_validate(suggestion)
             if suggestion is not None
+            else None
+        ),
+        service_estimate=(
+            ServiceEstimateResponse.model_validate(estimate)
+            if estimate is not None
+            else None
+        ),
+        post_call_summary=(
+            PostCallSummaryResponse.model_validate(summary)
+            if summary is not None
             else None
         ),
     )

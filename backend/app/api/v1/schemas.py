@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from pydantic import BaseModel, ConfigDict, Field
 from app.ai.sentiment.provider import SentimentLabel
 from app.domain.complaint_coverage import ComplaintCoverageStatus
@@ -65,8 +67,50 @@ class QuestionSuggestionResponse(_Response):
     source: SuggestionSource
     confidence: float | None
 
+class EstimatedPartResponse(_Response):
+    name: str
+    quantity: int
+    unit_price: Decimal
+    total_price: Decimal
+
+class LabourEstimateResponse(_Response):
+    hours: float
+    hourly_rate: Decimal
+    total_cost: Decimal
+
+class ServiceEstimateResponse(_Response):
+    service_name: str
+    currency: str
+    parts: list[EstimatedPartResponse]
+    labour: LabourEstimateResponse
+    estimated_duration_hours: float
+    parts_cost: Decimal
+    labour_cost: Decimal
+    estimated_cost: Decimal
+
+class ComplaintSummaryResponse(_Response):
+    category: str
+    description: str
+    status: ComplaintCoverageStatus
+    evidence: str
+    confidence: float | None
+
+class PostCallSummaryResponse(_Response):
+    call_id: str
+    overall_summary: str
+    languages: list[str]
+    sentiment: SentimentResponse
+    complaints: list[ComplaintSummaryResponse]
+    unresolved_issues: list[str]
+    actions_promised: list[str]
+    follow_up_required: bool
+    customer_summary: str
+    service_estimate: ServiceEstimateResponse | None
+
 class CallAnalysisResponse(_Response):
     call_id: str
     coverage: CoverageResponse
     sentiment: SentimentResponse
     question_suggestion: QuestionSuggestionResponse | None
+    service_estimate: ServiceEstimateResponse | None = None
+    post_call_summary: PostCallSummaryResponse | None = None
