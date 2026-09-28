@@ -1,3 +1,5 @@
+import { ComplaintStatusBadge } from '../../../components/ToneBadges'
+
 import type {
   ComplaintViewModel,
 } from '../types/view-models'
@@ -29,8 +31,7 @@ export function ComplaintPanel({
 
       {complaints.length === 0 ? (
         <div className="live-call__compact-empty">
-          No complaint categories have
-          been returned yet.
+          No complaints detected so far.
         </div>
       ) : (
         <div className="live-call__complaint-list">
@@ -44,9 +45,7 @@ export function ComplaintPanel({
                   {complaint.category}
                 </span>
 
-                <span className="live-call__status-tag">
-                  {complaint.status}
-                </span>
+                <ComplaintStatusBadge status={complaint.status} />
               </div>
             ),
           )}

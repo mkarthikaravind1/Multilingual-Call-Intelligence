@@ -19,7 +19,9 @@ type CallHeaderProps = {
   connectionStatus: LiveSocketStatus
   isLoading: boolean
   isCompleting: boolean
+  isStarting: boolean
   initialCallId: string
+  onStartCall: () => void
   onOpenCall: (callId: string) => void
   onClearCall: () => void
   onCompleteCall: () => void
@@ -30,7 +32,9 @@ export function CallHeader({
   connectionStatus,
   isLoading,
   isCompleting,
+  isStarting,
   initialCallId,
+  onStartCall,
   onOpenCall,
   onClearCall,
   onCompleteCall,
@@ -72,7 +76,7 @@ export function CallHeader({
                     ? ''
                     : 's'
                 }`
-              : 'Use an existing backend call ID to connect to the live intelligence stream.'}
+              : 'Open an existing call by ID, or start a new manual call.'}
           </p>
         </div>
 
@@ -124,6 +128,19 @@ export function CallHeader({
             ? 'Loading…'
             : 'Open call'}
         </button>
+
+        {!call && (
+          <button
+            type="button"
+            className="live-call__secondary-button"
+            onClick={onStartCall}
+            disabled={isStarting || isLoading}
+          >
+            {isStarting
+              ? 'Starting…'
+              : 'Start new call'}
+          </button>
+        )}
 
         {canComplete && (
           <button

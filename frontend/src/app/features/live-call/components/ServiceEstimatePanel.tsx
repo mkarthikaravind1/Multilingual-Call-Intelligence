@@ -4,15 +4,17 @@ import type {
 
 type ServiceEstimatePanelProps = {
   estimate: ServiceEstimateViewModel | null
+  emptyMessage?: string
 }
 
 // Amounts are the backend's Decimal strings, displayed as-is.
 export function ServiceEstimatePanel({
   estimate,
+  emptyMessage = 'No estimate for this call yet.',
 }: ServiceEstimatePanelProps) {
   return (
     <div className="live-call__reserved-card">
-      <span className="live-call__reserved-icon">
+      <span className="live-call__reserved-icon" aria-hidden="true">
         {estimate ? '≈' : '—'}
       </span>
 
@@ -46,7 +48,7 @@ export function ServiceEstimatePanel({
             </strong>
           </div>
         ) : (
-          <span>No estimate for this call yet.</span>
+          <span>{emptyMessage}</span>
         )}
       </div>
     </div>

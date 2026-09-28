@@ -6,13 +6,15 @@ type NextQuestionPanelProps = {
   suggestion:
     | QuestionSuggestionViewModel
     | null
+  emptyMessage?: string
 }
 
 export function NextQuestionPanel({
   suggestion,
+  emptyMessage = 'No next-question suggestion has been returned yet.',
 }: NextQuestionPanelProps) {
   return (
-    <section className="panel panel--highlight">
+    <section className="panel panel--highlight next-question-panel">
       <p className="panel__label">
         Next-question engine
       </p>
@@ -63,8 +65,7 @@ export function NextQuestionPanel({
         </>
       ) : (
         <p className="live-call__compact-empty">
-          No next-question suggestion has
-          been returned yet.
+          {emptyMessage}
         </p>
       )}
     </section>

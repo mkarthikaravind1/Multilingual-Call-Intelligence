@@ -1,3 +1,6 @@
+import { humanizeLabel } from '../../../format/text'
+import { sentimentTone } from '../../../format/tone'
+
 import type {
   SentimentViewModel,
 } from '../types/view-models'
@@ -9,15 +12,18 @@ type ToneIndicatorProps = {
 export function ToneIndicator({
   sentiment,
 }: ToneIndicatorProps) {
+  const tone = sentiment ? sentimentTone(sentiment.label) : 'neutral'
+
   return (
-    <section className="panel">
+    <section className={`panel tone--${tone}`}>
       <p className="panel__label">
         Customer tone
       </p>
 
       <h4 className="live-call__metric-title">
-        {sentiment?.label ??
-          'Not available yet'}
+        {sentiment
+          ? humanizeLabel(sentiment.label)
+          : 'Not available yet'}
       </h4>
 
       {sentiment ? (
@@ -61,8 +67,7 @@ export function ToneIndicator({
         </>
       ) : (
         <p className="live-call__compact-empty">
-          Waiting for backend sentiment
-          analysis.
+          Sentiment appears once the customer has spoken.
         </p>
       )}
     </section>

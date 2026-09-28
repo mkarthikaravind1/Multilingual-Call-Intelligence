@@ -3,14 +3,17 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { callRestService } from '../features/live-call/services/callRestService'
 import { toCallMetadataViewModel } from '../features/live-call/adapters/toViewModel'
+import { CallTable } from '../features/live-call/components/CallTable'
 import type { CallMetadataViewModel } from '../features/live-call/types/view-models'
 import { ApiError } from '../api/errors'
-import { formatUnixTimestamp } from '../format/time'
+import { CallStatusBadge } from '../components/CallStatusBadge'
+import { StatePanel } from '../components/StatePanel'
+import { formatCallDuration } from '../format/time'
 
 const PAGE_SIZE = 20
 
 type CallListState = {
-  offset: number
+  requestKey: string
   calls: CallMetadataViewModel[]
   total: number
   error: string | null
@@ -18,10 +21,12 @@ type CallListState = {
 
 function CallList() {
   const [offset, setOffset] = useState(0)
+  const [reloadCount, setReloadCount] = useState(0)
   const [result, setResult] = useState<CallListState | null>(null)
 
-  const isLoading = result?.offset !== offset
-  const current = result?.offset === offset ? result : null
+  const requestKey = `${offset}:${reloadCount}`
+  const isLoading = result?.requestKey !== requestKey
+  const current = result?.requestKey === requestKey ? result : null
 
   useEffect(() => {
     let cancelled = false
@@ -31,7 +36,7 @@ function CallList() {
       .then((response) => {
         if (cancelled) return
         setResult({
-          offset,
+          requestKey,
           calls: response.items.map(toCallMetadataViewModel),
           total: response.total,
           error: null,
@@ -40,7 +45,7 @@ function CallList() {
       .catch((err) => {
         if (cancelled) return
         setResult({
-          offset,
+          requestKey,
           calls: [],
           total: 0,
           error: err instanceof ApiError ? err.message : 'Unable to load call history.',
@@ -50,84 +55,75 @@ function CallList() {
     return () => {
       cancelled = true
     }
-  }, [offset])
+  }, [offset, requestKey])
+
+  const refreshButton = (
+    <button
+      type="button"
+      className="button button--secondary"
+      onClick={() => setReloadCount((count) => count + 1)}
+      disabled={isLoading}
+    >
+      Refresh
+    </button>
+  )
 
   if (isLoading) {
-    return (
-      <div className="panel">
-        <p>Loading call history…</p>
-      </div>
-    )
+    return <StatePanel variant="loading" title="Loading call history…" />
   }
 
   if (current?.error) {
     return (
-      <div className="live-call__error" role="alert">
-        <strong>Could not load call history</strong>
-        <span>{current.error}</span>
-      </div>
+      <StatePanel
+        variant="error"
+        title="Could not load call history"
+        description={current.error}
+        action={refreshButton}
+      />
     )
   }
 
   if (!current || current.total === 0) {
     return (
-      <div className="panel">
-        <p className="panel__label">No calls yet</p>
-        <p>Calls will appear here once they are started.</p>
-      </div>
+      <StatePanel
+        title="No calls yet"
+        description="Calls appear here once they are started from Live Call or received through telephony."
+        action={
+          <Link className="button" to="/live-call">
+            Go to Live Call
+          </Link>
+        }
+      />
     )
   }
 
   const firstShown = offset + 1
   const lastShown = offset + current.calls.length
+  const page = Math.floor(offset / PAGE_SIZE) + 1
+  const pageCount = Math.max(1, Math.ceil(current.total / PAGE_SIZE))
 
   return (
     <>
-      <div className="panel panel--list">
-        <div className="table-row table-row--head">
-          <span>Call ID</span>
-          <span>Status</span>
-          <span>Utterances</span>
-          <span>Open</span>
-        </div>
+      <CallTable calls={current.calls} />
 
-        {current.calls.map((call) => (
-          <div className="table-row" key={call.callId}>
-            <span>{call.callId}</span>
-            <span>{call.status}</span>
-            <span>{call.utteranceCount}</span>
-            <span className="call-history__actions">
-              <Link
-                className="call-history__link"
-                to={`/live-call?call_id=${encodeURIComponent(call.callId)}`}
-              >
-                Live Call
-              </Link>
-              <Link
-                className="call-history__link"
-                to={`/post-call-analysis?call_id=${encodeURIComponent(call.callId)}`}
-              >
-                Post-call Analysis
-              </Link>
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="page-shell__header">
+      <div className="pager">
         <span>
-          Showing {firstShown}–{lastShown} of {current.total}
+          Showing <strong>{firstShown}–{lastShown}</strong> of{' '}
+          <strong>{current.total}</strong> calls · Page {page} of {pageCount}
         </span>
-        <div>
+        <div className="button-row">
+          {refreshButton}
           <button
             type="button"
+            className="button button--secondary"
             onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
             disabled={offset === 0}
           >
             Previous
-          </button>{' '}
+          </button>
           <button
             type="button"
+            className="button button--secondary"
             onClick={() => setOffset(offset + PAGE_SIZE)}
             disabled={lastShown >= current.total}
           >
@@ -180,45 +176,65 @@ export function CallHistoryPage() {
     }
   }, [callId])
 
+  const backToList = (
+    <Link className="button button--secondary" to="/call-history">
+      Back to all calls
+    </Link>
+  )
+
   return (
     <section className="page-shell">
-      <div className="page-shell__header">
-        <div>
-          <p className="eyebrow">Records</p>
-          <h2>Call history</h2>
-        </div>
-      </div>
+      {callId && (
+        <div className="page-shell__header page-shell__header--actions">{backToList}</div>
+      )}
 
       {!callId && <CallList />}
 
       {callId && isLoading && (
-        <div className="panel">
-          <p>Loading call {callId}…</p>
-        </div>
+        <StatePanel variant="loading" title={`Loading call ${callId}…`} />
       )}
 
       {callId && !isLoading && error && (
-        <div className="live-call__error" role="alert">
-          <strong>Could not load call</strong>
-          <span>{error}</span>
-        </div>
+        <StatePanel
+          variant="error"
+          title="Could not load call"
+          description={error}
+          action={backToList}
+        />
       )}
 
       {callId && !isLoading && !error && call && (
         <div className="panel">
-          <p className="panel__label">Call {call.callId}</p>
-          <div className="info-list">
-            <span>Status: {call.status}</span>
-            <span>Start time: {formatUnixTimestamp(call.startTime)}</span>
-            <span>End time: {call.endTime != null ? formatUnixTimestamp(call.endTime) : '—'}</span>
-            <span>Utterance count: {call.utteranceCount}</span>
+          <div className="section-heading">
+            <div>
+              <p className="panel__label">Call</p>
+              <h3 className="section-title">{call.callId}</h3>
+            </div>
+            <CallStatusBadge status={call.status} />
           </div>
 
-          <div className="live-call__call-selector" style={{ marginTop: '1rem' }}>
-            <Link to={`/live-call?call_id=${encodeURIComponent(call.callId)}`}>
+          <div className="fact-grid">
+            <div className="fact">
+              <span>Duration</span>
+              <strong>{formatCallDuration(call.startTime, call.endTime)}</strong>
+            </div>
+            <div className="fact">
+              <span>Utterances</span>
+              <strong>{call.utteranceCount}</strong>
+            </div>
+          </div>
+
+          <div className="button-row spaced-top">
+            <Link
+              className="button"
+              to={`/live-call?call_id=${encodeURIComponent(call.callId)}`}
+            >
               Open in Live Call
             </Link>
-            <Link to={`/post-call-analysis?call_id=${encodeURIComponent(call.callId)}`}>
+            <Link
+              className="button button--secondary"
+              to={`/post-call-analysis?call_id=${encodeURIComponent(call.callId)}`}
+            >
               Open Post-call Analysis
             </Link>
           </div>

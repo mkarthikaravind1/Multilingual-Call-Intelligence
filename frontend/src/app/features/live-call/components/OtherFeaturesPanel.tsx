@@ -16,7 +16,7 @@ export function OtherFeaturesPanel({
   serviceEstimate = null,
 }: OtherFeaturesPanelProps) {
   const [isOpen, setIsOpen] =
-    useState(false)
+    useState(true)
 
   return (
     <section className="panel live-call__other-panel">
@@ -29,14 +29,15 @@ export function OtherFeaturesPanel({
           )
         }
         aria-expanded={isOpen}
+        aria-controls="live-call-insights"
       >
         <span>
           <span className="panel__label">
-            Other features
+            Call insights
           </span>
 
           <strong>
-            Future integrations
+            Estimate, summary &amp; integrations
           </strong>
         </span>
 
@@ -49,11 +50,11 @@ export function OtherFeaturesPanel({
       </button>
 
       {isOpen && (
-        <div className="live-call__reserved-list">
-          <EscalationStatus />
+        <div id="live-call-insights" className="live-call__reserved-list">
           <ServiceEstimatePanel estimate={serviceEstimate} />
-          <VehicleInfoPanel />
           <PostCallSummaryLink callId={callId} />
+          <EscalationStatus />
+          <VehicleInfoPanel />
         </div>
       )}
     </section>

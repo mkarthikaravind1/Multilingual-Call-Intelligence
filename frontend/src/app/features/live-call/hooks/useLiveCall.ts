@@ -340,8 +340,10 @@ export function useLiveCall(
     }
   }, [callId, loadCall])
 
+  const loadedCallId = call?.callId ?? null
+
   useEffect(() => {
-    if (!callId || !call) {
+    if (!callId || !loadedCallId) {
       return
     }
 
@@ -366,7 +368,7 @@ export function useLiveCall(
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [call?.callId, callId, refreshCallState])
+  }, [loadedCallId, callId, refreshCallState])
 
   return {
     call,

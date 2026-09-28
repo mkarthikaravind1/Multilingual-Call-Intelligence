@@ -1,16 +1,38 @@
 import { NavLink } from 'react-router-dom'
 
-const navItems = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/live-call', label: 'Live Call' },
-  { to: '/call-history', label: 'Call History' },
-  { to: '/post-call-analysis', label: 'Post-call Analysis' },
-  { to: '/ai-improvement', label: 'AI Improvement Center' },
+import { useAuth } from '../auth/useAuth'
+import { NavIcon, type NavIconName } from './NavIcon'
+import { SIDEBAR_ID } from './shell-layout-context'
+import { useShellLayout } from './useShellLayout'
+
+type NavItem = { to: string; label: string; icon: NavIconName }
+
+const navItems: NavItem[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { to: '/live-call', label: 'Live Call', icon: 'live-call' },
+  { to: '/call-history', label: 'Call History', icon: 'call-history' },
+  { to: '/post-call-analysis', label: 'Post-call Analysis', icon: 'post-call' },
+  { to: '/ai-improvement', label: 'AI Improvement Center', icon: 'ai-improvement' },
+]
+
+const adminNavItems: NavItem[] = [
+  { to: '/administration', label: 'Administration', icon: 'administration' },
 ]
 
 export function Sidebar() {
+  const { session } = useAuth()
+  const { isSidebarCollapsed, isDrawerOpen, closeDrawer } = useShellLayout()
+  const visibleItems =
+    session?.role === 'ADMIN' ? [...navItems, ...adminNavItems] : navItems
+
+  const className = [
+    'sidebar',
+    isSidebarCollapsed ? 'sidebar--collapsed' : '',
+    isDrawerOpen ? 'sidebar--drawer-open' : '',
+  ].join(' ')
+
   return (
-    <aside className="sidebar" aria-label="Sidebar navigation">
+    <aside id={SIDEBAR_ID} className={className} aria-label="Sidebar navigation">
       <div className="sidebar__brand" aria-label="Application brand">
         <div className="sidebar__brand-mark" aria-hidden="true">
           M
@@ -19,10 +41,18 @@ export function Sidebar() {
           <span className="sidebar__brand-name">Multilingual</span>
           <span className="sidebar__brand-subtitle">Customer Intelligence</span>
         </div>
+        <button
+          type="button"
+          className="sidebar__close"
+          onClick={closeDrawer}
+          aria-label="Close navigation"
+        >
+          <NavIcon name="close" />
+        </button>
       </div>
 
       <nav className="sidebar__nav" aria-label="Main navigation">
-        {navItems.map(({ to, label }) => (
+        {visibleItems.map(({ to, label, icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -30,7 +60,11 @@ export function Sidebar() {
               ['sidebar__nav-item', isActive ? 'sidebar__nav-item--active' : ''].join(' ')
             }
             end={to === '/dashboard'}
+            title={isSidebarCollapsed ? label : undefined}
+            aria-label={isSidebarCollapsed ? label : undefined}
+            onClick={closeDrawer}
           >
+            <NavIcon name={icon} />
             <span className="sidebar__nav-label">{label}</span>
           </NavLink>
         ))}

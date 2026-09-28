@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { ApiError } from '../api/errors'
-import { formatUnixTimestamp } from '../format/time'
+import { CallStatusBadge } from '../components/CallStatusBadge'
+import { IntegrationPendingCard } from '../components/IntegrationPendingCard'
+import { StatePanel } from '../components/StatePanel'
+import { formatCallDuration } from '../format/time'
 
 import {
   toCallAnalysisViewModel,
@@ -16,6 +19,10 @@ import {
 
 import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
 import { NextQuestionPanel } from '../features/live-call/components/NextQuestionPanel'
+import {
+  PostCallSummaryPanel,
+  type PostCallSummaryState,
+} from '../features/live-call/components/PostCallSummaryPanel'
 import { ServiceEstimatePanel } from '../features/live-call/components/ServiceEstimatePanel'
 import { ToneIndicator } from '../features/live-call/components/ToneIndicator'
 import { TranscriptPanel } from '../features/live-call/components/TranscriptPanel'
@@ -25,6 +32,11 @@ import type {
   CallMetadataViewModel,
   TranscriptTurnViewModel,
 } from '../features/live-call/types/view-models'
+
+// The summary is generated right after completion (in the background for
+// telephony calls), so a just-completed call is re-checked for a short while.
+const SUMMARY_POLL_INTERVAL_MS = 3000
+const SUMMARY_POLL_ATTEMPTS = 5
 
 export function PostCallAnalysisPage() {
   const [searchParams] = useSearchParams()
@@ -37,6 +49,7 @@ export function PostCallAnalysisPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isCompleting, setIsCompleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [summaryPollFinishedFor, setSummaryPollFinishedFor] = useState<string | null>(null)
 
   useEffect(() => {
     if (!callId) {
@@ -95,8 +108,52 @@ export function PostCallAnalysisPage() {
     }
   }, [callId])
 
+  const isActiveCall = call?.status.toLowerCase() === 'active'
+  const isCompletedCall = call?.status.toLowerCase() === 'completed'
+  const hasSummary = Boolean(analysis?.postCallSummary)
+  const hasSpeech = (call?.utteranceCount ?? 0) > 0
+
+  const isWaitingForSummary =
+    isCompletedCall &&
+    Boolean(analysis) &&
+    !hasSummary &&
+    hasSpeech &&
+    summaryPollFinishedFor !== callId
+
+  useEffect(() => {
+    if (!isWaitingForSummary) {
+      return
+    }
+
+    let cancelled = false
+    let attempts = 0
+
+    const intervalId = window.setInterval(async () => {
+      attempts += 1
+
+      try {
+        const analysisResponse = await callRestService.getAnalysis(callId)
+        if (!cancelled) {
+          setAnalysis(toCallAnalysisViewModel(analysisResponse))
+        }
+      } catch {
+        // Keep showing the last successful analysis.
+      }
+
+      if (!cancelled && attempts >= SUMMARY_POLL_ATTEMPTS) {
+        window.clearInterval(intervalId)
+        setSummaryPollFinishedFor(callId)
+      }
+    }, SUMMARY_POLL_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [callId, isWaitingForSummary])
+
   const handleCompleteCall = async () => {
-    if (!callId || !call || call.status.toLowerCase() !== 'active') {
+    if (!callId || !isActiveCall) {
       return
     }
 
@@ -127,158 +184,138 @@ export function PostCallAnalysisPage() {
     }
   }
 
-  const isActiveCall =
-    call?.status.toLowerCase() === 'active'
+  const summaryState: PostCallSummaryState = hasSummary
+    ? 'available'
+    : isActiveCall
+      ? 'active_call'
+      : !hasSpeech
+        ? 'no_speech'
+        : isWaitingForSummary
+          ? 'generating'
+          : 'unavailable'
 
   return (
     <section className="page-shell">
-      <div className="page-shell__header">
-        <div>
-          <p className="eyebrow">Analysis</p>
-          <h2>Post-call analysis</h2>
+      {callId && (
+        <div className="page-shell__header page-shell__header--actions">
+          <Link className="button button--secondary" to="/call-history">
+            Back to call history
+          </Link>
         </div>
-      </div>
+      )}
 
       {!callId && (
-        <div className="panel">
-          <p className="panel__label">No call selected</p>
-          <p>
-            Add a call ID to the URL as{' '}
-            <code>?call_id=&lt;call_id&gt;</code> to view its analysis.
-          </p>
-        </div>
+        <StatePanel
+          title="No call selected"
+          description="Choose a call from Call History to review its transcript, complaints, service estimate and post-call summary."
+          action={
+            <Link className="button" to="/call-history">
+              Browse call history
+            </Link>
+          }
+        />
       )}
 
       {callId && isLoading && (
-        <div className="panel">
-          <p>Loading call {callId}…</p>
-        </div>
+        <StatePanel variant="loading" title={`Loading call ${callId}…`} />
       )}
 
       {callId && !isLoading && error && (
-        <div className="live-call__error" role="alert">
-          <strong>Could not load post-call analysis</strong>
-          <span>{error}</span>
-        </div>
+        <StatePanel
+          variant="error"
+          title={call ? 'Could not complete the call' : 'Could not load post-call analysis'}
+          description={error}
+        />
       )}
 
-      {callId && !isLoading && !error && call && analysis && (
+      {callId && !isLoading && call && analysis && (
         <>
           <div className="panel">
-            <div className="page-shell__header">
+            <div className="section-heading">
               <div>
-                <p className="panel__label">Call {call.callId}</p>
-                <div className="info-list">
-                  <span>Status: {call.status}</span>
-                  <span>Start time: {formatUnixTimestamp(call.startTime)}</span>
-                  <span>
-                    End time: {call.endTime != null ? formatUnixTimestamp(call.endTime) : '—'}
-                  </span>
-                  <span>
-                    Utterance count: {call.utteranceCount}
-                  </span>
-                </div>
+                <p className="panel__label">Call</p>
+                <h3 className="section-title">{call.callId}</h3>
               </div>
 
-              {isActiveCall && (
-                <button
-                  type="button"
-                  onClick={() => void handleCompleteCall()}
-                  disabled={isCompleting}
-                >
-                  {isCompleting ? 'Completing…' : 'Complete Call'}
-                </button>
-              )}
+              <div className="button-row">
+                <CallStatusBadge status={call.status} />
+                {isActiveCall && (
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => void handleCompleteCall()}
+                    disabled={isCompleting}
+                  >
+                    {isCompleting ? 'Completing…' : 'Complete call'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="fact-grid">
+              <div className="fact">
+                <span>Duration</span>
+                <strong>{formatCallDuration(call.startTime, call.endTime)}</strong>
+              </div>
+              <div className="fact">
+                <span>Utterances</span>
+                <strong>{call.utteranceCount}</strong>
+              </div>
             </div>
           </div>
+
+          <PostCallSummaryPanel
+            state={summaryState}
+            summary={analysis.postCallSummary}
+          />
 
           <div className="live-call__workspace-grid">
-            <TranscriptPanel transcript={utterances} />
-
-            <ComplaintPanel
-              complaints={analysis.complaints}
-            />
-
-            <ToneIndicator sentiment={analysis.sentiment} />
-
-            <NextQuestionPanel
-              suggestion={analysis.questionSuggestion}
-            />
-          </div>
-
-          <div className="panel">
-            <ServiceEstimatePanel estimate={analysis.serviceEstimate} />
-          </div>
-
-          {analysis.postCallSummary && (
-            <div className="panel">
-              <p className="panel__label">Post-call summary</p>
-              <p>{analysis.postCallSummary.overallSummary}</p>
-
-              <div className="info-list">
-                <span>
-                  Customer summary: {analysis.postCallSummary.customerSummary}
-                </span>
-                <span>
-                  Languages: {analysis.postCallSummary.languages.join(', ')}
-                </span>
-                <span>
-                  Sentiment: {analysis.postCallSummary.sentiment.label} (
-                  {Math.round(analysis.postCallSummary.sentiment.confidence * 100)}%)
-                </span>
-                <span>
-                  Follow-up required:{' '}
-                  {analysis.postCallSummary.followUpRequired ? 'Yes' : 'No'}
-                </span>
-              </div>
-
-              {analysis.postCallSummary.complaints.length > 0 && (
-                <>
-                  <p className="panel__label">Complaints</p>
-                  <ul>
-                    {analysis.postCallSummary.complaints.map((complaint) => (
-                      <li key={complaint.category}>
-                        {complaint.category} · {complaint.status}:{' '}
-                        {complaint.description}
-                        {complaint.confidence !== null &&
-                          ` (${Math.round(complaint.confidence * 100)}%)`}
-                        <br />
-                        <small>Evidence: {complaint.evidence}</small>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {analysis.postCallSummary.unresolvedIssues.length > 0 && (
-                <>
-                  <p className="panel__label">Unresolved issues</p>
-                  <ul>
-                    {analysis.postCallSummary.unresolvedIssues.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {analysis.postCallSummary.actionsPromised.length > 0 && (
-                <>
-                  <p className="panel__label">Actions promised</p>
-                  <ul>
-                    {analysis.postCallSummary.actionsPromised.map((action) => (
-                      <li key={action}>{action}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {analysis.postCallSummary.serviceEstimate && (
-                <ServiceEstimatePanel
-                  estimate={analysis.postCallSummary.serviceEstimate}
-                />
-              )}
+            <div className="live-call__main-column">
+              <TranscriptPanel transcript={utterances} />
             </div>
-          )}
+
+            <aside className="live-call__side-column">
+              <section className="panel">
+                <p className="panel__label">Service estimate</p>
+                <ServiceEstimatePanel
+                  estimate={analysis.serviceEstimate}
+                  emptyMessage={
+                    isActiveCall
+                      ? 'No estimate for this call yet.'
+                      : 'No service estimate was produced for this call.'
+                  }
+                />
+              </section>
+              <ComplaintPanel complaints={analysis.complaints} />
+              <ToneIndicator sentiment={analysis.sentiment} />
+              <NextQuestionPanel
+                suggestion={analysis.questionSuggestion}
+                emptyMessage={
+                  isActiveCall
+                    ? undefined
+                    : 'Next-question suggestions are only generated while a call is active.'
+                }
+              />
+            </aside>
+          </div>
+
+          <section className="panel">
+            <p className="panel__label">Customer follow-up</p>
+            <div className="integration-grid">
+              <IntegrationPendingCard
+                title="Customer summary delivery"
+                description="SMS/WhatsApp delivery status will appear once a messaging provider and customer contact lookup are connected."
+              />
+              <IntegrationPendingCard
+                title="Complaint history"
+                description="The customer's previous complaints and their lifecycle will appear once calls are linked to customer records through CRM."
+              />
+              <IntegrationPendingCard
+                title="Vehicle information"
+                description="Vehicle information will appear once CRM integration is connected."
+              />
+            </div>
+          </section>
         </>
       )}
     </section>

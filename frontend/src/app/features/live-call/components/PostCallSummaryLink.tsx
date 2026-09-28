@@ -13,19 +13,18 @@ export function PostCallSummaryLink({
 
   return (
     <div className="live-call__reserved-card">
-      <span className="live-call__reserved-icon">
+      <span className="live-call__reserved-icon" aria-hidden="true">
         ↗
       </span>
 
       <div>
         <strong>
-          Post-call analysis
+          Post-call summary
         </strong>
 
         <span>
-          Detailed post-call data is not
-          part of the current live analysis
-          response.
+          Generated automatically when the call is completed, together
+          with the final complaint coverage and service estimate.
         </span>
 
         <Link to={to}>

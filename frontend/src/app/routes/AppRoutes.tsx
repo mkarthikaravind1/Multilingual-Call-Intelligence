@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
@@ -9,10 +10,16 @@ import { CallHistoryPage } from '../pages/CallHistoryPage'
 import { PostCallAnalysisPage } from '../pages/PostCallAnalysisPage'
 import { AiImprovementCenterPage } from '../pages/AiImprovementCenterPage'
 import { LoginPage } from '../pages/LoginPage'
+import { AdministrationPage } from '../pages/AdministrationPage'
 
 function RootRedirect() {
   const { isAuthenticated } = useAuth()
   return <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />
+}
+
+function AdminOnly({ children }: { children: ReactNode }) {
+  const { session } = useAuth()
+  return session?.role === 'ADMIN' ? <>{children}</> : <Navigate to="/dashboard" replace />
 }
 
 export function AppRoutes() {
@@ -24,7 +31,7 @@ export function AppRoutes() {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <AppShell title="Dashboard" subtitle="Operational overview">
+            <AppShell title="Dashboard" subtitle="Customer intelligence overview">
               <DashboardPage />
             </AppShell>
           </ProtectedRoute>
@@ -34,7 +41,7 @@ export function AppRoutes() {
         path="/live-call"
         element={
           <ProtectedRoute>
-            <AppShell title="Live Call" subtitle="Operational workspace">
+            <AppShell title="Live Call" subtitle="Real-time call intelligence workspace">
               <LiveCallPage />
             </AppShell>
           </ProtectedRoute>
@@ -44,7 +51,7 @@ export function AppRoutes() {
         path="/call-history"
         element={
           <ProtectedRoute>
-            <AppShell title="Call History" subtitle="Search and review recent activity">
+            <AppShell title="Call History" subtitle="All recorded calls, newest first">
               <CallHistoryPage />
             </AppShell>
           </ProtectedRoute>
@@ -54,7 +61,7 @@ export function AppRoutes() {
         path="/post-call-analysis"
         element={
           <ProtectedRoute>
-            <AppShell title="Post-call Analysis" subtitle="Review completed call intelligence">
+            <AppShell title="Post-call Analysis" subtitle="Summary, complaints and estimate for a call">
               <PostCallAnalysisPage />
             </AppShell>
           </ProtectedRoute>
@@ -64,9 +71,22 @@ export function AppRoutes() {
         path="/ai-improvement"
         element={
           <ProtectedRoute>
-            <AppShell title="AI Improvement Center" subtitle="Learning, evidence and review workflows">
+            <AppShell title="AI Improvement Center" subtitle="Learning evidence, patterns and improvement review">
               <AiImprovementCenterPage />
             </AppShell>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/administration"
+        element={
+          <ProtectedRoute>
+            <AdminOnly>
+              <AppShell title="Administration" subtitle="Roles and user access">
+                <AdministrationPage />
+              </AppShell>
+            </AdminOnly>
           </ProtectedRoute>
         }
       />
