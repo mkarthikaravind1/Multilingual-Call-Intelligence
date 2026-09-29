@@ -491,3 +491,79 @@ def test_completed_call_without_stored_summary_returns_null_post_call_fields():
     assert body["sentiment"] is None
     assert body["service_estimate"] is None
     assert body["question_suggestion"] is None
+
+
+# ---- Duplicate call_id: an existing call is never reset ----
+
+def test_start_call_with_new_call_id_succeeds_after_another_call():
+    client = _client()
+    _start_call(client, "call-a")
+
+    response = client.post(BASE, json={"call_id": "call-b"})
+
+    assert response.status_code == 201
+    assert response.json()["call_id"] == "call-b"
+
+
+def test_start_call_with_existing_call_id_is_rejected():
+    client = _client()
+    _start_call(client)
+    client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance())
+
+    response = client.post(BASE, json={"call_id": CALL_ID, "start_time": 9.0})
+
+    assert response.status_code == 409
+    assert CALL_ID in response.json()["detail"]
+    call = client.get(f"{BASE}/{CALL_ID}").json()
+    assert call["status"] == "active"
+    assert call["start_time"] == 0.0
+    assert call["utterance_count"] == 1
+
+
+def test_duplicate_start_cannot_reset_a_completed_call_or_its_summary():
+    client = _client([_TURNAROUND])
+    _start_call(client)
+    client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance(0))
+    client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance(1))
+    client.post(f"{BASE}/{CALL_ID}/complete", json={"end_time": 30.0})
+    call_before = client.get(f"{BASE}/{CALL_ID}").json()
+    summary_before = client.get(f"{BASE}/{CALL_ID}/analysis").json()["post_call_summary"]
+    assert summary_before is not None
+
+    response = client.post(BASE, json={"call_id": CALL_ID})
+
+    assert response.status_code == 409
+    assert client.get(f"{BASE}/{CALL_ID}").json() == call_before
+    assert call_before["status"] == "completed"
+    assert call_before["utterance_count"] == 2
+    analysis = client.get(f"{BASE}/{CALL_ID}/analysis").json()
+    assert analysis["post_call_summary"] == summary_before
+
+
+def test_concurrent_duplicate_starts_create_exactly_one_call():
+    import threading
+
+    from app.domain.conversation import ConversationAlreadyExistsError
+
+    client = _client()
+    call_service = client.app.state.services.call_service  # type: ignore[attr-defined]
+    barrier = threading.Barrier(8)
+    outcomes: list[str] = []
+
+    def start() -> None:
+        barrier.wait()
+        try:
+            call_service.start_call("call-race")
+            outcomes.append("created")
+        except ConversationAlreadyExistsError:
+            outcomes.append("rejected")
+
+    threads = [threading.Thread(target=start) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert outcomes.count("created") == 1
+    assert outcomes.count("rejected") == 7
+    assert client.get(f"{BASE}/call-race").json()["status"] == "active"

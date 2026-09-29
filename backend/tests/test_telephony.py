@@ -1,6 +1,8 @@
 import base64
 import json
 import re
+import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -489,9 +491,13 @@ def _build_client(monkeypatch=None, asr_provider=None, **settings_overrides) -> 
     asserted on without hitting a real ASR API. Returns (client, services)
     so tests can inspect the same CallService instance the app uses."""
     settings = _plivo_settings(
-        telephony_provider="plivo",
-        plivo_stream_base_url="wss://voice.example.com",
-        **settings_overrides,
+        **{
+            "telephony_provider": "plivo",
+            "plivo_stream_base_url": "wss://voice.example.com",
+            # The live pipeline needs a diarization provider to be built.
+            "diarization_provider": "scripted",
+            **settings_overrides,
+        }
     )
     if monkeypatch is not None and asr_provider is not None:
         fake_language = _FakeLanguageProvider()
@@ -668,11 +674,13 @@ def test_telephony_stream_forwards_transcribed_audio_to_workflow(monkeypatch):
                 }
             )
         )
+        _wait_for_stream(services, "uuid-audio-1", is_open=True)
         # 80 mu-law samples -> 160 bytes PCM16 -> exactly the 0.01s flush threshold.
         ws.send_text(
             json.dumps({"event": "media", "media": {"chunk": "1", "payload": _mulaw_b64(80)}})
         )
         ws.send_text(json.dumps({"event": "stop"}))
+        _wait_for_stream(services, "uuid-audio-1", is_open=False)
 
     assert len(fake_asr.calls) == 1
     conversation = services.call_service.get_call(call_id)
@@ -698,11 +706,13 @@ def test_telephony_stream_drops_duplicate_media_frames(monkeypatch):
                 }
             )
         )
+        _wait_for_stream(services, "uuid-audio-2", is_open=True)
         payload = _mulaw_b64(80)
         ws.send_text(json.dumps({"event": "media", "media": {"chunk": "1", "payload": payload}}))
         # Same sequence number replayed — must not be processed twice.
         ws.send_text(json.dumps({"event": "media", "media": {"chunk": "1", "payload": payload}}))
         ws.send_text(json.dumps({"event": "stop"}))
+        _wait_for_stream(services, "uuid-audio-2", is_open=False)
 
     assert len(fake_asr.calls) == 1
     assert services.call_service.get_call(call_id).utterance_count == 1
@@ -772,10 +782,12 @@ def test_telephony_stream_survives_asr_failure(monkeypatch):
                 }
             )
         )
+        _wait_for_stream(services, "uuid-audio-5", is_open=True)
         ws.send_text(
             json.dumps({"event": "media", "media": {"chunk": "1", "payload": _mulaw_b64(80)}})
         )
         ws.send_text(json.dumps({"event": "stop"}))
+        _wait_for_stream(services, "uuid-audio-5", is_open=False)
         ws.close()  # connection must not crash despite the ASR failure
 
     assert len(fake_asr.calls) == 1
@@ -812,25 +824,12 @@ def test_telephony_stream_drops_buffered_audio_when_call_already_completed(monke
     call_id = _answer_call(client, "uuid-audio-7")
 
     with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
-        ws.send_text(
-            json.dumps(
-                {
-                    "event": "start",
-                    "start": {"mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000}},
-                }
-            )
-        )
-        ws.send_text(
-            json.dumps({"event": "media", "media": {"chunk": "1", "payload": _mulaw_b64(80)}})
-        )
+        _send_stream_start(ws)
+        _send_media(ws, 1, _FINAL_AUDIO_SAMPLES)
 
-        # The provider's status callback (call ended) arrives while audio
-        # is still buffered in this open stream.
-        client.post(
-            STATUS_PATH,
-            data={"CallUUID": "uuid-audio-7", "CallStatus": "completed", "Duration": "5"},
-            headers=_signed_headers("test-auth-token", STATUS_URL),
-        )
+        # The call was completed through the API (not the provider's terminal
+        # status), so nothing waits for this stream: its audio arrives too late.
+        services.call_service.end_call(call_id, 5.0)
 
         ws.send_text(json.dumps({"event": "stop"}))
         ws.close()
@@ -962,3 +961,446 @@ def test_status_webhook_runs_post_call_processing_in_background():
     summary = services.workflow_service.analyze_call(call_id).post_call_summary
     assert summary is not None
     assert summary.call_id == call_id
+
+
+# ---- Final audio: a terminal status lets the open media stream drain ----
+
+# 0.5s of 8kHz audio: above the 0.25s minimum for a forced final flush.
+_FINAL_AUDIO_SAMPLES = 4000
+_WAIT_SECONDS = 10.0
+
+
+def _send_stream_start(ws) -> None:
+    ws.send_text(
+        json.dumps(
+            {
+                "event": "start",
+                "start": {"mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000}},
+            }
+        )
+    )
+
+
+def _send_media(ws, sequence: int, samples: int) -> None:
+    ws.send_text(
+        json.dumps(
+            {"event": "media", "media": {"chunk": str(sequence), "payload": _mulaw_b64(samples)}}
+        )
+    )
+
+
+class _ScriptedASRProvider(_FakeASRProvider):
+    """Fails the transcriptions whose (0-based) index is in `fail_on`, and
+    blocks each transcription until `release` is set."""
+
+    def __init__(self, fail_on: frozenset[int] = frozenset(), block: bool = False) -> None:
+        super().__init__(transcript="the brakes are still squeaking")
+        self._fail_on = fail_on
+        self.started = threading.Event()
+        self.release = threading.Event()
+        if not block:
+            self.release.set()
+
+    def transcribe(self, audio: bytes) -> ASRResult:
+        index = len(self.calls)
+        self.started.set()
+        assert self.release.wait(_WAIT_SECONDS)
+        if index in self._fail_on:
+            self.calls.append(audio)
+            raise RuntimeError("simulated ASR provider failure")
+        return super().transcribe(audio)
+
+
+def _post_status_in_background(client: TestClient, call_uuid: str, status: str = "completed"):
+    # Own client: this webhook's response waits on its background completion.
+    webhook_client = TestClient(client.app)
+    thread = threading.Thread(
+        target=webhook_client.post,
+        args=(STATUS_PATH,),
+        kwargs={
+            "data": {"CallUUID": call_uuid, "CallStatus": status, "Duration": "30"},
+            "headers": _signed_headers("test-auth-token", STATUS_URL),
+        },
+    )
+    thread.start()
+    return thread
+
+
+def _wait_for_stream(services: ApiServices, call_uuid: str, *, is_open: bool) -> None:
+    """Wait until the server has opened (or drained) the call's media stream.
+
+    The test client cancels the server task as soon as the socket is closed,
+    so tests must not leave the session before the server has caught up.
+    """
+    telephony_call_service = services.telephony_call_service
+    assert telephony_call_service is not None
+    probe = CallStatusEvent(call_uuid, CallProviderStatus.COMPLETED)
+    deadline = time.monotonic() + _WAIT_SECONDS
+    while (telephony_call_service.call_awaiting_stream_drain(probe) is not None) != is_open:
+        assert time.monotonic() < deadline, "media stream did not reach the expected state"
+        time.sleep(0.005)
+
+
+def _track_drain_waits(monkeypatch, services: ApiServices) -> threading.Semaphore:
+    """Released each time a terminal status starts waiting for the stream."""
+    waiting = threading.Semaphore(0)
+    telephony_call_service = services.telephony_call_service
+    assert telephony_call_service is not None
+    original = telephony_call_service.complete_after_stream_drains
+
+    def spy(event, on_call_completed=None):
+        waiting.release()
+        return original(event, on_call_completed)
+
+    monkeypatch.setattr(telephony_call_service, "complete_after_stream_drains", spy)
+    return waiting
+
+
+def _record_post_call_processing(monkeypatch, services: ApiServices) -> list[str]:
+    processed: list[str] = []
+    original = services.workflow_service.process_completed_call
+
+    def record(call_id: str):
+        processed.append(call_id)
+        return original(call_id)
+
+    monkeypatch.setattr(services.workflow_service, "process_completed_call", record)
+    return processed
+
+
+def _service_with_call() -> tuple[CallService, TelephonyCallService, str]:
+    call_service = _call_service()
+    telephony_call_service = TelephonyCallService(
+        call_service,
+        InMemoryTelephonyCallMappingRepository(),
+        stream_drain_timeout_seconds=_WAIT_SECONDS,
+    )
+    call_id = telephony_call_service.start_call_from_provider(
+        "plivo", InboundCallEvent("uuid-1", "+91123", "+91456")
+    )
+    return call_service, telephony_call_service, call_id
+
+
+def _final_utterance() -> Utterance:
+    return Utterance(
+        utterance_id="final",
+        transcript="Please call me when it is ready.",
+        speaker_role=SpeakerRole.CUSTOMER,
+        languages=("en",),
+        start_time=1.0,
+        end_time=2.0,
+    )
+
+
+_COMPLETED = CallStatusEvent("uuid-1", CallProviderStatus.COMPLETED, duration_seconds=30.0)
+
+
+def test_terminal_status_with_open_stream_waits_for_it_to_drain():
+    call_service, telephony_call_service, call_id = _service_with_call()
+    telephony_call_service.stream_opened(call_id)
+    completed: list[str] = []
+
+    assert telephony_call_service.call_awaiting_stream_drain(_COMPLETED) == call_id
+    waiter = threading.Thread(
+        target=telephony_call_service.complete_after_stream_drains,
+        args=(_COMPLETED, completed.append),
+    )
+    waiter.start()
+
+    # Final audio lands while the terminal status is waiting.
+    call_service.add_utterance(call_id, _final_utterance())
+    assert call_service.get_call(call_id).status.value == "active"
+    telephony_call_service.stream_drained(call_id)
+    waiter.join(_WAIT_SECONDS)
+
+    conversation = call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.end_time == 30.0
+    assert [u.utterance_id for u in conversation.utterances] == ["final"]
+    assert completed == [call_id]
+
+
+def test_no_wait_once_the_stream_has_drained_or_was_never_opened():
+    _, telephony_call_service, call_id = _service_with_call()
+    assert telephony_call_service.call_awaiting_stream_drain(_COMPLETED) is None
+
+    telephony_call_service.stream_opened(call_id)
+    telephony_call_service.stream_drained(call_id)
+
+    assert telephony_call_service.call_awaiting_stream_drain(_COMPLETED) is None
+    assert telephony_call_service.wait_for_stream_drain(call_id) is True
+
+
+def test_no_wait_for_non_terminal_status_or_completed_call():
+    call_service, telephony_call_service, call_id = _service_with_call()
+    telephony_call_service.stream_opened(call_id)
+
+    in_progress = CallStatusEvent("uuid-1", CallProviderStatus.IN_PROGRESS)
+    assert telephony_call_service.call_awaiting_stream_drain(in_progress) is None
+
+    call_service.end_call(call_id, 20.0)
+    assert telephony_call_service.call_awaiting_stream_drain(_COMPLETED) is None
+
+
+def test_undrained_stream_times_out_and_the_call_still_completes():
+    call_service = _call_service()
+    telephony_call_service = TelephonyCallService(
+        call_service,
+        InMemoryTelephonyCallMappingRepository(),
+        stream_drain_timeout_seconds=0.01,
+    )
+    call_id = telephony_call_service.start_call_from_provider(
+        "plivo", InboundCallEvent("uuid-1", "+91123", "+91456")
+    )
+    telephony_call_service.stream_opened(call_id)
+    completed: list[str] = []
+
+    telephony_call_service.complete_after_stream_drains(_COMPLETED, completed.append)
+
+    assert call_service.get_call(call_id).status.value == "completed"
+    assert completed == [call_id]
+
+
+def test_duplicate_terminal_statuses_while_draining_complete_once():
+    call_service, telephony_call_service, call_id = _service_with_call()
+    telephony_call_service.stream_opened(call_id)
+    completed: list[str] = []
+    cancelled = CallStatusEvent("uuid-1", CallProviderStatus.CANCELLED, duration_seconds=99.0)
+
+    waiters = [
+        threading.Thread(
+            target=telephony_call_service.complete_after_stream_drains,
+            args=(event, completed.append),
+        )
+        for event in (_COMPLETED, _COMPLETED, cancelled)
+    ]
+    for waiter in waiters:
+        waiter.start()
+    telephony_call_service.stream_drained(call_id)
+    for waiter in waiters:
+        waiter.join(_WAIT_SECONDS)
+
+    assert completed == [call_id]
+    assert call_service.get_call(call_id).status.value == "completed"
+
+
+@requires_audioop
+def test_terminal_status_before_stop_keeps_final_buffered_audio(monkeypatch):
+    fake_asr = _FakeASRProvider(transcript="please call me when it is ready")
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=100.0
+    )
+    waiting = _track_drain_waits(monkeypatch, services)
+    processed = _record_post_call_processing(monkeypatch, services)
+    call_id = _answer_call(client, "uuid-final-1")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-final-1", is_open=True)
+        _send_media(ws, 1, _FINAL_AUDIO_SAMPLES)
+
+        webhook = _post_status_in_background(client, "uuid-final-1")
+        assert waiting.acquire(timeout=_WAIT_SECONDS)
+        # The terminal status is waiting: the call is not completed yet.
+        assert services.call_service.get_call(call_id).status.value == "active"
+
+        ws.send_text(json.dumps({"event": "stop"}))
+        webhook.join(_WAIT_SECONDS)
+        assert not webhook.is_alive()
+
+    assert len(fake_asr.calls) == 1
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.end_time == 30.0
+    assert conversation.latest_utterance is not None
+    assert conversation.latest_utterance.transcript == "please call me when it is ready"
+    assert processed == [call_id]
+    assert services.workflow_service.analyze_call(call_id).post_call_summary is not None
+
+
+@requires_audioop
+def test_stop_before_terminal_status_completes_immediately_with_final_audio(monkeypatch):
+    fake_asr = _FakeASRProvider()
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=100.0
+    )
+    processed = _record_post_call_processing(monkeypatch, services)
+    call_id = _answer_call(client, "uuid-final-2")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-final-2", is_open=True)
+        _send_media(ws, 1, _FINAL_AUDIO_SAMPLES)
+        ws.send_text(json.dumps({"event": "stop"}))
+        _wait_for_stream(services, "uuid-final-2", is_open=False)
+        ws.close()
+
+    response = client.post(
+        STATUS_PATH,
+        data={"CallUUID": "uuid-final-2", "CallStatus": "completed", "Duration": "30"},
+        headers=_signed_headers("test-auth-token", STATUS_URL),
+    )
+
+    assert response.status_code == 200
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.utterance_count == 1
+    assert processed == [call_id]
+
+
+@requires_audioop
+def test_terminal_status_during_in_flight_chunk_waits_for_it(monkeypatch):
+    fake_asr = _ScriptedASRProvider(block=True)
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=0.01
+    )
+    waiting = _track_drain_waits(monkeypatch, services)
+    call_id = _answer_call(client, "uuid-final-3")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-final-3", is_open=True)
+        _send_media(ws, 1, 80)  # reaches the flush threshold: goes to ASR
+        assert fake_asr.started.wait(_WAIT_SECONDS)
+
+        webhook = _post_status_in_background(client, "uuid-final-3")
+        assert waiting.acquire(timeout=_WAIT_SECONDS)
+        fake_asr.release.set()  # the in-flight chunk finishes after the terminal status
+
+        ws.send_text(json.dumps({"event": "stop"}))
+        webhook.join(_WAIT_SECONDS)
+        assert not webhook.is_alive()
+
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.utterance_count == 1
+
+
+@requires_audioop
+def test_disconnect_without_stop_flushes_final_audio_before_completion(monkeypatch):
+    fake_asr = _FakeASRProvider()
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=100.0
+    )
+    waiting = _track_drain_waits(monkeypatch, services)
+    call_id = _answer_call(client, "uuid-final-4")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-final-4", is_open=True)
+        _send_media(ws, 1, _FINAL_AUDIO_SAMPLES)
+        webhook = _post_status_in_background(client, "uuid-final-4")
+        assert waiting.acquire(timeout=_WAIT_SECONDS)
+        ws.close()  # the provider drops the socket without a "stop"
+        # Join before leaving the session: leaving cancels the server task.
+        webhook.join(_WAIT_SECONDS)
+        assert not webhook.is_alive()
+
+    assert len(fake_asr.calls) == 1
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.utterance_count == 1
+
+
+@requires_audioop
+def test_duplicate_terminal_statuses_during_drain_process_the_call_once(monkeypatch):
+    fake_asr = _FakeASRProvider()
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=100.0
+    )
+    waiting = _track_drain_waits(monkeypatch, services)
+    processed = _record_post_call_processing(monkeypatch, services)
+    call_id = _answer_call(client, "uuid-final-5")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-final-5", is_open=True)
+        _send_media(ws, 1, _FINAL_AUDIO_SAMPLES)
+        webhooks = [
+            _post_status_in_background(client, "uuid-final-5", status)
+            for status in ("completed", "completed", "timeout")
+        ]
+        for _ in webhooks:
+            assert waiting.acquire(timeout=_WAIT_SECONDS)
+        ws.send_text(json.dumps({"event": "stop"}))
+        for webhook in webhooks:
+            webhook.join(_WAIT_SECONDS)
+            assert not webhook.is_alive()
+
+    assert processed == [call_id]
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.end_time == 30.0
+    assert conversation.utterance_count == 1
+
+
+def test_empty_final_buffer_and_no_utterances_complete_cleanly(monkeypatch):
+    fake_asr = _FakeASRProvider()
+    client, services = _build_client(monkeypatch, asr_provider=fake_asr)
+    waiting = _track_drain_waits(monkeypatch, services)
+    call_id = _answer_call(client, "uuid-final-6")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-final-6", is_open=True)
+        webhook = _post_status_in_background(client, "uuid-final-6")
+        assert waiting.acquire(timeout=_WAIT_SECONDS)
+        ws.send_text(json.dumps({"event": "stop"}))
+        webhook.join(_WAIT_SECONDS)
+        assert not webhook.is_alive()
+
+    assert fake_asr.calls == []
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.utterance_count == 0
+    assert services.workflow_service.analyze_call(call_id).post_call_summary is None
+
+
+@requires_audioop
+def test_failure_during_final_flush_still_completes_the_call(monkeypatch):
+    fake_asr = _ScriptedASRProvider(fail_on=frozenset({0}))
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=100.0
+    )
+    waiting = _track_drain_waits(monkeypatch, services)
+    call_id = _answer_call(client, "uuid-final-7")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-final-7", is_open=True)
+        _send_media(ws, 1, _FINAL_AUDIO_SAMPLES)
+        webhook = _post_status_in_background(client, "uuid-final-7")
+        assert waiting.acquire(timeout=_WAIT_SECONDS)
+        ws.send_text(json.dumps({"event": "stop"}))
+        webhook.join(_WAIT_SECONDS)
+        assert not webhook.is_alive()
+
+    assert len(fake_asr.calls) == 1
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.status.value == "completed"
+    assert conversation.utterance_count == 0
+
+
+# ---- A failed chunk does not stop the rest of the call's transcription ----
+
+@requires_audioop
+def test_telephony_stream_keeps_transcribing_after_failed_chunks(monkeypatch):
+    fake_asr = _ScriptedASRProvider(fail_on=frozenset({0, 1}))
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=0.01
+    )
+    call_id = _answer_call(client, "uuid-recover-1")
+
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+        _send_stream_start(ws)
+        _wait_for_stream(services, "uuid-recover-1", is_open=True)
+        for sequence in (1, 2, 3, 4):
+            _send_media(ws, sequence, 80)  # each frame is one 0.01s chunk
+        ws.send_text(json.dumps({"event": "stop"}))
+        _wait_for_stream(services, "uuid-recover-1", is_open=False)
+        ws.close()
+
+    assert len(fake_asr.calls) == 4
+    conversation = services.call_service.get_call(call_id)
+    assert conversation.utterance_count == 2
+    assert conversation.status.value == "active"

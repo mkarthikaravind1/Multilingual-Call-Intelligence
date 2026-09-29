@@ -1,9 +1,19 @@
-from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.conversation import (
+    Conversation,
+    ConversationAlreadyExistsError,
+    ConversationStatus,
+)
 from app.services.conversation_repository import ConversationRepository
 
 class InMemoryConversationRepository(ConversationRepository):
     def __init__(self) -> None:
         self._conversations: dict[str, Conversation] = {}
+
+    def add(self, conversation: Conversation) -> None:
+        # setdefault is a single atomic check-and-insert.
+        stored = self._conversations.setdefault(conversation.call_id, conversation)
+        if stored is not conversation:
+            raise ConversationAlreadyExistsError(conversation.call_id)
 
     def save(self, conversation: Conversation) -> None:
         self._conversations[conversation.call_id] = conversation

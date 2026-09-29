@@ -3,6 +3,15 @@ from app.domain.conversation import Conversation, ConversationStatus
 
 class ConversationRepository(ABC):
     @abstractmethod
+    def add(self, conversation: Conversation) -> None:
+        """Insert a new conversation.
+
+        Raises ConversationAlreadyExistsError if its call_id is taken; the
+        existing conversation is left untouched.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def save(self, conversation: Conversation) -> None:
         raise NotImplementedError
 

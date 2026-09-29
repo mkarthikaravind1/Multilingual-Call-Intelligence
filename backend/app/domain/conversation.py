@@ -18,6 +18,15 @@ class ConversationAlreadyCompletedError(Exception):
         super().__init__(f"Call is already completed: {call_id!r}")
 
 
+class ConversationAlreadyExistsError(Exception):
+    """Raised when a call is started with a call_id that is already in use.
+    An existing call is never reset or replaced."""
+
+    def __init__(self, call_id: str) -> None:
+        self.call_id = call_id
+        super().__init__(f"A call already exists with id: {call_id!r}")
+
+
 @dataclass
 class Conversation:
     """Represents one complete call, holding its utterances in chronological order."""

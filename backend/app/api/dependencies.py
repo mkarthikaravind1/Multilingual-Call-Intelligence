@@ -56,9 +56,9 @@ def get_user_repository(request: Request) -> UserRepository:
     return request.app.state.services.user_repository
 
 def get_telephony_call_service(
-    request: Request,
+    connection: HTTPConnection,
 ) -> TelephonyCallService:
-    return request.app.state.services.telephony_call_service
+    return connection.app.state.services.telephony_call_service
 
 def get_telephony_provider(connection: HTTPConnection) -> TelephonyProvider | None:
     return connection.app.state.services.telephony_provider

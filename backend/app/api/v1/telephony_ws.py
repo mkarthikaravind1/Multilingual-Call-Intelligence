@@ -9,6 +9,7 @@ from app.api.dependencies import (
     get_call_service,
     get_live_call_handler,
     get_live_chunk_processing_service,
+    get_telephony_call_service,
     get_telephony_provider,
     get_telephony_stream_flush_seconds,
     get_workflow_service,
@@ -28,6 +29,7 @@ from app.services.telephony_audio_buffer import (
     TelephonyAudioBuffer,
     TelephonyAudioBufferError,
 )
+from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import TelephonyProvider, TelephonyStreamError
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,9 @@ async def telephony_stream(
     ),
     call_service: CallService = Depends(get_call_service),
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    telephony_call_service: TelephonyCallService | None = Depends(
+        get_telephony_call_service
+    ),
     flush_after_seconds: float = Depends(get_telephony_stream_flush_seconds),
 ) -> None:
     await websocket.accept()
@@ -83,6 +88,11 @@ async def telephony_stream(
     buffer: TelephonyAudioBuffer | None = None
     next_chunk_sequence = 0
 
+    # While the stream is open, a terminal status waits for it to drain
+    # before completing the call (see TelephonyCallService).
+    if telephony_call_service is not None:
+        telephony_call_service.stream_opened(call_id)
+
     try:
         while True:
             message = await websocket.receive()
@@ -107,6 +117,8 @@ async def telephony_stream(
                 continue
 
             if stream_event.event_type == "start":
+                if telephony_call_service is not None:
+                    telephony_call_service.stream_opened(call_id)
                 if buffer is not None:
                     # A second "start" on the same connection (e.g. a
                     # provider-side stream restart) without a "stop" first
@@ -154,6 +166,9 @@ async def telephony_stream(
                         is_final=True,
                     )
                     buffer = None
+                # All of this stream's audio has been processed.
+                if telephony_call_service is not None:
+                    telephony_call_service.stream_drained(call_id)
 
             # After handling any event, check whether the call ended
             # elsewhere (the status webhook) while this socket was still
@@ -182,6 +197,24 @@ async def telephony_stream(
             await websocket.close(code=STREAM_INTERNAL_ERROR_CLOSE_CODE)
         except RuntimeError:
             pass  # socket already closed
+    finally:
+        # A disconnect without "stop" must not discard the call's final
+        # audio. _process_chunk drops it if the call already completed.
+        try:
+            if buffer is not None:
+                await _flush_and_process(
+                    buffer,
+                    force=True,
+                    min_duration=_MIN_FLUSH_AUDIO_SECONDS,
+                    call_id=call_id,
+                    chunk_sequence=next_chunk_sequence,
+                    call_service=call_service,
+                    live_chunk_processing_service=live_chunk_processing_service,
+                    is_final=True,
+                )
+        finally:
+            if telephony_call_service is not None:
+                telephony_call_service.stream_drained(call_id)
 
 
 async def _call_is_completed(call_id: str, call_service: CallService) -> bool:

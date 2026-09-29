@@ -44,7 +44,8 @@ class ChunkProcessingResult:
 
 @dataclass
 class _StreamState:
-    processor: ChunkAudioProcessor
+    # Built lazily so a failed build is retried on the next chunk.
+    processor: ChunkAudioProcessor | None = None
     next_sequence: int = 0
     last_end_time: float = 0.0
     completed: bool = False
@@ -91,19 +92,23 @@ class LiveChunkProcessingService:
                 f"{state.last_end_time}."
             )
 
-        processor = (
-            state.processor if state is not None else self._processor_factory(call_id)
-        )
-        analysis = processor.process_audio(
-            call_id, chunk.audio, start_offset=chunk.start_time
-        )
-
         if state is None:
-            state = _StreamState(processor)
+            state = _StreamState()
             self._streams[call_id] = state
-        state.next_sequence = chunk.sequence + 1
-        state.last_end_time = chunk.end_time
-        state.completed = chunk.is_final
+
+        # A chunk that passed the order checks is consumed even if processing
+        # fails: the stream never resends audio, so holding the sequence back
+        # would reject every later chunk of the call as out of order.
+        try:
+            if state.processor is None:
+                state.processor = self._processor_factory(call_id)
+            analysis = state.processor.process_audio(
+                call_id, chunk.audio, start_offset=chunk.start_time
+            )
+        finally:
+            state.next_sequence = chunk.sequence + 1
+            state.last_end_time = chunk.end_time
+            state.completed = chunk.is_final
 
         return ChunkProcessingResult(
             call_id=call_id,

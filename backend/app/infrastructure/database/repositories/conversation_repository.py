@@ -1,7 +1,12 @@
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.conversation import (
+    Conversation,
+    ConversationAlreadyExistsError,
+    ConversationStatus,
+)
 from app.domain.utterance import SpeakerRole, Utterance
 from app.infrastructure.database.models import ConversationModel, UtteranceModel
 from app.services.conversation_repository import ConversationRepository
@@ -34,9 +39,41 @@ def _conversation_to_domain(model: ConversationModel) -> Conversation:
     return conversation
 
 
+def _conversation_to_model(conversation: Conversation) -> ConversationModel:
+    return ConversationModel(
+        call_id=conversation.call_id,
+        status=conversation.status.value,
+        start_time=conversation.start_time,
+        end_time=conversation.end_time,
+        utterances=[
+            UtteranceModel(
+                utterance_id=utterance.utterance_id,
+                call_id=conversation.call_id,
+                transcript=utterance.transcript,
+                speaker_role=utterance.speaker_role.value,
+                languages=list(utterance.languages),
+                start_time=utterance.start_time,
+                end_time=utterance.end_time,
+                confidence=utterance.confidence,
+            )
+            for utterance in conversation.utterances
+        ],
+    )
+
+
 class PostgresConversationRepository(ConversationRepository):
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
+
+    def add(self, conversation: Conversation) -> None:
+        try:
+            with self._session_factory() as session, session.begin():
+                if session.get(ConversationModel, conversation.call_id) is not None:
+                    raise ConversationAlreadyExistsError(conversation.call_id)
+                session.add(_conversation_to_model(conversation))
+        except IntegrityError as exc:
+            # Another process inserted the same call_id between our read and write.
+            raise ConversationAlreadyExistsError(conversation.call_id) from exc
 
     def save(self, conversation: Conversation) -> None:
         with self._session_factory() as session, session.begin():
@@ -47,25 +84,7 @@ class PostgresConversationRepository(ConversationRepository):
                 session.delete(existing)
                 session.flush()
 
-            model = ConversationModel(
-                call_id=conversation.call_id,
-                status=conversation.status.value,
-                start_time=conversation.start_time,
-                end_time=conversation.end_time,
-                utterances=[
-                    UtteranceModel(
-                        utterance_id=utterance.utterance_id,
-                        call_id=conversation.call_id,
-                        transcript=utterance.transcript,
-                        speaker_role=utterance.speaker_role.value,
-                        languages=list(utterance.languages),
-                        start_time=utterance.start_time,
-                        end_time=utterance.end_time,
-                        confidence=utterance.confidence,
-                    )
-                    for utterance in conversation.utterances
-                ],
-            )
+            model = _conversation_to_model(conversation)
             if created_at is not None:
                 model.created_at = created_at
             session.add(model)

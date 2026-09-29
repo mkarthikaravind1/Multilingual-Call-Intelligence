@@ -36,8 +36,10 @@ class ConversationService:
             return lock
 
     def create_conversation(self, call_id: str, start_time: float = 0.0) -> Conversation:
+        # Insert-only: an existing call_id raises ConversationAlreadyExistsError
+        # instead of resetting that call.
         conversation = Conversation(call_id=call_id, start_time=start_time)
-        self._repository.save(conversation)
+        self._repository.add(conversation)
         return conversation
 
     def get_conversation(self, call_id: str) -> Conversation:

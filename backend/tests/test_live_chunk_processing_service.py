@@ -201,29 +201,137 @@ def test_multiple_calls_are_tracked_independently(service, factory):
     service.process_chunk("call-b", make_chunk(2, 2.0, 3.0))
 
 
-def test_pipeline_error_propagates_and_chunk_can_be_retried(service, factory):
-    service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
-    factory.processors["call-1"].error = AudioPipelineError("boom")
+class ScriptedProcessor(FakeProcessor):
+    """Fails the chunks whose (0-based) call index is in `fail_on`."""
 
-    with pytest.raises(AudioPipelineError, match="boom"):
+    def __init__(self, fail_on: set[int]) -> None:
+        super().__init__()
+        self._fail_on = fail_on
+        self.attempts = 0
+
+    def process_audio(
+        self, call_id: str, audio: bytes, start_offset: float = 0.0
+    ) -> CallAnalysisResult:
+        attempt = self.attempts
+        self.attempts += 1
+        if attempt in self._fail_on:
+            raise AudioPipelineError(f"chunk attempt {attempt} failed")
+        return super().process_audio(call_id, audio, start_offset)
+
+
+def _scripted_service(*fail_on: int) -> tuple[LiveChunkProcessingService, ScriptedProcessor]:
+    processor = ScriptedProcessor(set(fail_on))
+    return LiveChunkProcessingService(lambda call_id: processor), processor
+
+
+def test_pipeline_error_propagates_and_consumes_the_chunk():
+    service, processor = _scripted_service(1)
+    service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+
+    with pytest.raises(AudioPipelineError, match="failed"):
+        service.process_chunk("call-1", make_chunk(1, 1.0, 2.0))
+
+    # The failed chunk is consumed: the stream moves on to the next sequence.
+    service.process_chunk("call-1", make_chunk(2, 2.0, 3.0))
+    assert [offset for _, _, offset in processor.calls] == [0.0, 2.0]
+
+
+def test_first_chunk_failure_does_not_block_following_chunks():
+    service, processor = _scripted_service(0)
+
+    with pytest.raises(AudioPipelineError):
+        service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+    service.process_chunk("call-1", make_chunk(1, 1.0, 2.0))
+    service.process_chunk("call-1", make_chunk(2, 2.0, 3.0))
+
+    assert [offset for _, _, offset in processor.calls] == [1.0, 2.0]
+
+
+def test_multiple_failures_followed_by_a_successful_chunk():
+    service, processor = _scripted_service(0, 1, 2)
+
+    for sequence in range(3):
+        with pytest.raises(AudioPipelineError):
+            service.process_chunk(
+                "call-1", make_chunk(sequence, float(sequence), sequence + 1.0)
+            )
+    result = service.process_chunk("call-1", make_chunk(3, 3.0, 4.0))
+
+    assert result.sequence == 3
+    assert [offset for _, _, offset in processor.calls] == [3.0]
+
+
+def test_failed_chunk_replay_is_still_rejected_as_duplicate():
+    service, processor = _scripted_service(0)
+    with pytest.raises(AudioPipelineError):
+        service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+
+    with pytest.raises(DuplicateChunkError):
+        service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+    assert processor.attempts == 1
+
+
+def test_out_of_order_chunk_after_failure_is_still_rejected():
+    service, processor = _scripted_service(0)
+    with pytest.raises(AudioPipelineError):
+        service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+
+    with pytest.raises(OutOfOrderChunkError, match="expected sequence 1"):
+        service.process_chunk("call-1", make_chunk(2, 2.0, 3.0))
+    assert processor.attempts == 1
+
+
+def test_order_errors_do_not_consume_the_expected_sequence(service, factory):
+    service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+    with pytest.raises(OutOfOrderChunkError):
+        service.process_chunk("call-1", make_chunk(3, 3.0, 4.0))
+
+    service.process_chunk("call-1", make_chunk(1, 1.0, 2.0))
+    assert len(factory.processors["call-1"].calls) == 2
+
+
+def test_failed_final_chunk_still_terminates_the_stream():
+    service, _ = _scripted_service(1)
+    service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+
+    with pytest.raises(AudioPipelineError):
         service.process_chunk("call-1", make_chunk(1, 1.0, 2.0, final=True))
 
-    assert service.is_completed("call-1") is False
-    factory.processors["call-1"].error = None
-    service.process_chunk("call-1", make_chunk(1, 1.0, 2.0, final=True))
     assert service.is_completed("call-1") is True
+    with pytest.raises(StreamCompletedError):
+        service.process_chunk("call-1", make_chunk(2, 2.0, 3.0))
 
 
-def test_first_chunk_error_does_not_create_stream_state(service, factory):
-    def failing_factory(call_id: str) -> FakeProcessor:
-        raise RuntimeError("factory failed")
+def test_stream_terminates_normally_after_an_earlier_failed_chunk():
+    service, processor = _scripted_service(0)
+    with pytest.raises(AudioPipelineError):
+        service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
 
-    failing_service = LiveChunkProcessingService(failing_factory)
+    result = service.process_chunk("call-1", make_chunk(1, 1.0, 2.0, final=True))
+
+    assert result.is_final is True
+    assert service.is_completed("call-1") is True
+    assert len(processor.calls) == 1
+
+
+def test_pipeline_build_failure_consumes_the_chunk_and_is_retried_next_chunk():
+    built: list[str] = []
+
+    def flaky_factory(call_id: str) -> FakeProcessor:
+        built.append(call_id)
+        if len(built) == 1:
+            raise RuntimeError("factory failed")
+        return FakeProcessor()
+
+    flaky_service = LiveChunkProcessingService(flaky_factory)
 
     with pytest.raises(RuntimeError, match="factory failed"):
-        failing_service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+        flaky_service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+    assert flaky_service.is_completed("call-1") is False
 
-    assert failing_service.is_completed("call-1") is False
+    flaky_service.process_chunk("call-1", make_chunk(1, 1.0, 2.0))
+    flaky_service.process_chunk("call-1", make_chunk(2, 2.0, 3.0))
+    assert built == ["call-1", "call-1"]
 
 
 @pytest.mark.parametrize("call_id", ["", "   "])

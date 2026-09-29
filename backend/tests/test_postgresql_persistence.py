@@ -19,7 +19,11 @@ from app.domain.active_improvement import ActiveImprovement, ActiveImprovementSt
 from app.domain.complaint_lifecycle import ComplaintLifecycleRecord, ComplaintLifecycleStatus
 from app.ai.sentiment.provider import SentimentLabel, SentimentResult
 from app.domain.complaint_coverage import ComplaintCoverageStatus
-from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.conversation import (
+    Conversation,
+    ConversationAlreadyExistsError,
+    ConversationStatus,
+)
 from app.domain.customer_contact import MessagingChannel
 from app.domain.customer_summary_delivery import CustomerSummaryDelivery, DeliveryStatus
 from app.domain.post_call_summary import ComplaintSummary, PostCallSummary
@@ -192,6 +196,36 @@ def test_conversation_save_replaces_previous_utterances(session_factory):
     assert loaded.utterance_count == 1
     assert loaded.end_time == 5.0
     assert loaded.status.value == "completed"
+
+
+def test_conversation_add_rejects_existing_call_id_without_touching_it(session_factory):
+    repo = PostgresConversationRepository(session_factory)
+    conversation = Conversation(call_id="call-dup", start_time=0.0)
+    repo.add(conversation)
+    conversation.add_utterance(
+        Utterance(
+            utterance_id="u1",
+            transcript="my car is still not ready",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=1.0,
+        )
+    )
+    conversation.complete(end_time=5.0)
+    repo.save(conversation)
+
+    # A second process/repository instance trying to create the same call.
+    with pytest.raises(ConversationAlreadyExistsError):
+        PostgresConversationRepository(session_factory).add(
+            Conversation(call_id="call-dup", start_time=0.0)
+        )
+
+    loaded = repo.get("call-dup")
+    assert loaded is not None
+    assert loaded.status is ConversationStatus.COMPLETED
+    assert loaded.end_time == 5.0
+    assert [u.utterance_id for u in loaded.utterances] == ["u1"]
 
 
 

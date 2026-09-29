@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from app.domain.conversation import ConversationAlreadyExistsError
 from app.services.conversation_service import ConversationNotFoundError
 from app.services.learning_management_service import (
     CandidateNotFoundError,
@@ -12,6 +13,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: ConversationNotFoundError
     ) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(ConversationAlreadyExistsError)
+    async def handle_call_already_exists(
+        request: Request, exc: ConversationAlreadyExistsError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     @app.exception_handler(CandidateNotFoundError)
     async def handle_candidate_not_found(

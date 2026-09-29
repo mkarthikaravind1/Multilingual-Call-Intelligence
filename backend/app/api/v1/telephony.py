@@ -82,6 +82,17 @@ async def plivo_status(
     except TelephonyWebhookError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # The call's media stream is still open and may hold final buffered or
+    # in-flight audio: complete after it drains, off the request path, so
+    # those utterances land before post-call processing reads the call.
+    if await run_in_threadpool(telephony_call_service.call_awaiting_stream_drain, event):
+        background_tasks.add_task(
+            telephony_call_service.complete_after_stream_drains,
+            event,
+            workflow_service.process_completed_call,
+        )
+        return Response(status_code=200)
+
     # Completion is quick; post-call processing (possibly an LLM summary)
     # runs after the response so the provider callback returns promptly.
     await run_in_threadpool(
