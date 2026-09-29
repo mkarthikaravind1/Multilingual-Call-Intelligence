@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.domain.conversation import ConversationStatus
 from app.domain.telephony_call_mapping import TelephonyCallMapping
+from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
 from app.services.telephony_call_mapping_repository import TelephonyCallMappingRepository
 from app.telephony.provider import CallProviderStatus, CallStatusEvent, InboundCallEvent
@@ -34,9 +35,11 @@ class TelephonyCallService:
         call_service: CallService,
         mapping_repository: TelephonyCallMappingRepository,
         stream_drain_timeout_seconds: float = STREAM_DRAIN_TIMEOUT_SECONDS,
+        call_customer_service: CallCustomerService | None = None,
     ) -> None:
         self._call_service = call_service
         self._mapping_repository = mapping_repository
+        self._call_customer_service = call_customer_service
         self._stream_drain_timeout_seconds = stream_drain_timeout_seconds
         # call_id -> set once that call's media stream has no audio left to
         # process. Present only while a stream is open; in-process only.
@@ -54,7 +57,17 @@ class TelephonyCallService:
                 created_at=time.time(),
             )
         )
+        self._record_caller(call_id, event.from_number)
         return call_id
+
+    def _record_caller(self, call_id: str, from_number: str) -> None:
+        if self._call_customer_service is None:
+            return
+        try:
+            self._call_customer_service.record_caller(call_id, from_number)
+        except Exception:
+            # Caller identity is enrichment; the phone call must go ahead.
+            logger.exception("Could not record the caller number for call %r", call_id)
 
     def resolve_call_id(self, provider_call_id: str) -> str | None:
         mapping = self._mapping_repository.get_by_provider_call_id(provider_call_id)

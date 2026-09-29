@@ -44,6 +44,8 @@ from app.services.redis_telephony_call_mapping_repository import (
 )
 from app.telephony.plivo.provider import PlivoTelephonyProvider
 from app.telephony.provider import TelephonyProvider
+from app.crm.json_file_directory import JsonFileCustomerDirectory
+from app.crm.provider import CustomerDirectory, NoCustomerDirectory
 
 logger = logging.getLogger(__name__)
 
@@ -348,5 +350,37 @@ def create_call_mapping_repository(
         raise UnsupportedProviderError(
             f"Unsupported call mapping store provider: {settings.call_mapping_store_provider!r}. "
             f"Available: {sorted(_CALL_MAPPING_REPOSITORY_BUILDERS)}."
+        )
+    return builder(settings)
+
+
+def _build_no_customer_directory(settings: Settings) -> CustomerDirectory:
+    return NoCustomerDirectory()
+
+
+def _build_json_file_customer_directory(settings: Settings) -> CustomerDirectory:
+    if not settings.crm_json_path.strip():
+        raise UnsupportedProviderError(
+            "crm_provider 'json_file' needs crm_json_path to point at the CRM file."
+        )
+    return JsonFileCustomerDirectory(
+        settings.crm_json_path, settings.phone_default_country_code
+    )
+
+
+_CUSTOMER_DIRECTORY_BUILDERS: dict[str, Callable[[Settings], CustomerDirectory]] = {
+    "none": _build_no_customer_directory,
+    "json_file": _build_json_file_customer_directory,
+}
+
+
+def create_customer_directory(settings: Settings | None = None) -> CustomerDirectory:
+    settings = settings or get_settings()
+    name = settings.crm_provider.strip().lower()
+    builder = _CUSTOMER_DIRECTORY_BUILDERS.get(name)
+    if builder is None:
+        raise UnsupportedProviderError(
+            f"Unsupported CRM provider: {settings.crm_provider!r}. "
+            f"Available: {sorted(_CUSTOMER_DIRECTORY_BUILDERS)}."
         )
     return builder(settings)

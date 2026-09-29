@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     plivo_stream_flush_seconds: float = 4.0
     call_mapping_store_provider: str = "in_memory"
     call_mapping_key_prefix: str = "telephony_call_mapping"
+    # CRM boundary: "none" (no CRM connected) or "json_file" (crm_json_path).
+    crm_provider: str = "none"
+    crm_json_path: str = ""
+    # Prefixed to 10-digit national caller numbers so they match the CRM.
+    phone_default_country_code: str = "91"
     customer_summary_enabled: bool = False
     customer_summary_delivery_provider: str = "disabled"
     customer_summary_default_channel: str = "sms"

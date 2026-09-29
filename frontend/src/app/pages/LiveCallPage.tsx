@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import { toUserErrorMessage } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
+import { CustomerPanel } from '../features/customer/components/CustomerPanel'
 import { callRestService } from '../features/live-call/services/callRestService'
 import { CallHeader } from '../features/live-call/components/CallHeader'
 import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
@@ -138,6 +139,8 @@ export function LiveCallPage() {
             </div>
 
             <aside className="live-call__side-column">
+              <CustomerPanel callId={callId} />
+
               <NextQuestionPanel
                 suggestion={
                   liveCall.analysis?.questionSuggestion ?? null

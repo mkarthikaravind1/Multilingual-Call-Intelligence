@@ -58,6 +58,10 @@ from app.domain.user_repository import UserRepository
 from app.infrastructure.database.repositories.user_repository import (
     PostgresUserRepository,
 )
+from app.infrastructure.database.repositories.call_customer_repository import (
+    PostgresCallCustomerRepository,
+)
+from app.services.call_customer_repository import CallCustomerRepository
 
 @dataclass(frozen=True)
 class PostgresRepositories:
@@ -77,6 +81,7 @@ class PostgresRepositories:
     customer_summary_delivery: CustomerSummaryDeliveryRepository
     post_call_summary: PostCallSummaryRepository
     user: UserRepository
+    call_customer: CallCustomerRepository
 
 def build_postgres_repositories(
     session_factory: sessionmaker[Session],
@@ -95,6 +100,7 @@ def build_postgres_repositories(
         customer_summary_delivery=PostgresCustomerSummaryDeliveryRepository(session_factory),
         post_call_summary=PostgresPostCallSummaryRepository(session_factory),
         user=PostgresUserRepository(session_factory),
+        call_customer=PostgresCallCustomerRepository(session_factory),
     )
 
 

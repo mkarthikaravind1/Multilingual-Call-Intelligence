@@ -40,6 +40,7 @@ def build_app():
         user_repository=repositories.user,
         post_call_summary_repository=repositories.post_call_summary,
         customer_summary_delivery_repository=repositories.customer_summary_delivery,
+        call_customer_repository=repositories.call_customer,
     )
     return create_app(services)
 

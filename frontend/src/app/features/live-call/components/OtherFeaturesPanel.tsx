@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { EscalationStatus } from './EscalationStatus'
 import { PostCallSummaryLink } from './PostCallSummaryLink'
 import { ServiceEstimatePanel } from './ServiceEstimatePanel'
-import { VehicleInfoPanel } from './VehicleInfoPanel'
 import type { ServiceEstimateViewModel } from '../types/view-models'
 
 type OtherFeaturesPanelProps = {
@@ -37,7 +36,7 @@ export function OtherFeaturesPanel({
           </span>
 
           <strong>
-            Estimate, summary &amp; integrations
+            Estimate, summary &amp; escalation
           </strong>
         </span>
 
@@ -54,7 +53,6 @@ export function OtherFeaturesPanel({
           <ServiceEstimatePanel estimate={serviceEstimate} />
           <PostCallSummaryLink callId={callId} />
           <EscalationStatus />
-          <VehicleInfoPanel />
         </div>
       )}
     </section>

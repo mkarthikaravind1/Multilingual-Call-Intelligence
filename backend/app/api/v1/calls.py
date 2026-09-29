@@ -1,6 +1,11 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies import get_call_service, get_workflow_service
+from app.api.dependencies import (
+    get_call_customer_service,
+    get_call_service,
+    get_optional_call_customer_service,
+    get_workflow_service,
+)
 from app.api.v1.mappers import (
     to_analysis_response,
     to_call_list_response,
@@ -10,13 +15,17 @@ from app.api.v1.mappers import (
 )
 from app.api.v1.schemas import (
     CallAnalysisResponse,
+    CallCustomerResponse,
     CallListResponse,
     CallResponse,
     CallStatsResponse,
     CompleteCallRequest,
+    IdentifyCustomerRequest,
+    SelectVehicleRequest,
     StartCallRequest,
     UtteranceRequest,
 )
+from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.api.security_dependencies import get_current_user
@@ -55,9 +64,21 @@ def get_call_stats(
 def start_call(
     payload: StartCallRequest,
     call_service: CallService = Depends(get_call_service),
+    call_customer_service: CallCustomerService | None = Depends(
+        get_optional_call_customer_service
+    ),
     _: User = Depends(get_current_user),
 ) -> CallResponse:
-    return to_call_response(call_service.start_call(payload.call_id, payload.start_time))
+    caller_number = None
+    if payload.caller_number is not None:
+        if call_customer_service is None:
+            raise HTTPException(status_code=503, detail="Customer lookup is not configured.")
+        # Validate before creating the call, so a bad number never leaves a call behind.
+        caller_number = call_customer_service.normalize(payload.caller_number)
+    call = call_service.start_call(payload.call_id, payload.start_time)
+    if call_customer_service is not None and caller_number is not None:
+        call_customer_service.record_caller(call.call_id, caller_number)
+    return to_call_response(call)
 
 @router.get("/{call_id}", response_model=CallResponse)
 def get_call(
@@ -84,6 +105,45 @@ def get_analysis(
     _: User = Depends(get_current_user),
 ) -> CallAnalysisResponse:
     return to_analysis_response(call_id, workflow_service.analyze_call(call_id))
+
+@router.get("/{call_id}/customer", response_model=CallCustomerResponse)
+def get_call_customer(
+    call_id: str,
+    call_service: CallService = Depends(get_call_service),
+    call_customer_service: CallCustomerService = Depends(get_call_customer_service),
+    _: User = Depends(get_current_user),
+) -> CallCustomerResponse:
+    call_service.get_call(call_id)  # 404 for an unknown call
+    return CallCustomerResponse.model_validate(call_customer_service.get(call_id))
+
+
+@router.put("/{call_id}/customer", response_model=CallCustomerResponse)
+def identify_call_customer(
+    call_id: str,
+    payload: IdentifyCustomerRequest,
+    call_service: CallService = Depends(get_call_service),
+    call_customer_service: CallCustomerService = Depends(get_call_customer_service),
+    _: User = Depends(get_current_user),
+) -> CallCustomerResponse:
+    call_service.get_call(call_id)
+    return CallCustomerResponse.model_validate(
+        call_customer_service.identify(call_id, payload.phone_number)
+    )
+
+
+@router.put("/{call_id}/customer/vehicle", response_model=CallCustomerResponse)
+def select_call_vehicle(
+    call_id: str,
+    payload: SelectVehicleRequest,
+    call_service: CallService = Depends(get_call_service),
+    call_customer_service: CallCustomerService = Depends(get_call_customer_service),
+    _: User = Depends(get_current_user),
+) -> CallCustomerResponse:
+    call_service.get_call(call_id)
+    return CallCustomerResponse.model_validate(
+        call_customer_service.select_vehicle(call_id, payload.vehicle_id)
+    )
+
 
 @router.post("/{call_id}/complete", response_model=CallResponse)
 def complete_call(

@@ -1,0 +1,77 @@
+{
+  "_comment": "Fictional sample data for development. Use with CRM_PROVIDER=json_file and CRM_JSON_PATH pointing at this file.",
+  "customers": [
+    {
+      "customer_id": "C-1001",
+      "name": "Asha Raman",
+      "phone_number": "+91 98450 00001",
+      "email": "asha.raman@example.com",
+      "preferred_channel": "whatsapp",
+      "consent_status": "granted",
+      "language": "ta",
+      "vehicles": [
+        {
+          "vehicle_id": "V-2001",
+          "registration_number": "TN09AB1234",
+          "make": "Maruti Suzuki",
+          "model": "Swift",
+          "year": 2021,
+          "vin": null,
+          "service_history": [
+            {
+              "service_id": "S-3001",
+              "service_date": "2026-08-14",
+              "description": "Periodic service (20,000 km) and brake pad replacement",
+              "dealer": "Chennai Central Service",
+              "odometer_km": 20150
+            },
+            {
+              "service_id": "S-3002",
+              "service_date": "2026-02-03",
+              "description": "Periodic service (10,000 km)",
+              "dealer": "Chennai Central Service",
+              "odometer_km": 10020
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "customer_id": "C-1002",
+      "name": "Rohit Kulkarni",
+      "phone_number": "9845000002",
+      "email": null,
+      "preferred_channel": "sms",
+      "consent_status": "unknown",
+      "language": "hi",
+      "vehicles": [
+        {
+          "vehicle_id": "V-2002",
+          "registration_number": "MH12CD5678",
+          "make": "Hyundai",
+          "model": "Creta",
+          "year": 2023,
+          "vin": null,
+          "service_history": [
+            {
+              "service_id": "S-3003",
+              "service_date": "2026-09-01",
+              "description": "AC not cooling; compressor inspected",
+              "dealer": "Pune West Workshop",
+              "odometer_km": 15400
+            }
+          ]
+        },
+        {
+          "vehicle_id": "V-2003",
+          "registration_number": "MH12EF9012",
+          "make": "Tata",
+          "model": "Nexon EV",
+          "year": 2024,
+          "vin": null,
+          "service_history": []
+        }
+      ]
+    }
+  ]
+}

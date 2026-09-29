@@ -78,6 +78,13 @@ from app.domain.learning_feedback_repository import (
     LearningFeedbackRepository,
 )
 from app.services.runtime_improvement_service import ComponentLearning
+from app.composition.providers import create_customer_directory
+from app.crm.provider import CustomerDirectory, NoCustomerDirectory
+from app.services.call_customer_repository import (
+    CallCustomerRepository,
+    InMemoryCallCustomerRepository,
+)
+from app.services.call_customer_service import CallCustomerService
 from app.domain.user_repository import InMemoryUserRepository, UserRepository
 from app.services.auth_service import AuthService
 
@@ -102,6 +109,8 @@ def build_api_services(
     customer_contact_resolver: Callable[[str], CustomerContact | None] | None = None,
     post_call_summary_repository: PostCallSummaryRepository | None = None,
     customer_summary_delivery_repository: CustomerSummaryDeliveryRepository | None = None,
+    call_customer_repository: CallCustomerRepository | None = None,
+    customer_directory: CustomerDirectory | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -136,6 +145,21 @@ def build_api_services(
 
     user_repository = user_repository or InMemoryUserRepository()
     auth_service = AuthService(user_repository)
+
+    # --- Caller identity and the CRM boundary ---
+    if customer_directory is None:
+        try:
+            customer_directory = create_customer_directory(settings)
+        except Exception as exc:
+            logger.error("CRM is not available; customers will not be identified: %s", exc)
+            customer_directory = NoCustomerDirectory()
+    call_customer_service = CallCustomerService(
+        call_customer_repository or InMemoryCallCustomerRepository(),
+        customer_directory,
+        default_country_code=settings.phone_default_country_code,
+    )
+    if customer_contact_resolver is None:
+        customer_contact_resolver = call_customer_service.resolve_contact
 
     try:
         customer_summary_delivery_service = build_customer_summary_delivery_service(
@@ -200,7 +224,11 @@ def build_api_services(
 
         call_mapping_repository = InMemoryTelephonyCallMappingRepository()
 
-    telephony_call_service = TelephonyCallService(call_service, call_mapping_repository)
+    telephony_call_service = TelephonyCallService(
+        call_service,
+        call_mapping_repository,
+        call_customer_service=call_customer_service,
+    )
 
     try:
         telephony_provider = create_telephony_provider(settings)
@@ -255,4 +283,5 @@ def build_api_services(
         customer_summary_delivery_service=customer_summary_delivery_service,
         asr_provider=asr_provider,
         telephony_stream_flush_seconds=settings.plivo_stream_flush_seconds,
+        call_customer_service=call_customer_service,
     )

@@ -8,6 +8,7 @@ import { StatePanel } from '../components/StatePanel'
 import { formatCallDuration } from '../format/time'
 
 import { AiReviewPanel } from '../features/ai-improvement/components/AiReviewPanel'
+import { CustomerPanel } from '../features/customer/components/CustomerPanel'
 
 import {
   toCallAnalysisViewModel,
@@ -277,6 +278,7 @@ export function PostCallAnalysisPage() {
             </div>
 
             <aside className="live-call__side-column">
+              <CustomerPanel callId={call.callId} />
               <section className="panel">
                 <p className="panel__label">Service estimate</p>
                 <ServiceEstimatePanel
@@ -308,15 +310,11 @@ export function PostCallAnalysisPage() {
             <div className="integration-grid">
               <IntegrationPendingCard
                 title="Customer summary delivery"
-                description="SMS/WhatsApp delivery status will appear once a messaging provider and customer contact lookup are connected."
+                description="SMS/WhatsApp delivery status will appear once a messaging provider is connected."
               />
               <IntegrationPendingCard
                 title="Complaint history"
-                description="The customer's previous complaints and their lifecycle will appear once calls are linked to customer records through CRM."
-              />
-              <IntegrationPendingCard
-                title="Vehicle information"
-                description="Vehicle information will appear once CRM integration is connected."
+                description="The customer's previous complaints and their lifecycle will appear once complaint lifecycle tracking is enabled."
               />
             </div>
           </section>

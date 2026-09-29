@@ -49,7 +49,9 @@ async def plivo_answer(
     except TelephonyWebhookError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    call_id = telephony_call_service.start_call_from_provider("plivo", event)
+    call_id = await run_in_threadpool(
+        telephony_call_service.start_call_from_provider, "plivo", event
+    )
 
     settings = get_settings()
     stream_url = (

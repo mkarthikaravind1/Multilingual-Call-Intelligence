@@ -22,8 +22,8 @@ export class CallRestService {
     )
   }
 
-  // Always a fresh ID: the backend overwrites a call that is started with
-  // an existing call_id, so user-typed IDs are never used to create calls.
+  // Always a fresh ID: the backend rejects (409) a call_id that is already
+  // in use, so user-typed IDs are never used to create calls.
   startManualCall() {
     return this.startCall({
       call_id: `manual-${crypto.randomUUID()}`,

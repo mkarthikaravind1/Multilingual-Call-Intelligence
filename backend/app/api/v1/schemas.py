@@ -2,7 +2,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 from app.ai.sentiment.provider import SentimentLabel
+from app.domain.call_customer import CustomerMatchStatus
 from app.domain.complaint_coverage import ComplaintCoverageStatus
+from app.domain.customer_contact import ConsentStatus, MessagingChannel
 from app.domain.conversation import ConversationStatus
 from app.domain.question_suggestion import SuggestionSource
 from app.domain.utterance import SpeakerRole
@@ -16,6 +18,56 @@ class _Response(BaseModel):
 class StartCallRequest(_Request):
     call_id: str = Field(min_length=1)
     start_time: float = 0.0
+    # Optional: the customer's number when it is known up front.
+    caller_number: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class IdentifyCustomerRequest(_Request):
+    phone_number: str = Field(min_length=1, max_length=32)
+
+
+class SelectVehicleRequest(_Request):
+    # None clears the choice.
+    vehicle_id: str | None
+
+
+class CustomerProfileResponse(_Response):
+    customer_id: str
+    name: str
+    phone_number: str
+    email: str | None
+    preferred_channel: MessagingChannel
+    consent_status: ConsentStatus
+    language: str | None
+
+
+class VehicleResponse(_Response):
+    vehicle_id: str
+    registration_number: str
+    make: str
+    model: str
+    year: int | None
+    vin: str | None
+
+
+class ServiceRecordResponse(_Response):
+    service_id: str
+    vehicle_id: str
+    service_date: str
+    description: str
+    dealer: str | None
+    odometer_km: int | None
+
+
+class CallCustomerResponse(_Response):
+    call_id: str
+    status: CustomerMatchStatus
+    caller_number: str | None
+    customer: CustomerProfileResponse | None
+    vehicles: list[VehicleResponse]
+    selected_vehicle_id: str | None
+    # For the selected vehicle, most recent first.
+    service_history: list[ServiceRecordResponse]
 
 class UtteranceRequest(_Request):
     utterance_id: str = Field(min_length=1)

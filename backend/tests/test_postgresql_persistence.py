@@ -51,6 +51,10 @@ from app.infrastructure.database.models import (
 from app.infrastructure.database.repositories.active_improvement_repository import (
     PostgresActiveImprovementRepository,
 )
+from app.infrastructure.database.repositories.call_customer_repository import (
+    PostgresCallCustomerRepository,
+)
+from app.domain.call_customer import CallCustomerLink
 from app.infrastructure.database.repositories.complaint_customer_history_repository import (
     PostgresComplaintCustomerHistoryRepository,
 )
@@ -127,8 +131,10 @@ def test_schema_creates_all_expected_tables(engine):
         "active_improvements",
         "improvement_usages",
         "complaint_lifecycle_records",
+        "customer_summary_deliveries",
         "post_call_summaries",
         "users",
+        "call_customers",
     }
 
 
@@ -753,6 +759,35 @@ def test_customer_summary_delivery_idempotency_key_is_unique(session_factory):
     with pytest.raises(IntegrityError):
         repo.save(dataclasses.replace(delivery, delivery_id="delivery-2"))
     assert repo.get_by_call_id("call-summary") == (delivery,)
+
+
+# Caller identity -------------------------------------------------------------
+
+
+def test_call_customer_link_round_trips_and_updates_in_place(session_factory):
+    repo = PostgresCallCustomerRepository(session_factory)
+    link = CallCustomerLink(call_id="call-1", caller_number="+919845000001", updated_at=1.0)
+
+    repo.save(link)
+    assert repo.get("call-1") == link
+    assert repo.get("missing") is None
+
+    matched = link.replace(customer_id="C-1", vehicle_id="V-1", updated_at=2.0)
+    repo.save(matched)
+    assert repo.get("call-1") == matched
+
+
+def test_call_customer_link_survives_conversation_rewrites(session_factory):
+    conversations = PostgresConversationRepository(session_factory)
+    links = PostgresCallCustomerRepository(session_factory)
+    conversation = Conversation(call_id="call-link", start_time=0.0)
+    conversations.add(conversation)
+    links.save(CallCustomerLink(call_id="call-link", caller_number="+919845000001"))
+
+    conversation.complete(end_time=5.0)
+    conversations.save(conversation)
+
+    assert links.get("call-link").caller_number == "+919845000001"
 
 
 # Learning loop: re-saving a parent row must not cascade-delete its children.

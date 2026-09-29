@@ -291,3 +291,20 @@ class UserModel(Base):
     created_at: Mapped[float] = mapped_column(Float, nullable=False)
 
     __table_args__ = (Index("ix_users_email", "email"),)
+
+
+class CallCustomerModel(Base):
+    # Keyed by call_id without a foreign key: conversation saves delete and
+    # re-insert the conversation row, which must not remove this link.
+    __tablename__ = "call_customers"
+
+    call_id: Mapped[str] = mapped_column(String, primary_key=True)
+    caller_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    vehicle_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[float] = mapped_column(Float, nullable=False)
+
+    __table_args__ = (
+        Index("ix_call_customers_customer_id", "customer_id"),
+        Index("ix_call_customers_caller_number", "caller_number"),
+    )

@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from starlette.requests import HTTPConnection
 
 from app.ai.asr.provider import ASRProvider
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
+from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
@@ -31,6 +32,20 @@ class ApiServices:
     customer_summary_delivery_service: CustomerSummaryDeliveryService | None = None
     asr_provider: ASRProvider | None = None
     telephony_stream_flush_seconds: float = 4.0
+    call_customer_service: CallCustomerService | None = None
+
+
+def get_optional_call_customer_service(
+    connection: HTTPConnection,
+) -> CallCustomerService | None:
+    return connection.app.state.services.call_customer_service
+
+
+def get_call_customer_service(connection: HTTPConnection) -> CallCustomerService:
+    service = connection.app.state.services.call_customer_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="Customer lookup is not configured.")
+    return service
 
 
 def get_telephony_stream_flush_seconds(connection: HTTPConnection) -> float:
