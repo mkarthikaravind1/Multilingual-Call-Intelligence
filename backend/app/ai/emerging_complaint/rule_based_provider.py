@@ -96,6 +96,7 @@ class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProv
                     evidence=tuple(evidence_by_phrase[phrase]),
                     occurrence_count=len(call_ids),
                     confidence=confidence,
+                    call_ids=tuple(distinct_call_ids),
                 )
             )
 

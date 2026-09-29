@@ -208,6 +208,7 @@ class LLMEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
                 evidence=tuple(e["quote"] for e in known_evidence),
                 occurrence_count=len(known_evidence),
                 confidence=confidence,
+                call_ids=tuple(sorted(distinct_calls)),
             )
         except (TypeError, ValueError) as exc:
             logger.info("Skipping invalid candidate %s: %s", proposed_name, exc)

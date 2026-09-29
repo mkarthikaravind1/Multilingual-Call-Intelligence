@@ -22,6 +22,8 @@ from app.services.conversation_coverage_repository import (
 )
 from app.services.conversation_service import ConversationCompletion
 from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
+from app.services.complaint_lifecycle_service import ComplaintLifecycleService
+from app.services.emerging_complaint_service import EmergingComplaintService
 from app.services.escalation_service import EscalationService
 from app.services.estimation_service import EstimationService
 from app.services.next_question_service import NextQuestionService
@@ -66,8 +68,16 @@ class CallWorkflowService:
         post_call_summary_repository: PostCallSummaryRepository | None = None,
         customer_summary_enabled: bool = False,
         escalation_service: EscalationService | None = None,
+        complaint_lifecycle_service: ComplaintLifecycleService | None = None,
+        customer_id_resolver: Callable[[str], str | None] | None = None,
+        emerging_complaint_service: EmergingComplaintService | None = None,
+        emerging_complaint_auto_discovery: bool = False,
     ) -> None:
         self._escalation_service = escalation_service
+        self._complaint_lifecycle_service = complaint_lifecycle_service
+        self._customer_id_resolver = customer_id_resolver
+        self._emerging_complaint_service = emerging_complaint_service
+        self._emerging_complaint_auto_discovery = emerging_complaint_auto_discovery
         self._call_service = call_service
         self._coverage_repository = coverage_repository
         self._analysis_service = analysis_service
@@ -93,6 +103,7 @@ class CallWorkflowService:
             result = self._read_completed_analysis(conversation)
         else:
             result = self._analyze_active_call(conversation)
+            self._track_complaints(result.coverage)
             # Escalation is assessed only on new speech; reads reuse the result.
             if self._escalation_service is not None:
                 result = replace(
@@ -174,6 +185,13 @@ class CallWorkflowService:
 
         try:
             analysis = self._analyze_and_save_coverage(conversation)
+        except Exception:
+            logger.exception("Final analysis failed for call %r", call_id)
+            return None
+
+        self._close_out_complaints(call_id, analysis.coverage)
+
+        try:
             summary = self._post_call_summary_service.generate_summary(
                 PostCallSummaryRequest(
                     call_id=conversation.call_id,
@@ -201,6 +219,39 @@ class CallWorkflowService:
 
         self._deliver_summary(stored)
         return stored
+
+    def _track_complaints(self, coverage: ConversationCoverage) -> None:
+        if self._complaint_lifecycle_service is None:
+            return
+        try:
+            self._complaint_lifecycle_service.sync_from_coverage(coverage)
+        except Exception:
+            logger.exception("Complaint lifecycle tracking failed for call %r", coverage.call_id)
+
+    def _close_out_complaints(self, call_id: str, coverage: ConversationCoverage) -> None:
+        """After the call: final complaint states, the customer link, open
+        complaints flagged for follow-up, and a discovery run requested."""
+        if self._complaint_lifecycle_service is not None:
+            self._track_complaints(coverage)
+            try:
+                customer_id = (
+                    self._customer_id_resolver(call_id)
+                    if self._customer_id_resolver is not None
+                    else None
+                )
+            except Exception:
+                logger.exception("Resolving the customer for call %r failed", call_id)
+                customer_id = None
+            try:
+                self._complaint_lifecycle_service.close_call(call_id, customer_id)
+            except Exception:
+                logger.exception("Closing out the complaints of call %r failed", call_id)
+
+        if self._emerging_complaint_service is not None and self._emerging_complaint_auto_discovery:
+            try:
+                self._emerging_complaint_service.request_discovery()
+            except Exception:
+                logger.exception("Requesting emerging-complaint discovery failed")
 
     def _analyze_and_save_coverage(
         self, conversation: Conversation

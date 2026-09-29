@@ -24,17 +24,47 @@ class ComplaintLifecycleStatus(str, Enum):
     FOLLOW_UP = "follow_up"
 
 
+# DETECTED/PROBED/COVERED advance in order while the call runs. Once a call
+# is over, a person closes the complaint from wherever the call left it
+# (resolved or unresolved), may schedule a follow-up, and closes the
+# follow-up by resolving it.
 _ALLOWED_TRANSITIONS: dict[ComplaintLifecycleStatus, frozenset[ComplaintLifecycleStatus]] = {
     ComplaintLifecycleStatus.RAISED: frozenset({ComplaintLifecycleStatus.DETECTED}),
-    ComplaintLifecycleStatus.DETECTED: frozenset({ComplaintLifecycleStatus.PROBED}),
-    ComplaintLifecycleStatus.PROBED: frozenset({ComplaintLifecycleStatus.COVERED}),
+    ComplaintLifecycleStatus.DETECTED: frozenset(
+        {
+            ComplaintLifecycleStatus.PROBED,
+            ComplaintLifecycleStatus.RESOLVED,
+            ComplaintLifecycleStatus.UNRESOLVED,
+        }
+    ),
+    ComplaintLifecycleStatus.PROBED: frozenset(
+        {
+            ComplaintLifecycleStatus.COVERED,
+            ComplaintLifecycleStatus.RESOLVED,
+            ComplaintLifecycleStatus.UNRESOLVED,
+        }
+    ),
     ComplaintLifecycleStatus.COVERED: frozenset(
         {ComplaintLifecycleStatus.RESOLVED, ComplaintLifecycleStatus.UNRESOLVED}
     ),
     ComplaintLifecycleStatus.RESOLVED: frozenset({ComplaintLifecycleStatus.FOLLOW_UP}),
-    ComplaintLifecycleStatus.UNRESOLVED: frozenset({ComplaintLifecycleStatus.FOLLOW_UP}),
-    ComplaintLifecycleStatus.FOLLOW_UP: frozenset(),
+    ComplaintLifecycleStatus.UNRESOLVED: frozenset(
+        {ComplaintLifecycleStatus.FOLLOW_UP, ComplaintLifecycleStatus.RESOLVED}
+    ),
+    ComplaintLifecycleStatus.FOLLOW_UP: frozenset({ComplaintLifecycleStatus.RESOLVED}),
 }
+
+# Statuses a person may set by hand; the others are driven by the call.
+MANUAL_STATUSES = frozenset(
+    {
+        ComplaintLifecycleStatus.RESOLVED,
+        ComplaintLifecycleStatus.UNRESOLVED,
+        ComplaintLifecycleStatus.FOLLOW_UP,
+    }
+)
+
+# RESOLVED is the only closed status; everything else still needs attention.
+CLOSED_STATUSES = frozenset({ComplaintLifecycleStatus.RESOLVED})
 
 
 def _require_id(value: str, field_name: str) -> None:
@@ -86,6 +116,27 @@ class ComplaintLifecycleRecord:
         if self.customer_id is not None:
             _require_id(self.customer_id, "customer_id")
 
+    @property
+    def is_open(self) -> bool:
+        return self.status not in CLOSED_STATUSES
+
+    def allowed_next(self) -> frozenset[ComplaintLifecycleStatus]:
+        return _ALLOWED_TRANSITIONS[self.status]
+
+    def allowed_actions(self) -> tuple[ComplaintLifecycleStatus, ...]:
+        """Statuses a person can move this complaint to right now."""
+        return tuple(
+            status
+            for status in ComplaintLifecycleStatus
+            if status in MANUAL_STATUSES and status in self.allowed_next()
+        )
+
+    def with_changes(self, at: float, **changes) -> "ComplaintLifecycleRecord":
+        """Change non-status fields (follow-up flag, customer)."""
+        if at < self.last_updated_at:
+            raise ValueError("Update timestamp cannot be before last_updated_at.")
+        return dataclasses.replace(self, last_updated_at=at, **changes)
+
     def transition_to(
         self, new_status: ComplaintLifecycleStatus, at: float, follow_up_required: bool | None = None
     ) -> "ComplaintLifecycleRecord":
@@ -109,3 +160,26 @@ class ComplaintLifecycleRecord:
             ),
         )
 
+
+
+@dataclass(frozen=True)
+class ComplaintLifecycleEvent:
+    """One entry in a complaint's history: what its status became, when,
+    who did it ("system" for changes made by call analysis) and why."""
+
+    complaint_id: str
+    status: ComplaintLifecycleStatus
+    at: float
+    actor: str
+    note: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_id(self.complaint_id, "complaint_id")
+        if not isinstance(self.status, ComplaintLifecycleStatus):
+            raise TypeError(
+                f"status must be a ComplaintLifecycleStatus, got {type(self.status).__name__}."
+            )
+        _require_timestamp(self.at, "at")
+        _require_id(self.actor, "actor")
+        if self.note is not None and not isinstance(self.note, str):
+            raise TypeError("note must be a string or None.")

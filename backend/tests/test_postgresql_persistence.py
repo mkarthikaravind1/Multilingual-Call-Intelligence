@@ -141,11 +141,13 @@ def test_schema_creates_all_expected_tables(engine):
         "active_improvements",
         "improvement_usages",
         "complaint_lifecycle_records",
+        "complaint_lifecycle_events",
         "customer_summary_deliveries",
         "post_call_summaries",
         "users",
         "call_customers",
         "escalations",
+        "emerging_complaint_candidates",
     }
 
 
@@ -914,3 +916,71 @@ def test_deactivating_an_improvement_keeps_its_usage_history(session_factory):
     assert stored.status is ActiveImprovementStatus.INACTIVE
     assert stored.deactivated_at == 500.0
     assert [u.usage_id for u in usages.list_for_improvement("imp-loop")] == ["usage-loop"]
+
+
+# Complaint lifecycle queries and history; emerging complaint candidates.
+
+
+def test_complaint_lifecycle_queries_and_event_history(session_factory):
+    from app.domain.complaint_lifecycle import (
+        ComplaintLifecycleEvent,
+        ComplaintLifecycleRecord,
+        ComplaintLifecycleStatus as S,
+    )
+    from app.infrastructure.database.repositories.complaint_lifecycle_repository import (
+        PostgresComplaintLifecycleRepository,
+    )
+
+    repo = PostgresComplaintLifecycleRepository(session_factory)
+    first = ComplaintLifecycleRecord("a:Cost", "a", "Cost", S.DETECTED, 1.0, 1.0, customer_id="cust")
+    second = ComplaintLifecycleRecord("a:Hygiene", "a", "Hygiene", S.RESOLVED, 2.0, 2.0)
+    other = ComplaintLifecycleRecord("b:Cost", "b", "Cost", S.FOLLOW_UP, 0.5, 3.0, True, "cust")
+    for record in (second, first, other):
+        repo.save(record)
+    repo.add_event(ComplaintLifecycleEvent("a:Cost", S.DETECTED, 1.0, "system"))
+    repo.add_event(ComplaintLifecycleEvent("a:Cost", S.RESOLVED, 5.0, "sup@example.com", "Fixed."))
+
+    assert repo.list_for_call("a") == (first, second)
+    assert repo.list_for_customer("cust") == (other, first)
+    assert repo.list_by_status([S.RESOLVED]) == (second,)
+    events = repo.list_events(["a:Cost", "a:Hygiene"])
+    assert list(events) == ["a:Cost"]
+    assert [(e.status, e.actor, e.note) for e in events["a:Cost"]] == [
+        (S.DETECTED, "system", None),
+        (S.RESOLVED, "sup@example.com", "Fixed."),
+    ]
+    assert repo.list_events([]) == {}
+
+
+def test_emerging_complaint_candidates_round_trip_and_update_in_place(session_factory):
+    from app.domain.emerging_complaint_candidate import (
+        EmergingComplaintCandidate,
+        EmergingComplaintReviewStatus,
+    )
+    from app.infrastructure.database.repositories.emerging_complaint_repository import (
+        PostgresEmergingComplaintRepository,
+    )
+
+    repo = PostgresEmergingComplaintRepository(session_factory)
+    candidate = EmergingComplaintCandidate(
+        candidate_id="emerging-1",
+        proposed_name="Ac Smell",
+        description="Smell from the AC.",
+        evidence=("ஏசி வாசனை", "ac smells"),
+        occurrence_count=2,
+        confidence=0.5,
+        call_ids=("a", "b"),
+    ).first_stored(10.0)
+
+    repo.save(candidate)
+    assert repo.get("emerging-1") == candidate
+    assert repo.get("missing") is None
+
+    reviewed = candidate.review(
+        EmergingComplaintReviewStatus.ACCEPTED, "sup@example.com", 20.0, "Real"
+    )
+    repo.save(reviewed)
+
+    assert repo.get("emerging-1") == reviewed
+    assert repo.list_by_status([EmergingComplaintReviewStatus.PENDING_REVIEW]) == ()
+    assert repo.list_by_status([EmergingComplaintReviewStatus.ACCEPTED]) == (reviewed,)

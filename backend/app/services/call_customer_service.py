@@ -127,6 +127,11 @@ class CallCustomerService:
         Used for post-call summary delivery."""
         return self.get(call_id).contact
 
+    def resolve_customer_id(self, call_id: str) -> str | None:
+        """The CRM id of the customer on this call, if identified."""
+        customer = self.get(call_id).customer
+        return None if customer is None else customer.customer_id
+
     def _find_customer(self, link: CallCustomerLink) -> CustomerProfile | None:
         if link.customer_id is not None:
             customer = self._directory.get_customer(link.customer_id)

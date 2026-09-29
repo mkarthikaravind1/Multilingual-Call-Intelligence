@@ -3,13 +3,13 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { ApiError } from '../api/errors'
 import { CallStatusBadge } from '../components/CallStatusBadge'
-import { IntegrationPendingCard } from '../components/IntegrationPendingCard'
 import { StatePanel } from '../components/StatePanel'
 import { formatCallDuration } from '../format/time'
 
 import { AiReviewPanel } from '../features/ai-improvement/components/AiReviewPanel'
 import { CustomerPanel } from '../features/customer/components/CustomerPanel'
 import { EscalationCard } from '../features/escalation/components/EscalationCard'
+import { CallComplaintsPanel } from '../features/complaints/components/CallComplaintsPanel'
 import { useAuth } from '../auth/useAuth'
 import { SummaryDeliveryPanel } from '../features/customer/components/SummaryDeliveryPanel'
 
@@ -318,6 +318,12 @@ export function PostCallAnalysisPage() {
             </aside>
           </div>
 
+          <CallComplaintsPanel
+            callId={call.callId}
+            isCallActive={isActiveCall}
+            refreshToken={call.status}
+          />
+
           <AiReviewPanel callId={call.callId} />
 
           <section className="panel">
@@ -327,10 +333,6 @@ export function PostCallAnalysisPage() {
                 callId={call.callId}
                 isCallActive={isActiveCall}
                 refreshToken={`${call.status}:${hasSummary}`}
-              />
-              <IntegrationPendingCard
-                title="Complaint history"
-                description="The customer's previous complaints and their lifecycle will appear once complaint lifecycle tracking is enabled."
               />
             </div>
           </section>

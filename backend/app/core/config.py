@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     summary_provider: str = "rule_based"
     # "rule_based", or "llm" (the rules plus an LLM detector that can only add).
     escalation_provider: str = "rule_based"
+    # Emerging-complaint discovery: "rule_based" (same wording across calls)
+    # or "llm" (groups differently worded complaints).
+    emerging_complaint_provider: str = "rule_based"
+    # Re-run discovery in the background whenever a call completes.
+    emerging_complaint_auto_discovery: bool = True
+    # How many of the most recent completed calls one discovery run reads.
+    emerging_complaint_discovery_max_calls: int = 200
     redis_key_prefix: str = "conversation_coverage"
     redis_ttl_seconds: float = 86400.0
     redis_socket_timeout_seconds: float = 5.0

@@ -12,6 +12,7 @@ import { AiImprovementCenterPage } from '../pages/AiImprovementCenterPage'
 import { LoginPage } from '../pages/LoginPage'
 import { AdministrationPage } from '../pages/AdministrationPage'
 import { EscalationsPage } from '../pages/EscalationsPage'
+import { ComplaintsPage } from '../pages/ComplaintsPage'
 
 function RootRedirect() {
   const { isAuthenticated } = useAuth()
@@ -70,6 +71,16 @@ export function AppRoutes() {
           <ProtectedRoute>
             <AppShell title="Post-call Analysis" subtitle="Summary, complaints and estimate for a call">
               <PostCallAnalysisPage />
+            </AppShell>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/complaints"
+        element={
+          <ProtectedRoute>
+            <AppShell title="Complaints" subtitle="Every complaint from detection to closure, follow-ups first">
+              <ComplaintsPage />
             </AppShell>
           </ProtectedRoute>
         }

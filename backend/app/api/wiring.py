@@ -94,6 +94,21 @@ from app.services.escalation_repository import (
 )
 from app.services.escalation_service import EscalationService
 from app.domain.user_repository import InMemoryUserRepository, UserRepository
+from app.ai.emerging_complaint.provider import EmergingComplaintDiscoveryProvider
+from app.ai.emerging_complaint.rule_based_provider import (
+    RuleBasedEmergingComplaintDiscoveryProvider,
+)
+from app.composition.providers import create_emerging_complaint_provider
+from app.domain.complaint_lifecycle_repository import (
+    ComplaintLifecycleRepository,
+    InMemoryComplaintLifecycleRepository,
+)
+from app.services.complaint_lifecycle_service import ComplaintLifecycleService
+from app.services.emerging_complaint_repository import (
+    EmergingComplaintRepository,
+    InMemoryEmergingComplaintRepository,
+)
+from app.services.emerging_complaint_service import EmergingComplaintService
 from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
@@ -121,6 +136,9 @@ def build_api_services(
     customer_directory: CustomerDirectory | None = None,
     escalation_repository: EscalationRepository | None = None,
     escalation_provider: EscalationDetectionProvider | None = None,
+    complaint_lifecycle_repository: ComplaintLifecycleRepository | None = None,
+    emerging_complaint_repository: EmergingComplaintRepository | None = None,
+    emerging_complaint_provider: EmergingComplaintDiscoveryProvider | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -183,6 +201,24 @@ def build_api_services(
         escalation_provider,
     )
 
+    # --- Complaint lifecycle and emerging complaints ---
+    complaint_lifecycle_service = ComplaintLifecycleService(
+        complaint_lifecycle_repository or InMemoryComplaintLifecycleRepository()
+    )
+    if emerging_complaint_provider is None:
+        try:
+            emerging_complaint_provider = create_emerging_complaint_provider(settings=settings)
+        except Exception as exc:
+            logger.warning("Falling back to rule-based emerging-complaint discovery: %s", exc)
+            emerging_complaint_provider = RuleBasedEmergingComplaintDiscoveryProvider()
+    emerging_complaint_service = EmergingComplaintService(
+        emerging_complaint_repository or InMemoryEmergingComplaintRepository(),
+        emerging_complaint_provider,
+        call_service,
+        coverage_repository,
+        max_calls=settings.emerging_complaint_discovery_max_calls,
+    )
+
     try:
         customer_summary_delivery_service = build_customer_summary_delivery_service(
             settings=settings,
@@ -231,6 +267,10 @@ def build_api_services(
         or InMemoryPostCallSummaryRepository(),
         customer_summary_enabled=settings.customer_summary_enabled,
         escalation_service=escalation_service,
+        complaint_lifecycle_service=complaint_lifecycle_service,
+        customer_id_resolver=call_customer_service.resolve_customer_id,
+        emerging_complaint_service=emerging_complaint_service,
+        emerging_complaint_auto_discovery=settings.emerging_complaint_auto_discovery,
     )
 
     # --- Telephony (Production Telephony) ---
@@ -309,4 +349,6 @@ def build_api_services(
         call_customer_service=call_customer_service,
         customer_summary_enabled=settings.customer_summary_enabled,
         escalation_service=escalation_service,
+        complaint_lifecycle_service=complaint_lifecycle_service,
+        emerging_complaint_service=emerging_complaint_service,
     )

@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/errors'
-import { IntegrationPendingCard } from '../components/IntegrationPendingCard'
 import { StatePanel } from '../components/StatePanel'
 import { humanizeLabel } from '../format/text'
 import { formatRecordTimestamp } from '../format/time'
 
 import { learningRestService } from '../features/ai-improvement/services/learningRestService'
+import { EmergingComplaintsPanel } from '../features/complaints/components/EmergingComplaintsPanel'
 
 import type {
   ActiveImprovementDto,
@@ -453,15 +453,7 @@ export function AiImprovementCenterPage() {
             </div>
           </section>
 
-          <section className="panel">
-            <p className="panel__label">Upcoming learning capabilities</p>
-            <div className="integration-grid">
-              <IntegrationPendingCard
-                title="Emerging complaints"
-                description="New complaint themes discovered across calls will appear once emerging-complaint discovery is enabled in the backend."
-              />
-            </div>
-          </section>
+          <EmergingComplaintsPanel canReview={canReviewCandidates} />
         </>
       )}
     </section>

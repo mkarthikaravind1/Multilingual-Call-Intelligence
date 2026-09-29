@@ -4,7 +4,7 @@ import pytest
 
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
-from app.domain.complaint_lifecycle_repository import ComplaintLifecycleRepository
+from app.domain.complaint_lifecycle_repository import InMemoryComplaintLifecycleRepository
 from app.services.complaint_analysis_service import ComplaintAnalysisService
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.complaint_lifecycle_integration_service import (
@@ -25,17 +25,6 @@ class FakeComplaintDetectionProvider(ComplaintDetectionProvider):
 
     def detect(self, conversation):
         return [FakeDetection(category) for category in self._categories]
-
-
-class InMemoryComplaintLifecycleRepository(ComplaintLifecycleRepository):
-    def __init__(self) -> None:
-        self._records = {}
-
-    def save(self, record) -> None:
-        self._records[record.complaint_id] = record
-
-    def get(self, complaint_id: str):
-        return self._records.get(complaint_id)
 
 
 def build_service(categories: list[str]):

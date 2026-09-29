@@ -12,6 +12,7 @@ const navItems: NavItem[] = [
   { to: '/live-call', label: 'Live Call', icon: 'live-call' },
   { to: '/call-history', label: 'Call History', icon: 'call-history' },
   { to: '/post-call-analysis', label: 'Post-call Analysis', icon: 'post-call' },
+  { to: '/complaints', label: 'Complaints', icon: 'complaints' },
   { to: '/ai-improvement', label: 'AI Improvement Center', icon: 'ai-improvement' },
 ]
 

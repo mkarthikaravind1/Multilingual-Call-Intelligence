@@ -230,7 +230,23 @@ class ComplaintLifecycleRecordModel(Base):
     __table_args__ = (
         Index("ix_complaint_lifecycle_call_id", "call_id"),
         Index("ix_complaint_lifecycle_customer_id", "customer_id"),
+        Index("ix_complaint_lifecycle_status", "status"),
     )
+
+
+class ComplaintLifecycleEventModel(Base):
+    # Append-only history of a complaint's status changes. No foreign key,
+    # like the records table's own saves (delete and re-insert).
+    __tablename__ = "complaint_lifecycle_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    complaint_id: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    at: Mapped[float] = mapped_column(Float, nullable=False)
+    actor: Mapped[str] = mapped_column(String, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("ix_complaint_lifecycle_events_complaint_id", "complaint_id"),)
 
 
 class CustomerSummaryDeliveryModel(Base):
@@ -328,3 +344,26 @@ class EscalationModel(Base):
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (Index("ix_escalations_status", "status"),)
+
+
+class EmergingComplaintCandidateModel(Base):
+    # One row per discovered theme; candidate ids are stable, so each
+    # discovery run updates the same row.
+    __tablename__ = "emerging_complaint_candidates"
+
+    candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    proposed_name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    call_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    related_category: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    first_seen_at: Mapped[float] = mapped_column(Float, nullable=False)
+    last_seen_at: Mapped[float] = mapped_column(Float, nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("ix_emerging_complaint_candidates_status", "status"),)

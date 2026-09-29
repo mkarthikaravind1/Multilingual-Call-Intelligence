@@ -8,6 +8,8 @@ from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.call_customer_service import CallCustomerService
+from app.services.complaint_lifecycle_service import ComplaintLifecycleService
+from app.services.emerging_complaint_service import EmergingComplaintService
 from app.services.escalation_service import EscalationService
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
@@ -36,6 +38,24 @@ class ApiServices:
     call_customer_service: CallCustomerService | None = None
     customer_summary_enabled: bool = False
     escalation_service: EscalationService | None = None
+    complaint_lifecycle_service: ComplaintLifecycleService | None = None
+    emerging_complaint_service: EmergingComplaintService | None = None
+
+
+def get_complaint_lifecycle_service(connection: HTTPConnection) -> ComplaintLifecycleService:
+    service = connection.app.state.services.complaint_lifecycle_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="Complaint tracking is not configured.")
+    return service
+
+
+def get_emerging_complaint_service(connection: HTTPConnection) -> EmergingComplaintService:
+    service = connection.app.state.services.emerging_complaint_service
+    if service is None:
+        raise HTTPException(
+            status_code=503, detail="Emerging-complaint discovery is not configured."
+        )
+    return service
 
 
 def get_escalation_service(connection: HTTPConnection) -> EscalationService:

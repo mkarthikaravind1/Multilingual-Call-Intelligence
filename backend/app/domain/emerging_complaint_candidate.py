@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 from enum import Enum
 
@@ -5,14 +6,21 @@ from app.core.constants import COMPLAINT_CATEGORIES
 
 
 class EmergingComplaintReviewStatus(str, Enum):
-    """Human-review state of a candidate. Transitions are not modelled yet —
-    this milestone is data-only; a future milestone will add the workflow
-    that moves candidates between these states.
-    """
+    """Human-review state of a candidate: a supervisor accepts it as a real
+    complaint theme or rejects it as noise, and can reopen either decision."""
 
     PENDING_REVIEW = "pending_review"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
+
+
+class EmergingComplaintReviewError(ValueError):
+    pass
+
+
+def _optional_text(value: str | None, field_name: str) -> None:
+    if value is not None and (not isinstance(value, str) or not value.strip()):
+        raise ValueError(f"{field_name} must not be blank when provided.")
 
 
 def _require_confidence(value: float) -> None:
@@ -51,6 +59,14 @@ class EmergingComplaintCandidate:
     confidence: float
     related_category: str | None = None
     status: EmergingComplaintReviewStatus = EmergingComplaintReviewStatus.PENDING_REVIEW
+    # Calls the theme was seen on, when the provider knows them.
+    call_ids: tuple[str, ...] = ()
+    # Set when the candidate is stored; 0.0 for a freshly discovered one.
+    first_seen_at: float = 0.0
+    last_seen_at: float = 0.0
+    reviewed_by: str | None = None
+    reviewed_at: float | None = None
+    review_note: str | None = None
 
     def __post_init__(self) -> None:
         if not self.candidate_id.strip():
@@ -95,3 +111,57 @@ class EmergingComplaintCandidate:
                 "status must be an EmergingComplaintReviewStatus, "
                 f"got {type(self.status).__name__}."
             )
+        if not isinstance(self.call_ids, tuple) or not all(
+            isinstance(call_id, str) and call_id.strip() for call_id in self.call_ids
+        ):
+            raise ValueError("call_ids must be a tuple of non-empty strings.")
+        if self.last_seen_at < self.first_seen_at:
+            raise ValueError("last_seen_at cannot be before first_seen_at.")
+        _optional_text(self.reviewed_by, "reviewed_by")
+        _optional_text(self.review_note, "review_note")
+
+    def first_stored(self, at: float) -> "EmergingComplaintCandidate":
+        return dataclasses.replace(self, first_seen_at=at, last_seen_at=at)
+
+    def refreshed_from(
+        self, discovered: "EmergingComplaintCandidate", at: float
+    ) -> "EmergingComplaintCandidate":
+        """Take the latest evidence from a new discovery run while keeping
+        this candidate's identity, history and review decision."""
+        return dataclasses.replace(
+            self,
+            proposed_name=discovered.proposed_name,
+            description=discovered.description,
+            evidence=discovered.evidence,
+            occurrence_count=discovered.occurrence_count,
+            confidence=discovered.confidence,
+            related_category=discovered.related_category or self.related_category,
+            call_ids=discovered.call_ids or self.call_ids,
+            last_seen_at=max(at, self.last_seen_at),
+        )
+
+    def review(
+        self,
+        decision: EmergingComplaintReviewStatus,
+        by: str,
+        at: float,
+        note: str | None = None,
+    ) -> "EmergingComplaintCandidate":
+        """Accept, reject, or reopen (back to pending_review) the candidate."""
+        if not isinstance(decision, EmergingComplaintReviewStatus):
+            raise TypeError("decision must be an EmergingComplaintReviewStatus.")
+        if decision is self.status:
+            raise EmergingComplaintReviewError(
+                f"Candidate {self.candidate_id!r} is already {decision.value}."
+            )
+        if decision is EmergingComplaintReviewStatus.PENDING_REVIEW:
+            return dataclasses.replace(
+                self, status=decision, reviewed_by=None, reviewed_at=None, review_note=None
+            )
+        return dataclasses.replace(
+            self,
+            status=decision,
+            reviewed_by=by,
+            reviewed_at=at,
+            review_note=note.strip() if note and note.strip() else None,
+        )

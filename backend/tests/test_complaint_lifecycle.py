@@ -49,11 +49,15 @@ def test_invalid_transition_raises():
         record.transition_to(ComplaintLifecycleStatus.COVERED, at=1.0)
 
 
-def test_follow_up_is_terminal():
+def test_follow_up_can_only_be_resolved():
     record = _record(status=ComplaintLifecycleStatus.FOLLOW_UP, last_updated_at=5.0)
 
+    assert record.allowed_next() == {ComplaintLifecycleStatus.RESOLVED}
+    assert record.transition_to(ComplaintLifecycleStatus.RESOLVED, at=6.0).status == (
+        ComplaintLifecycleStatus.RESOLVED
+    )
     with pytest.raises(ValueError):
-        record.transition_to(ComplaintLifecycleStatus.RESOLVED, at=6.0)
+        record.transition_to(ComplaintLifecycleStatus.UNRESOLVED, at=6.0)
 
 
 def test_transition_does_not_mutate_original():

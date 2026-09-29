@@ -66,6 +66,10 @@ from app.infrastructure.database.repositories.escalation_repository import (
     PostgresEscalationRepository,
 )
 from app.services.escalation_repository import EscalationRepository
+from app.infrastructure.database.repositories.emerging_complaint_repository import (
+    PostgresEmergingComplaintRepository,
+)
+from app.services.emerging_complaint_repository import EmergingComplaintRepository
 
 @dataclass(frozen=True)
 class PostgresRepositories:
@@ -87,6 +91,7 @@ class PostgresRepositories:
     user: UserRepository
     call_customer: CallCustomerRepository
     escalation: EscalationRepository
+    emerging_complaint: EmergingComplaintRepository
 
 def build_postgres_repositories(
     session_factory: sessionmaker[Session],
@@ -107,6 +112,7 @@ def build_postgres_repositories(
         user=PostgresUserRepository(session_factory),
         call_customer=PostgresCallCustomerRepository(session_factory),
         escalation=PostgresEscalationRepository(session_factory),
+        emerging_complaint=PostgresEmergingComplaintRepository(session_factory),
     )
 
 
