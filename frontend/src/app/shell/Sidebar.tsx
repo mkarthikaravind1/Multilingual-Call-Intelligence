@@ -15,6 +15,10 @@ const navItems: NavItem[] = [
   { to: '/ai-improvement', label: 'AI Improvement Center', icon: 'ai-improvement' },
 ]
 
+const supervisorNavItems: NavItem[] = [
+  { to: '/escalations', label: 'Escalations', icon: 'escalations' },
+]
+
 const adminNavItems: NavItem[] = [
   { to: '/administration', label: 'Administration', icon: 'administration' },
 ]
@@ -22,8 +26,11 @@ const adminNavItems: NavItem[] = [
 export function Sidebar() {
   const { session } = useAuth()
   const { isSidebarCollapsed, isDrawerOpen, closeDrawer } = useShellLayout()
-  const visibleItems =
-    session?.role === 'ADMIN' ? [...navItems, ...adminNavItems] : navItems
+  const visibleItems = [
+    ...navItems,
+    ...(session?.role === 'SUPERVISOR' || session?.role === 'ADMIN' ? supervisorNavItems : []),
+    ...(session?.role === 'ADMIN' ? adminNavItems : []),
+  ]
 
   const className = [
     'sidebar',

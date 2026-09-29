@@ -11,6 +11,7 @@ import { PostCallAnalysisPage } from '../pages/PostCallAnalysisPage'
 import { AiImprovementCenterPage } from '../pages/AiImprovementCenterPage'
 import { LoginPage } from '../pages/LoginPage'
 import { AdministrationPage } from '../pages/AdministrationPage'
+import { EscalationsPage } from '../pages/EscalationsPage'
 
 function RootRedirect() {
   const { isAuthenticated } = useAuth()
@@ -20,6 +21,12 @@ function RootRedirect() {
 function AdminOnly({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   return session?.role === 'ADMIN' ? <>{children}</> : <Navigate to="/dashboard" replace />
+}
+
+function SupervisorOnly({ children }: { children: ReactNode }) {
+  const { session } = useAuth()
+  const allowed = session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
+  return allowed ? <>{children}</> : <Navigate to="/dashboard" replace />
 }
 
 export function AppRoutes() {
@@ -74,6 +81,19 @@ export function AppRoutes() {
             <AppShell title="AI Improvement Center" subtitle="Learning evidence, patterns and improvement review">
               <AiImprovementCenterPage />
             </AppShell>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/escalations"
+        element={
+          <ProtectedRoute>
+            <SupervisorOnly>
+              <AppShell title="Escalations" subtitle="Calls that need a supervisor, most severe first">
+                <EscalationsPage />
+              </AppShell>
+            </SupervisorOnly>
           </ProtectedRoute>
         }
       />

@@ -44,6 +44,9 @@ from app.services.redis_telephony_call_mapping_repository import (
 )
 from app.telephony.plivo.provider import PlivoTelephonyProvider
 from app.telephony.provider import TelephonyProvider
+from app.ai.escalation.llm_provider import HybridEscalationProvider, LLMEscalationProvider
+from app.ai.escalation.provider import EscalationDetectionProvider
+from app.ai.escalation.rule_based_provider import RuleBasedEscalationProvider
 from app.crm.json_file_directory import JsonFileCustomerDirectory
 from app.crm.provider import CustomerDirectory, NoCustomerDirectory
 
@@ -352,6 +355,25 @@ def create_call_mapping_repository(
             f"Available: {sorted(_CALL_MAPPING_REPOSITORY_BUILDERS)}."
         )
     return builder(settings)
+
+
+def create_escalation_provider(
+    llm_client: LLMClient | None = None, settings: Settings | None = None
+) -> EscalationDetectionProvider:
+    settings = settings or get_settings()
+    name = settings.escalation_provider.strip().lower()
+    if name == "rule_based":
+        return RuleBasedEscalationProvider()
+    if name == "llm":
+        if llm_client is None:
+            llm_client = create_llm_client(settings)
+        return HybridEscalationProvider(
+            RuleBasedEscalationProvider(), LLMEscalationProvider(llm_client)
+        )
+    raise UnsupportedProviderError(
+        f"Unsupported escalation provider: {settings.escalation_provider!r}. "
+        "Available: ['llm', 'rule_based']."
+    )
 
 
 def _build_no_customer_directory(settings: Settings) -> CustomerDirectory:

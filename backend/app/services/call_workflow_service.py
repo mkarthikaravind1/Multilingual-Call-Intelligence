@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 from typing import Callable, Protocol
 
@@ -7,6 +7,7 @@ from app.ai.summary.provider import PostCallSummaryRequest
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.customer_contact import CustomerContact
+from app.domain.escalation import Escalation
 from app.domain.post_call_summary import PostCallSummary
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.service_estimate import ServiceEstimate
@@ -21,6 +22,7 @@ from app.services.conversation_coverage_repository import (
 )
 from app.services.conversation_service import ConversationCompletion
 from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
+from app.services.escalation_service import EscalationService
 from app.services.estimation_service import EstimationService
 from app.services.next_question_service import NextQuestionService
 from app.services.post_call_summary_repository import (
@@ -39,6 +41,8 @@ class CallAnalysisResult:
     question_suggestion: QuestionSuggestion | None
     service_estimate: ServiceEstimate | None
     post_call_summary: PostCallSummary | None = None
+    # None when the call has never escalated (or escalation is not wired).
+    escalation: Escalation | None = None
 
 class LearningRecordingError(Exception):
     pass
@@ -61,7 +65,9 @@ class CallWorkflowService:
         learning_recorder: AnalysisLearningRecorder | None = None,
         post_call_summary_repository: PostCallSummaryRepository | None = None,
         customer_summary_enabled: bool = False,
+        escalation_service: EscalationService | None = None,
     ) -> None:
+        self._escalation_service = escalation_service
         self._call_service = call_service
         self._coverage_repository = coverage_repository
         self._analysis_service = analysis_service
@@ -82,7 +88,19 @@ class CallWorkflowService:
         utterance: Utterance,
     ) -> CallAnalysisResult:
         self._call_service.add_utterance(call_id, utterance)
-        result = self.analyze_call(call_id)
+        conversation = self._call_service.get_call(call_id)
+        if conversation.status == ConversationStatus.COMPLETED:
+            result = self._read_completed_analysis(conversation)
+        else:
+            result = self._analyze_active_call(conversation)
+            # Escalation is assessed only on new speech; reads reuse the result.
+            if self._escalation_service is not None:
+                result = replace(
+                    result,
+                    escalation=self._escalation_service.assess(
+                        conversation, result.coverage, result.sentiment
+                    ),
+                )
         if self._learning_recorder is not None:
             try:
                 self._learning_recorder.record(call_id, result)
@@ -96,6 +114,12 @@ class CallWorkflowService:
         if conversation.status == ConversationStatus.COMPLETED:
             return self._read_completed_analysis(conversation)
 
+        return replace(
+            self._analyze_active_call(conversation),
+            escalation=self._stored_escalation(call_id),
+        )
+
+    def _analyze_active_call(self, conversation: Conversation) -> CallAnalysisResult:
         analysis = self._analyze_and_save_coverage(conversation)
         suggestion = self._next_question_service.suggest_next_question(
             analysis.coverage,
@@ -110,6 +134,15 @@ class CallWorkflowService:
                 conversation.latest_utterance
             ),
         )
+
+    def _stored_escalation(self, call_id: str) -> Escalation | None:
+        if self._escalation_service is None:
+            return None
+        try:
+            return self._escalation_service.get(call_id)
+        except Exception:
+            logger.exception("Reading the escalation for call %r failed", call_id)
+            return None
 
     def complete_call(self, call_id: str, end_time: float) -> ConversationCompletion:
         """Shared completion entry point: post-call processing runs only
@@ -194,6 +227,7 @@ class CallWorkflowService:
             question_suggestion=None,
             service_estimate=None if summary is None else summary.service_estimate,
             post_call_summary=summary,
+            escalation=self._stored_escalation(conversation.call_id),
         )
 
     def _deliver_summary(self, summary: PostCallSummary) -> None:

@@ -4,8 +4,10 @@ from app.api.dependencies import (
     get_call_customer_service,
     get_call_service,
     get_optional_call_customer_service,
+    get_optional_escalation_service,
     get_workflow_service,
 )
+from app.services.escalation_service import EscalationService
 from app.api.v1.mappers import (
     to_analysis_response,
     to_call_list_response,
@@ -46,13 +48,21 @@ def list_calls(
     limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
     call_service: CallService = Depends(get_call_service),
+    escalation_service: EscalationService | None = Depends(get_optional_escalation_service),
     _: User = Depends(get_current_user),
 ) -> CallListResponse:
+    calls = call_service.list_calls(limit, offset)
+    escalations = (
+        escalation_service.get_many(call.call_id for call in calls)
+        if escalation_service is not None
+        else {}
+    )
     return to_call_list_response(
-        call_service.list_calls(limit, offset),
+        calls,
         total=call_service.count_calls(),
         limit=limit,
         offset=offset,
+        escalations=escalations,
     )
 
 @stats_router.get("/call-stats", response_model=CallStatsResponse)

@@ -385,7 +385,11 @@ def test_list_calls_returns_newest_first_with_pagination():
         "start_time": 0.0,
         "end_time": None,
         "utterance_count": 1,
+        # The fake sentiment is clearly negative, so the call is on watch.
+        "escalation_level": "watch",
+        "escalation_status": "open",
     }
+    assert first_page["items"][0]["escalation_level"] is None
 
 
 @pytest.mark.parametrize(

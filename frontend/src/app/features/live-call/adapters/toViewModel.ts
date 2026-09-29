@@ -1,3 +1,5 @@
+import { toEscalationViewModel } from '../../escalation/adapters/toEscalationViewModel'
+
 import type {
   CallAnalysisResponseDto,
   CallSummaryDto,
@@ -45,6 +47,8 @@ export function toCallMetadataViewModel(
     startTime: call.start_time,
     endTime: call.end_time,
     utteranceCount: call.utterance_count,
+    escalationLevel: call.escalation_level ?? null,
+    escalationStatus: call.escalation_status ?? null,
   }
 }
 
@@ -158,6 +162,10 @@ export function toCallAnalysisViewModel(
 
     serviceEstimate: analysis.service_estimate
       ? toServiceEstimateViewModel(analysis.service_estimate)
+      : null,
+
+    escalation: analysis.escalation
+      ? toEscalationViewModel(analysis.escalation)
       : null,
 
     postCallSummary: analysis.post_call_summary

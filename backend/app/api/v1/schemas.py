@@ -6,6 +6,7 @@ from app.domain.call_customer import CustomerMatchStatus
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.customer_contact import ConsentStatus, MessagingChannel
 from app.domain.customer_summary_delivery import DeliveryStatus
+from app.domain.escalation import EscalationLevel, EscalationSignalType, EscalationStatus
 from app.domain.conversation import ConversationStatus
 from app.domain.question_suggestion import SuggestionSource
 from app.domain.utterance import SpeakerRole
@@ -129,6 +130,9 @@ class CallSummaryResponse(_Response):
     start_time: float
     end_time: float | None
     utterance_count: int
+    # null when the call never escalated
+    escalation_level: EscalationLevel | None = None
+    escalation_status: EscalationStatus | None = None
 
 class CallListResponse(BaseModel):
     items: list[CallSummaryResponse]
@@ -209,3 +213,33 @@ class CallAnalysisResponse(_Response):
     question_suggestion: QuestionSuggestionResponse | None
     service_estimate: ServiceEstimateResponse | None = None
     post_call_summary: PostCallSummaryResponse | None = None
+    # null while the call has not escalated
+    escalation: "EscalationResponse | None" = None
+
+
+class EscalationSignalResponse(_Response):
+    signal_type: EscalationSignalType
+    level: EscalationLevel
+    description: str
+    evidence: str | None
+
+
+class EscalationResponse(_Response):
+    call_id: str
+    level: EscalationLevel
+    status: EscalationStatus
+    signals: list[EscalationSignalResponse]
+    first_detected_at: float
+    updated_at: float
+    acknowledged_by: str | None
+    acknowledged_at: float | None
+    resolved_by: str | None
+    resolved_at: float | None
+    resolution_note: str | None
+
+
+class ResolveEscalationRequest(_Request):
+    note: str | None = Field(default=None, max_length=500)
+
+
+CallAnalysisResponse.model_rebuild()

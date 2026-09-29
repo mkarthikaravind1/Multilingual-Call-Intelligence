@@ -1,0 +1,191 @@
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+import { ApiError } from '../../../api/errors'
+import { formatRecordTimestamp } from '../../../format/time'
+import { humanizeLabel } from '../../../format/text'
+import { toEscalationViewModel } from '../adapters/toEscalationViewModel'
+import { escalationRestService } from '../services/escalationRestService'
+
+import type { EscalationLevel } from '../types/dto'
+import type { EscalationViewModel } from '../types/view-models'
+
+const LEVEL_BADGES: Record<EscalationLevel, string> = {
+  watch: 'badge--warning',
+  high: 'badge--danger',
+  critical: 'badge--danger',
+}
+
+export function EscalationLevelBadge({ level }: { level: EscalationLevel }) {
+  return (
+    <span className={`badge ${LEVEL_BADGES[level]}`}>
+      {level === 'critical' ? 'Critical escalation' : `${humanizeLabel(level)} escalation`}
+    </span>
+  )
+}
+
+type EscalationCardProps = {
+  escalation: EscalationViewModel | null
+  isCallActive?: boolean
+  // Supervisors and admins can acknowledge and resolve.
+  canManage?: boolean
+  showCallLink?: boolean
+  onUpdated?: (escalation: EscalationViewModel) => void
+}
+
+export function EscalationCard({
+  escalation,
+  isCallActive = false,
+  canManage = false,
+  showCallLink = false,
+  onUpdated,
+}: EscalationCardProps) {
+  const [isResolving, setIsResolving] = useState(false)
+  const [note, setNote] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!escalation) {
+    return (
+      <section className="panel escalation-card escalation-card--calm">
+        <p className="panel__label">Escalation</p>
+        <p className="customer-panel__muted">
+          {isCallActive
+            ? 'No signs of escalation so far.'
+            : 'This call did not escalate.'}
+        </p>
+      </section>
+    )
+  }
+
+  const act = async (action: () => Promise<Parameters<typeof toEscalationViewModel>[0]>) => {
+    setIsSaving(true)
+    setError(null)
+    try {
+      const updated = toEscalationViewModel(await action())
+      setIsResolving(false)
+      setNote('')
+      onUpdated?.(updated)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to update the escalation.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const isResolved = escalation.status === 'resolved'
+
+  return (
+    <section
+      className={`panel escalation-card escalation-card--${escalation.level}${isResolved ? ' escalation-card--resolved' : ''}`}
+      aria-live="polite"
+    >
+      <div className="section-heading">
+        <div>
+          <p className="panel__label">Escalation</p>
+          {showCallLink ? (
+            <Link
+              className="text-link escalation-card__call"
+              to={`/post-call-analysis?call_id=${encodeURIComponent(escalation.callId)}`}
+            >
+              {escalation.callId}
+            </Link>
+          ) : null}
+        </div>
+        <div className="list-card__meta">
+          <EscalationLevelBadge level={escalation.level} />
+          <span className={`badge${isResolved ? ' badge--success' : ''}`}>
+            {humanizeLabel(escalation.status)}
+          </span>
+        </div>
+      </div>
+
+      <ul className="escalation-card__signals">
+        {escalation.signals.map((signal) => (
+          <li key={signal.type}>
+            <strong>{signal.description}</strong>
+            {signal.evidence && <q>{signal.evidence}</q>}
+          </li>
+        ))}
+      </ul>
+
+      <div className="list-card__facts">
+        <span>Detected: {formatRecordTimestamp(escalation.firstDetectedAt)}</span>
+        {escalation.acknowledgedBy && escalation.acknowledgedAt !== null && (
+          <span>
+            Acknowledged by {escalation.acknowledgedBy},{' '}
+            {formatRecordTimestamp(escalation.acknowledgedAt)}
+          </span>
+        )}
+        {escalation.resolvedBy && escalation.resolvedAt !== null && (
+          <span>
+            Resolved by {escalation.resolvedBy}, {formatRecordTimestamp(escalation.resolvedAt)}
+          </span>
+        )}
+      </div>
+
+      {escalation.resolutionNote && <p className="summary-delivery__message">{escalation.resolutionNote}</p>}
+
+      {canManage && !isResolved && !isResolving && (
+        <div className="button-row">
+          {escalation.status === 'open' && (
+            <button
+              type="button"
+              className="button"
+              disabled={isSaving}
+              onClick={() => void act(() => escalationRestService.acknowledge(escalation.callId))}
+            >
+              {isSaving ? 'Saving…' : 'Acknowledge'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={isSaving}
+            onClick={() => setIsResolving(true)}
+          >
+            Resolve
+          </button>
+        </div>
+      )}
+
+      {canManage && isResolving && (
+        <div className="escalation-card__resolve">
+          <label htmlFor={`resolve-note-${escalation.callId}`}>What was done? (optional)</label>
+          <textarea
+            id={`resolve-note-${escalation.callId}`}
+            rows={2}
+            maxLength={500}
+            value={note}
+            disabled={isSaving}
+            onChange={(event) => setNote(event.target.value)}
+          />
+          <div className="button-row">
+            <button
+              type="button"
+              className="button"
+              disabled={isSaving}
+              onClick={() => void act(() => escalationRestService.resolve(escalation.callId, note))}
+            >
+              {isSaving ? 'Saving…' : 'Mark resolved'}
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              disabled={isSaving}
+              onClick={() => setIsResolving(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p className="review-form__error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  )
+}

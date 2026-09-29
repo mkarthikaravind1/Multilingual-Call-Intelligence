@@ -8,6 +8,7 @@ from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.call_customer_service import CallCustomerService
+from app.services.escalation_service import EscalationService
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
@@ -34,6 +35,18 @@ class ApiServices:
     telephony_stream_flush_seconds: float = 4.0
     call_customer_service: CallCustomerService | None = None
     customer_summary_enabled: bool = False
+    escalation_service: EscalationService | None = None
+
+
+def get_escalation_service(connection: HTTPConnection) -> EscalationService:
+    service = connection.app.state.services.escalation_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="Escalations are not configured.")
+    return service
+
+
+def get_optional_escalation_service(connection: HTTPConnection) -> EscalationService | None:
+    return connection.app.state.services.escalation_service
 
 
 def get_optional_call_customer_service(

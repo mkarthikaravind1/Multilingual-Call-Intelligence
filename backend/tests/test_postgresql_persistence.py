@@ -55,6 +55,16 @@ from app.infrastructure.database.repositories.call_customer_repository import (
     PostgresCallCustomerRepository,
 )
 from app.domain.call_customer import CallCustomerLink
+from app.domain.escalation import (
+    Escalation,
+    EscalationLevel,
+    EscalationSignal,
+    EscalationSignalType,
+    EscalationStatus,
+)
+from app.infrastructure.database.repositories.escalation_repository import (
+    PostgresEscalationRepository,
+)
 from app.infrastructure.database.repositories.complaint_customer_history_repository import (
     PostgresComplaintCustomerHistoryRepository,
 )
@@ -135,6 +145,7 @@ def test_schema_creates_all_expected_tables(engine):
         "post_call_summaries",
         "users",
         "call_customers",
+        "escalations",
     }
 
 
@@ -788,6 +799,47 @@ def test_call_customer_link_survives_conversation_rewrites(session_factory):
     conversations.save(conversation)
 
     assert links.get("call-link").caller_number == "+919845000001"
+
+
+# Escalations -----------------------------------------------------------------
+
+
+def test_escalation_round_trips_updates_in_place_and_lists_by_status(session_factory):
+    repo = PostgresEscalationRepository(session_factory)
+    signals = (
+        EscalationSignal(
+            EscalationSignalType.LEGAL_THREAT,
+            EscalationLevel.CRITICAL,
+            "Customer mentioned a consumer court.",
+            "நுகர்வோர் நீதிமன்றம்",
+        ),
+        EscalationSignal(
+            EscalationSignalType.NEGATIVE_TONE, EscalationLevel.WATCH, "Negative tone."
+        ),
+    )
+    open_escalation = Escalation(
+        call_id="call-esc",
+        level=EscalationLevel.CRITICAL,
+        signals=signals,
+        status=EscalationStatus.OPEN,
+        first_detected_at=10.0,
+        updated_at=10.0,
+    )
+
+    repo.save(open_escalation)
+    assert repo.get("call-esc") == open_escalation
+    assert repo.get("missing") is None
+
+    resolved = open_escalation.acknowledge("sup@example.com", 20.0).resolve(
+        "sup@example.com", 30.0, "Called back."
+    )
+    repo.save(resolved)
+
+    assert repo.get("call-esc") == resolved
+    assert repo.get_many(["call-esc", "missing"]) == {"call-esc": resolved}
+    assert repo.get_many([]) == {}
+    assert repo.list_by_status([EscalationStatus.OPEN]) == ()
+    assert repo.list_by_status([EscalationStatus.RESOLVED]) == (resolved,)
 
 
 # Learning loop: re-saving a parent row must not cascade-delete its children.

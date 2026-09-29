@@ -9,6 +9,8 @@ import { formatCallDuration } from '../format/time'
 
 import { AiReviewPanel } from '../features/ai-improvement/components/AiReviewPanel'
 import { CustomerPanel } from '../features/customer/components/CustomerPanel'
+import { EscalationCard } from '../features/escalation/components/EscalationCard'
+import { useAuth } from '../auth/useAuth'
 import { SummaryDeliveryPanel } from '../features/customer/components/SummaryDeliveryPanel'
 
 import {
@@ -46,6 +48,9 @@ export function PostCallAnalysisPage() {
   const [searchParams] = useSearchParams()
 
   const callId = searchParams.get('call_id')?.trim() ?? ''
+  const { session } = useAuth()
+  const canManageEscalations =
+    session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
 
   const [call, setCall] = useState<CallMetadataViewModel | null>(null)
   const [analysis, setAnalysis] = useState<CallAnalysisViewModel | null>(null)
@@ -279,6 +284,15 @@ export function PostCallAnalysisPage() {
             </div>
 
             <aside className="live-call__side-column">
+              <EscalationCard
+                key={call.callId}
+                escalation={analysis.escalation}
+                isCallActive={isActiveCall}
+                canManage={canManageEscalations}
+                onUpdated={(escalation) =>
+                  setAnalysis((current) => (current ? { ...current, escalation } : current))
+                }
+              />
               <CustomerPanel callId={call.callId} />
               <section className="panel">
                 <p className="panel__label">Service estimate</p>

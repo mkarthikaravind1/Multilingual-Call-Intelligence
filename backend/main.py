@@ -12,6 +12,7 @@ from app.api.wiring import build_api_services
 from app.composition.database import build_production_repositories
 from app.composition.providers import (
     create_complaint_provider,
+    create_escalation_provider,
     create_llm_client,
     create_question_provider,
     create_sentiment_provider,
@@ -41,6 +42,8 @@ def build_app():
         post_call_summary_repository=repositories.post_call_summary,
         customer_summary_delivery_repository=repositories.customer_summary_delivery,
         call_customer_repository=repositories.call_customer,
+        escalation_repository=repositories.escalation,
+        escalation_provider=create_escalation_provider(llm_client, settings),
     )
     return create_app(services)
 

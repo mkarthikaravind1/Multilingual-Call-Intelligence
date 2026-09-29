@@ -1,3 +1,9 @@
+import type {
+  EscalationDto,
+  EscalationLevel,
+  EscalationStatus,
+} from '../../escalation/types/dto'
+
 export interface UtteranceRequestDto {
   utterance_id: string
   transcript: string
@@ -16,6 +22,9 @@ export interface CallSummaryDto {
   start_time: number
   end_time: number | null
   utterance_count: number
+  // Present on call-list items; null when the call never escalated.
+  escalation_level?: EscalationLevel | null
+  escalation_status?: EscalationStatus | null
 }
 
 export interface CallResponseDto extends CallSummaryDto {
@@ -114,6 +123,8 @@ export interface CallAnalysisResponseDto {
   question_suggestion: QuestionSuggestionDto | null
   service_estimate?: ServiceEstimateDto | null
   post_call_summary?: PostCallSummaryDto | null
+  // null while the call has not escalated
+  escalation?: EscalationDto | null
 }
 
 export interface CompleteCallRequestDto {

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 
 import { CallStatusBadge } from '../../../components/CallStatusBadge'
+import { EscalationLevelBadge } from '../../escalation/components/EscalationCard'
 import { formatCallDuration } from '../../../format/time'
 import type { CallMetadataViewModel } from '../types/view-models'
 
@@ -24,8 +25,11 @@ export function CallTable({ calls }: CallTableProps) {
           <span className="table-cell table-cell--primary" role="cell">
             {call.callId}
           </span>
-          <span className="table-cell" role="cell" data-label="Status">
+          <span className="table-cell call-history__status" role="cell" data-label="Status">
             <CallStatusBadge status={call.status} />
+            {call.escalationLevel && call.escalationStatus !== 'resolved' && (
+              <EscalationLevelBadge level={call.escalationLevel} />
+            )}
           </span>
           <span className="table-cell" role="cell" data-label="Duration">
             {formatCallDuration(call.startTime, call.endTime)}

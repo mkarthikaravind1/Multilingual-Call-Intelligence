@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     pyannote_model: str = "pyannote/speaker-diarization-community-1"
     huggingface_token: str = ""
     summary_provider: str = "rule_based"
+    # "rule_based", or "llm" (the rules plus an LLM detector that can only add).
+    escalation_provider: str = "rule_based"
     redis_key_prefix: str = "conversation_coverage"
     redis_ttl_seconds: float = 86400.0
     redis_socket_timeout_seconds: float = 5.0

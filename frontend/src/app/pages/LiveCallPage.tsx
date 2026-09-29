@@ -4,6 +4,9 @@ import { useSearchParams } from 'react-router-dom'
 import { toUserErrorMessage } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
 import { CustomerPanel } from '../features/customer/components/CustomerPanel'
+import { EscalationCard } from '../features/escalation/components/EscalationCard'
+import { useAuth } from '../auth/useAuth'
+import type { EscalationViewModel } from '../features/escalation/types/view-models'
 import { callRestService } from '../features/live-call/services/callRestService'
 import { CallHeader } from '../features/live-call/components/CallHeader'
 import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
@@ -13,10 +16,25 @@ import { ToneIndicator } from '../features/live-call/components/ToneIndicator'
 import { TranscriptPanel } from '../features/live-call/components/TranscriptPanel'
 import { useLiveCall } from '../features/live-call/hooks/useLiveCall'
 
+function newestEscalation(
+  ...candidates: (EscalationViewModel | null)[]
+): EscalationViewModel | null {
+  return candidates.reduce<EscalationViewModel | null>(
+    (newest, candidate) =>
+      candidate && (!newest || candidate.updatedAt > newest.updatedAt) ? candidate : newest,
+    null,
+  )
+}
+
 export function LiveCallPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const callId = searchParams.get('call_id')?.trim() ?? ''
+  const { session } = useAuth()
+  const canManageEscalations =
+    session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
+  // A supervisor's acknowledge/resolve, shown until the next poll catches up.
+  const [savedEscalation, setSavedEscalation] = useState<EscalationViewModel | null>(null)
 
   const liveCall = useLiveCall(callId || null)
 
@@ -139,6 +157,17 @@ export function LiveCallPage() {
             </div>
 
             <aside className="live-call__side-column">
+              <EscalationCard
+                key={callId}
+                escalation={newestEscalation(
+                  liveCall.analysis?.escalation ?? null,
+                  savedEscalation?.callId === callId ? savedEscalation : null,
+                )}
+                isCallActive={liveCall.call.status.toLowerCase() === 'active'}
+                canManage={canManageEscalations}
+                onUpdated={setSavedEscalation}
+              />
+
               <CustomerPanel callId={callId} />
 
               <NextQuestionPanel

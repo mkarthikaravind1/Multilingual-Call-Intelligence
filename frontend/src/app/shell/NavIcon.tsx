@@ -5,6 +5,7 @@ export type NavIconName =
   | 'post-call'
   | 'ai-improvement'
   | 'administration'
+  | 'escalations'
   | 'menu'
   | 'close'
 
@@ -23,6 +24,7 @@ const PATHS: Record<NavIconName, string[]> = {
     'M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z',
     'M9.5 12l1.8 1.8 3.4-3.6',
   ],
+  escalations: ['M12 4l9 16H3z', 'M12 10v4', 'M12 17.5v.5'],
   menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
   close: ['M6 6l12 12', 'M18 6L6 18'],
 }

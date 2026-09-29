@@ -1,6 +1,5 @@
 import { useState } from 'react'
 
-import { EscalationStatus } from './EscalationStatus'
 import { PostCallSummaryLink } from './PostCallSummaryLink'
 import { ServiceEstimatePanel } from './ServiceEstimatePanel'
 import type { ServiceEstimateViewModel } from '../types/view-models'
@@ -36,7 +35,7 @@ export function OtherFeaturesPanel({
           </span>
 
           <strong>
-            Estimate, summary &amp; escalation
+            Estimate &amp; summary
           </strong>
         </span>
 
@@ -52,7 +51,6 @@ export function OtherFeaturesPanel({
         <div id="live-call-insights" className="live-call__reserved-list">
           <ServiceEstimatePanel estimate={serviceEstimate} />
           <PostCallSummaryLink callId={callId} />
-          <EscalationStatus />
         </div>
       )}
     </section>

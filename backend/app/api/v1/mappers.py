@@ -5,6 +5,7 @@ from app.api.v1.schemas import (
     CallStatsResponse,
     CallSummaryResponse,
     CoverageResponse,
+    EscalationResponse,
     PostCallSummaryResponse,
     QuestionSuggestionResponse,
     SentimentResponse,
@@ -12,6 +13,7 @@ from app.api.v1.schemas import (
     UtteranceRequest,
 )
 from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.escalation import Escalation
 from app.domain.utterance import Utterance
 from app.services.call_workflow_service import CallAnalysisResult
 
@@ -30,14 +32,37 @@ def to_call_response(conversation: Conversation) -> CallResponse:
     return CallResponse.model_validate(conversation)
 
 def to_call_list_response(
-    conversations: tuple[Conversation, ...], total: int, limit: int, offset: int
+    conversations: tuple[Conversation, ...],
+    total: int,
+    limit: int,
+    offset: int,
+    escalations: dict[str, Escalation] | None = None,
 ) -> CallListResponse:
+    escalations = escalations or {}
     return CallListResponse(
-        items=[CallSummaryResponse.model_validate(c) for c in conversations],
+        items=[_to_call_summary(c, escalations.get(c.call_id)) for c in conversations],
         total=total,
         limit=limit,
         offset=offset,
     )
+
+
+def _to_call_summary(
+    conversation: Conversation, escalation: Escalation | None
+) -> CallSummaryResponse:
+    summary = CallSummaryResponse.model_validate(conversation)
+    if escalation is None:
+        return summary
+    return summary.model_copy(
+        update={
+            "escalation_level": escalation.level,
+            "escalation_status": escalation.status,
+        }
+    )
+
+
+def to_escalation_response(escalation: Escalation) -> EscalationResponse:
+    return EscalationResponse.model_validate(escalation)
 
 def to_call_stats_response(counts: dict[ConversationStatus, int]) -> CallStatsResponse:
     active = counts.get(ConversationStatus.ACTIVE, 0)
@@ -71,6 +96,11 @@ def to_analysis_response(
         post_call_summary=(
             PostCallSummaryResponse.model_validate(summary)
             if summary is not None
+            else None
+        ),
+        escalation=(
+            to_escalation_response(result.escalation)
+            if result.escalation is not None
             else None
         ),
     )

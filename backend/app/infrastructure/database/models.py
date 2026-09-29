@@ -308,3 +308,23 @@ class CallCustomerModel(Base):
         Index("ix_call_customers_customer_id", "customer_id"),
         Index("ix_call_customers_caller_number", "caller_number"),
     )
+
+
+class EscalationModel(Base):
+    # One row per escalated call, keyed by call_id without a foreign key
+    # (conversation saves delete and re-insert the conversation row).
+    __tablename__ = "escalations"
+
+    call_id: Mapped[str] = mapped_column(String, primary_key=True)
+    level: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    signals: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
+    first_detected_at: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_at: Mapped[float] = mapped_column(Float, nullable=False)
+    acknowledged_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    acknowledged_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resolved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("ix_escalations_status", "status"),)

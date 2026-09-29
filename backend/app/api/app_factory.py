@@ -10,6 +10,7 @@ API_V1_PREFIX = "/api/v1"
 from app.api.v1.auth import router as auth_router
 from app.api.v1.telephony import router as telephony_router
 from app.api.v1.telephony_ws import router as telephony_ws_router
+from app.api.v1.escalations import router as escalations_router
 
 def create_app(services: ApiServices) -> FastAPI:
     app = FastAPI(
@@ -34,4 +35,5 @@ def create_app(services: ApiServices) -> FastAPI:
     app.include_router(auth_router, prefix=API_V1_PREFIX)
     app.include_router(telephony_router, prefix=API_V1_PREFIX)
     app.include_router(telephony_ws_router, prefix=API_V1_PREFIX)
+    app.include_router(escalations_router, prefix=API_V1_PREFIX)
     return app

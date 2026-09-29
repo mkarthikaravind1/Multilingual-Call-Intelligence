@@ -85,6 +85,14 @@ from app.services.call_customer_repository import (
     InMemoryCallCustomerRepository,
 )
 from app.services.call_customer_service import CallCustomerService
+from app.ai.escalation.provider import EscalationDetectionProvider
+from app.ai.escalation.rule_based_provider import RuleBasedEscalationProvider
+from app.composition.providers import create_escalation_provider
+from app.services.escalation_repository import (
+    EscalationRepository,
+    InMemoryEscalationRepository,
+)
+from app.services.escalation_service import EscalationService
 from app.domain.user_repository import InMemoryUserRepository, UserRepository
 from app.services.auth_service import AuthService
 
@@ -111,6 +119,8 @@ def build_api_services(
     customer_summary_delivery_repository: CustomerSummaryDeliveryRepository | None = None,
     call_customer_repository: CallCustomerRepository | None = None,
     customer_directory: CustomerDirectory | None = None,
+    escalation_repository: EscalationRepository | None = None,
+    escalation_provider: EscalationDetectionProvider | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -161,6 +171,18 @@ def build_api_services(
     if customer_contact_resolver is None:
         customer_contact_resolver = call_customer_service.resolve_contact
 
+    # --- Escalation intelligence ---
+    if escalation_provider is None:
+        try:
+            escalation_provider = create_escalation_provider(settings=settings)
+        except Exception as exc:
+            logger.warning("Falling back to rule-based escalation detection: %s", exc)
+            escalation_provider = RuleBasedEscalationProvider()
+    escalation_service = EscalationService(
+        escalation_repository or InMemoryEscalationRepository(),
+        escalation_provider,
+    )
+
     try:
         customer_summary_delivery_service = build_customer_summary_delivery_service(
             settings=settings,
@@ -208,6 +230,7 @@ def build_api_services(
         post_call_summary_repository=post_call_summary_repository
         or InMemoryPostCallSummaryRepository(),
         customer_summary_enabled=settings.customer_summary_enabled,
+        escalation_service=escalation_service,
     )
 
     # --- Telephony (Production Telephony) ---
@@ -285,4 +308,5 @@ def build_api_services(
         telephony_stream_flush_seconds=settings.plivo_stream_flush_seconds,
         call_customer_service=call_customer_service,
         customer_summary_enabled=settings.customer_summary_enabled,
+        escalation_service=escalation_service,
     )

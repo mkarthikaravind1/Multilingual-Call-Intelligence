@@ -1,3 +1,6 @@
+import type { EscalationLevel, EscalationStatus } from '../../escalation/types/dto'
+import type { EscalationViewModel } from '../../escalation/types/view-models'
+
 export interface TranscriptTurnViewModel {
   utteranceId: string
   transcript: string
@@ -34,6 +37,8 @@ export interface CallMetadataViewModel {
   startTime: number
   endTime: number | null
   utteranceCount: number
+  escalationLevel: EscalationLevel | null
+  escalationStatus: EscalationStatus | null
 }
 
 // Monetary values are kept as the backend's Decimal strings; never recalculated here.
@@ -88,4 +93,5 @@ export interface CallAnalysisViewModel {
   questionSuggestion: QuestionSuggestionViewModel | null
   serviceEstimate: ServiceEstimateViewModel | null
   postCallSummary: PostCallSummaryViewModel | null
+  escalation: EscalationViewModel | null
 }
