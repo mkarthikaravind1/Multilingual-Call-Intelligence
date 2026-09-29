@@ -9,6 +9,7 @@ import { formatCallDuration } from '../format/time'
 
 import { AiReviewPanel } from '../features/ai-improvement/components/AiReviewPanel'
 import { CustomerPanel } from '../features/customer/components/CustomerPanel'
+import { SummaryDeliveryPanel } from '../features/customer/components/SummaryDeliveryPanel'
 
 import {
   toCallAnalysisViewModel,
@@ -308,9 +309,10 @@ export function PostCallAnalysisPage() {
           <section className="panel">
             <p className="panel__label">Customer follow-up</p>
             <div className="integration-grid">
-              <IntegrationPendingCard
-                title="Customer summary delivery"
-                description="SMS/WhatsApp delivery status will appear once a messaging provider is connected."
+              <SummaryDeliveryPanel
+                callId={call.callId}
+                isCallActive={isActiveCall}
+                refreshToken={`${call.status}:${hasSummary}`}
               />
               <IntegrationPendingCard
                 title="Complaint history"

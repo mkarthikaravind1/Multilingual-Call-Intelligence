@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.dependencies import (
     get_call_customer_service,
@@ -17,6 +17,8 @@ from app.api.v1.schemas import (
     CallAnalysisResponse,
     CallCustomerResponse,
     CallListResponse,
+    CallSummaryDeliveriesResponse,
+    CustomerSummaryDeliveryResponse,
     CallResponse,
     CallStatsResponse,
     CompleteCallRequest,
@@ -142,6 +144,26 @@ def select_call_vehicle(
     call_service.get_call(call_id)
     return CallCustomerResponse.model_validate(
         call_customer_service.select_vehicle(call_id, payload.vehicle_id)
+    )
+
+
+@router.get("/{call_id}/summary-delivery", response_model=CallSummaryDeliveriesResponse)
+def get_summary_delivery(
+    call_id: str,
+    request: Request,
+    call_service: CallService = Depends(get_call_service),
+    _: User = Depends(get_current_user),
+) -> CallSummaryDeliveriesResponse:
+    call_service.get_call(call_id)  # 404 for an unknown call
+    services = request.app.state.services
+    delivery_service = services.customer_summary_delivery_service
+    deliveries = () if delivery_service is None else delivery_service.list_for_call(call_id)
+    return CallSummaryDeliveriesResponse(
+        call_id=call_id,
+        enabled=services.customer_summary_enabled and delivery_service is not None,
+        deliveries=[
+            CustomerSummaryDeliveryResponse.model_validate(delivery) for delivery in deliveries
+        ],
     )
 
 

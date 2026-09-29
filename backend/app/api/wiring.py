@@ -284,4 +284,5 @@ def build_api_services(
         asr_provider=asr_provider,
         telephony_stream_flush_seconds=settings.plivo_stream_flush_seconds,
         call_customer_service=call_customer_service,
+        customer_summary_enabled=settings.customer_summary_enabled,
     )

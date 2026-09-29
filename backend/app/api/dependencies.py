@@ -33,6 +33,7 @@ class ApiServices:
     asr_provider: ASRProvider | None = None
     telephony_stream_flush_seconds: float = 4.0
     call_customer_service: CallCustomerService | None = None
+    customer_summary_enabled: bool = False
 
 
 def get_optional_call_customer_service(

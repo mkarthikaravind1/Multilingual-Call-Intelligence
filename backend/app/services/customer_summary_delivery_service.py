@@ -13,6 +13,9 @@ from app.services.customer_summary_repository import CustomerSummaryDeliveryRepo
 
 
 class CustomerSummaryDeliveryProvider(ABC):
+    # Channels this provider can actually deliver on.
+    supported_channels: frozenset[MessagingChannel] = frozenset(MessagingChannel)
+
     @abstractmethod
     def send_summary(
         self,
@@ -60,6 +63,29 @@ class CustomerSummaryDeliveryService:
         self._repository = repository
         self._require_consent = require_consent
 
+    def list_for_call(self, call_id: str) -> tuple[CustomerSummaryDelivery, ...]:
+        """Delivery records for a call, most recent first."""
+        if self._repository is None:
+            return ()
+        return tuple(
+            sorted(
+                self._repository.get_by_call_id(call_id),
+                key=lambda delivery: delivery.created_at,
+                reverse=True,
+            )
+        )
+
+    def _deliverable_channel(self, wanted: MessagingChannel) -> MessagingChannel:
+        """The wanted channel if the provider can deliver on it; otherwise
+        SMS, so a customer who prefers an unsupported channel still gets the
+        summary rather than nothing."""
+        supported = self._provider.supported_channels
+        if wanted in supported or not supported:
+            return wanted
+        if MessagingChannel.SMS in supported:
+            return MessagingChannel.SMS
+        return sorted(supported, key=lambda c: c.value)[0]
+
     def _idempotency_key(self, contact: CustomerContact, call_id: str, channel: MessagingChannel) -> str:
         return f"customer-summary:{call_id}:{contact.customer_id}:{channel.value}"
 
@@ -105,12 +131,19 @@ class CustomerSummaryDeliveryService:
         contact: CustomerContact,
         channel: MessagingChannel | None = None,
     ) -> CustomerSummaryDelivery:
-        selected_channel = contact.preferred_channel if channel is None else channel
-        message = (
-            self._message_service.build_message(summary, contact, selected_channel).content
-            if self._message_service is not None
-            else summary.customer_summary
+        selected_channel = self._deliverable_channel(
+            contact.preferred_channel if channel is None else channel
         )
+        message = summary.customer_summary
+        if self._message_service is not None:
+            try:
+                message = self._message_service.build_message(
+                    summary, contact, selected_channel
+                ).content
+            except PermissionError:
+                # No consent: send() makes that decision and records the
+                # rejection; the message is never handed to the provider.
+                pass
 
         return self.send(
             CustomerSummaryDeliveryRequest(

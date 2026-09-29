@@ -5,6 +5,7 @@ from app.ai.sentiment.provider import SentimentLabel
 from app.domain.call_customer import CustomerMatchStatus
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.customer_contact import ConsentStatus, MessagingChannel
+from app.domain.customer_summary_delivery import DeliveryStatus
 from app.domain.conversation import ConversationStatus
 from app.domain.question_suggestion import SuggestionSource
 from app.domain.utterance import SpeakerRole
@@ -57,6 +58,30 @@ class ServiceRecordResponse(_Response):
     description: str
     dealer: str | None
     odometer_km: int | None
+
+
+class CustomerSummaryDeliveryResponse(_Response):
+    delivery_id: str
+    customer_id: str
+    channel: MessagingChannel
+    # "sent" means accepted by the messaging provider, not yet confirmed
+    # on the customer's handset.
+    status: DeliveryStatus
+    message: str
+    provider: str | None
+    provider_message_id: str | None
+    attempts: int
+    created_at: float
+    updated_at: float
+    failure_reason: str | None
+    last_error: str | None
+
+
+class CallSummaryDeliveriesResponse(BaseModel):
+    call_id: str
+    # Whether summaries are sent to customers at all (configuration).
+    enabled: bool
+    deliveries: list[CustomerSummaryDeliveryResponse]
 
 
 class CallCustomerResponse(_Response):

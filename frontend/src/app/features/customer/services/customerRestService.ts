@@ -1,6 +1,6 @@
 import { apiClient } from '../../../api/client'
 
-import type { CallCustomerDto } from '../types/dto'
+import type { CallCustomerDto, CallSummaryDeliveriesDto } from '../types/dto'
 
 const callPath = (callId: string) =>
   `/api/v1/calls/${encodeURIComponent(callId)}/customer`
@@ -15,6 +15,12 @@ export const customerRestService = {
       method: 'PUT',
       body: JSON.stringify({ phone_number: phoneNumber }),
     })
+  },
+
+  getSummaryDeliveries(callId: string): Promise<CallSummaryDeliveriesDto> {
+    return apiClient.get<CallSummaryDeliveriesDto>(
+      `/api/v1/calls/${encodeURIComponent(callId)}/summary-delivery`,
+    )
   },
 
   selectVehicle(callId: string, vehicleId: string | null): Promise<CallCustomerDto> {

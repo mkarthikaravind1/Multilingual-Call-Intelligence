@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     customer_summary_whatsapp_sender_id: str = ""
     customer_summary_whatsapp_timeout_seconds: float = 10.0
     customer_summary_whatsapp_retry_attempts: int = 0
+    # SMS Gateway for Android (customer_summary_delivery_provider=sms_gate).
+    # Cloud relay by default; for the phone's local server use
+    # http://<phone-ip>:8080/message.
+    sms_gate_url: str = "https://api.sms-gate.app/3rdparty/v1/messages"
+    sms_gate_username: str = ""
+    sms_gate_password: str = ""
+    sms_gate_sim_number: int | None = None
+    sms_gate_ttl_seconds: int = 86400
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

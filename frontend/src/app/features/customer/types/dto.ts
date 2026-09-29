@@ -37,6 +37,30 @@ export interface ServiceRecordDto {
   odometer_km: number | null
 }
 
+export type DeliveryStatus = 'queued' | 'sent' | 'failed' | 'rejected'
+
+export interface SummaryDeliveryDto {
+  delivery_id: string
+  customer_id: string
+  channel: MessagingChannel
+  // "sent" = accepted by the messaging provider, not yet confirmed on the handset.
+  status: DeliveryStatus
+  message: string
+  provider: string | null
+  provider_message_id: string | null
+  attempts: number
+  created_at: number
+  updated_at: number
+  failure_reason: string | null
+  last_error: string | null
+}
+
+export interface CallSummaryDeliveriesDto {
+  call_id: string
+  enabled: boolean
+  deliveries: SummaryDeliveryDto[]
+}
+
 export interface CallCustomerDto {
   call_id: string
   status: CustomerMatchStatus

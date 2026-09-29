@@ -1676,6 +1676,15 @@
   font-size: 0.86rem;
 }
 
+.summary-delivery__message {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
 .customer-panel__more {
   width: fit-content;
   padding: 0;

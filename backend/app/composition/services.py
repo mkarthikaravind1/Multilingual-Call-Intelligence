@@ -50,6 +50,7 @@ from app.services.customer_summary_delivery_service import (
     CustomerSummaryDeliveryService,
 )
 from app.services.customer_summary_message_service import CustomerSummaryMessageService
+from app.messaging.sms_gate_provider import SmsGateDeliveryProvider
 from app.services.customer_summary_repository import CustomerSummaryDeliveryRepository
 from app.services.post_call_summary_repository import PostCallSummaryRepository
 from app.services.call_workflow_service import (
@@ -100,9 +101,19 @@ def create_customer_summary_delivery_provider(
     provider_name = settings.customer_summary_delivery_provider.strip().lower()
     if provider_name in {"disabled", "none", "null", "noop"}:
         return NullCustomerSummaryDeliveryProvider()
+    if provider_name == "sms_gate":
+        return SmsGateDeliveryProvider(
+            url=settings.sms_gate_url,
+            username=settings.sms_gate_username,
+            password=settings.sms_gate_password,
+            timeout_seconds=settings.customer_summary_sms_timeout_seconds,
+            retry_attempts=settings.customer_summary_sms_retry_attempts,
+            sim_number=settings.sms_gate_sim_number,
+            ttl_seconds=settings.sms_gate_ttl_seconds,
+        )
     raise ValueError(
         f"Unsupported customer summary delivery provider: {provider_name!r}. "
-        "Configure customer_summary_delivery_provider to one of: disabled, noop."
+        "Configure customer_summary_delivery_provider to one of: disabled, noop, sms_gate."
     )
 
 
