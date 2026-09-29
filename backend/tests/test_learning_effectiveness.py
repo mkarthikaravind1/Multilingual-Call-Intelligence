@@ -340,3 +340,70 @@ def test_next_question_keeps_working_without_learning():
         suggestion.question
         == "What was the promised delivery time?"
     )
+
+
+# ---- Complaint / sentiment improvements ----
+
+def _complaint_context() -> RuntimeImprovementContext:
+    return RuntimeImprovementContext(
+        improvement_id="improvement-c",
+        candidate_id="candidate-c",
+        component=LearningComponent.COMPLAINT_DETECTION,
+        specification=ImprovementSpecification(
+            component=LearningComponent.COMPLAINT_DETECTION,
+            current_behavior="Reviewers corrected 'Turnaround Time' to 'Communication'.",
+            proposed_behavior="Tell the two apart.",
+            reason="Recurred 3 times.",
+        ),
+    )
+
+
+def _correction(evidence_id: str, call_id: str, component: LearningComponent) -> LearningEvidence:
+    return LearningEvidence(
+        evidence_id=evidence_id,
+        call_id=call_id,
+        evidence_type=EvidenceType.HUMAN_CORRECTION,
+        component=component,
+        description="AI predicted x and human corrected it to y.",
+        expected_value="y",
+        actual_value="x",
+        human_correction="y",
+        created_at=100.0,
+    )
+
+
+def test_component_usage_is_recorded_once_per_call_and_output():
+    usage_repository = InMemoryImprovementUsageRepository()
+    service = ImprovementEffectivenessService(
+        usage_repository, InMemoryLearningEvidenceRepository()
+    )
+    context = _complaint_context()
+
+    service.record_component_usage("call-1", (context,), "Communication")
+    service.record_component_usage("call-1", (context,), "Communication")
+    service.record_component_usage("call-2", (context,), "Communication")
+
+    usages = service.get_usage("improvement-c")
+    assert len(usages) == 2
+    assert {u.component for u in usages} == {LearningComponent.COMPLAINT_DETECTION}
+    assert {u.output_value for u in usages} == {"Communication"}
+
+
+def test_corrections_on_calls_that_used_a_complaint_improvement_count_as_feedback():
+    evidence_repository = InMemoryLearningEvidenceRepository()
+    service = ImprovementEffectivenessService(
+        InMemoryImprovementUsageRepository(), evidence_repository
+    )
+    service.record_component_usage("call-1", (_complaint_context(),), "Communication")
+    service.record_component_usage("call-2", (_complaint_context(),), "Communication")
+    evidence_repository.save(_correction("e1", "call-1", LearningComponent.COMPLAINT_DETECTION))
+    evidence_repository.save(_correction("e2", "call-2", LearningComponent.COMPLAINT_DETECTION))
+    # Other components on the same calls, and other calls, do not count.
+    evidence_repository.save(_correction("e3", "call-1", LearningComponent.SENTIMENT_ANALYSIS))
+    evidence_repository.save(_correction("e4", "call-9", LearningComponent.COMPLAINT_DETECTION))
+
+    result = service.evaluate("improvement-c")
+
+    assert result.usage_count == 2
+    assert result.evidence_count == 2
+    assert result.status is ImprovementEffectivenessStatus.EVIDENCE_AVAILABLE

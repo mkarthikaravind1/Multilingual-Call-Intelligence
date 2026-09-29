@@ -16,6 +16,9 @@ from app.ai.complaint.provider import (
 from app.ai.llm.client import LLMClient, LLMRequest, LLMResponse
 from app.core.constants import COMPLAINT_CATEGORIES
 from app.domain.conversation import Conversation
+from app.domain.improvement_candidate import ImprovementSpecification
+from app.domain.learning_evidence import LearningComponent
+from app.domain.runtime_improvement_context import RuntimeImprovementContext
 from app.domain.utterance import SpeakerRole, Utterance
 
 DEFAULT_LINES = (
@@ -237,3 +240,41 @@ def test_llm_complaint_provider_does_not_import_groq():
     ]
 
     assert not any("groq" in name.lower() for name in imported)
+
+
+GUIDANCE = "Reviewers corrected 'Turnaround Time' to 'Communication' 3 times."
+
+
+def _learning_context() -> RuntimeImprovementContext:
+    return RuntimeImprovementContext(
+        improvement_id="improvement-1",
+        candidate_id="candidate-1",
+        component=LearningComponent.COMPLAINT_DETECTION,
+        specification=ImprovementSpecification(
+            component=LearningComponent.COMPLAINT_DETECTION,
+            current_behavior=GUIDANCE,
+            proposed_behavior="Tell the two apart.",
+            reason="Recurred 3 times.",
+        ),
+    )
+
+
+def test_approved_guidance_is_added_after_the_rules():
+    client = FakeLLMClient("[]")
+
+    LLMComplaintProvider(client).detect(_conversation(), (_learning_context(),))
+
+    assert client.received_request is not None
+    prompt = client.received_request.prompt
+    assert GUIDANCE in prompt
+    assert prompt.index("Rules:") < prompt.index(GUIDANCE) < prompt.index("Respond with ONLY")
+    assert "rules above always take priority" in prompt
+
+
+def test_prompt_has_no_guidance_section_without_improvements():
+    client = FakeLLMClient("[]")
+
+    LLMComplaintProvider(client).detect(_conversation())
+
+    assert client.received_request is not None
+    assert "human reviewers" not in client.received_request.prompt

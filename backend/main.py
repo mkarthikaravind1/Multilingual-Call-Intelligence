@@ -36,6 +36,7 @@ def build_app():
         candidate_repository=repositories.improvement_candidate,
         active_improvement_repository=repositories.active_improvement,
         usage_repository=repositories.improvement_usage,
+        feedback_repository=repositories.learning_feedback,
         user_repository=repositories.user,
         post_call_summary_repository=repositories.post_call_summary,
         customer_summary_delivery_repository=repositories.customer_summary_delivery,

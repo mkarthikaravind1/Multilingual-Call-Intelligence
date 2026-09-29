@@ -47,6 +47,67 @@ export interface LearningPatternDto {
   created_at: number
 }
 
+export type FeedbackType = 'human_correction' | 'question_effectiveness'
+
+export type FeedbackSource = 'icr' | 'supervisor' | 'system'
+
+export type QuestionOutcome = 'helpful' | 'not_helpful'
+
+export interface LearningFeedbackDto {
+  feedback_id: string
+  observation_id: string
+  call_id: string | null
+  feedback_type: FeedbackType | 'outcome'
+  corrected_value: string | null
+  outcome: string | null
+  original_value: string | null
+  source: FeedbackSource
+  notes: string | null
+  created_at: number
+}
+
+export interface LearningFeedbackRequestDto {
+  observation_id: string
+  feedback_type: FeedbackType
+  corrected_value?: string
+  outcome?: QuestionOutcome
+  notes?: string
+}
+
+// One AI output on a call that a person can confirm or correct.
+export interface CallObservationDto {
+  observation_id: string
+  call_id: string
+  component: LearningComponent
+  predicted_value: string
+  entity_id: string | null
+  confidence: number
+  created_at: number
+  // Allowed corrections; empty means free text.
+  correction_options: string[]
+  feedback: LearningFeedbackDto | null
+}
+
+export type ActiveImprovementStatus = 'active' | 'inactive'
+
+export type ImprovementEffectivenessStatus =
+  | 'not_enough_evidence'
+  | 'evidence_available'
+
+export interface ActiveImprovementDto {
+  improvement_id: string
+  candidate_id: string
+  component: LearningComponent
+  guidance: string
+  proposed_behavior: string
+  status: ActiveImprovementStatus
+  activated_at: number
+  deactivated_at: number | null
+  usage_count: number
+  feedback_count: number
+  effectiveness_status: ImprovementEffectivenessStatus
+}
+
 export interface LearningEvidenceDto {
   evidence_id: string
   call_id: string

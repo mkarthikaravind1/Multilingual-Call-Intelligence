@@ -12,8 +12,16 @@ from app.ai.complaint.provider import (
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
+from app.domain.active_improvement import ActiveImprovement, ActiveImprovementStatus
+from app.domain.active_improvement_repository import InMemoryActiveImprovementRepository
+from app.domain.improvement_candidate import ImprovementSpecification
+from app.domain.learning_evidence import LearningComponent
 from app.services import complaint_analysis_service as service_module
 from app.services.complaint_analysis_service import ComplaintAnalysisService
+from app.services.runtime_improvement_service import (
+    ComponentLearning,
+    RuntimeImprovementService,
+)
 
 _STEPS_TO = {
     ComplaintCoverageStatus.DETECTED: ("detect",),
@@ -247,3 +255,111 @@ def test_service_does_not_import_llm_or_groq_code():
 
     forbidden = ("groq", "app.ai.llm", "llm_provider", "llmclient")
     assert not any(bad in name.lower() for name in imported for bad in forbidden)
+
+
+# ---- Approved learning improvements at runtime ----
+
+class LearningAwareComplaintProvider(ComplaintDetectionProvider):
+    def __init__(self, results: list[ComplaintDetectionResult]) -> None:
+        self.results = results
+        self.received_context: tuple | None = None
+
+    def detect(self, conversation, learning_context=()):
+        self.received_context = learning_context
+        return list(self.results)
+
+
+class RecordingUsage:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.calls: list[tuple[str, tuple, str]] = []
+        self.error = error
+
+    def record_component_usage(self, call_id, contexts, output_value):
+        if self.error is not None:
+            raise self.error
+        self.calls.append((call_id, contexts, output_value))
+
+
+def _active(component: LearningComponent, improvement_id: str = "improvement-1") -> ActiveImprovement:
+    return ActiveImprovement(
+        improvement_id=improvement_id,
+        candidate_id="candidate-1",
+        component=component,
+        specification=ImprovementSpecification(
+            component=component,
+            current_behavior="Reviewers corrected 'Turnaround Time' to 'Communication'.",
+            proposed_behavior="Tell the two apart.",
+            reason="Recurred 3 times.",
+        ),
+        status=ActiveImprovementStatus.ACTIVE,
+        activated_at=100.0,
+    )
+
+
+def _learning(*improvements: ActiveImprovement, recorder=None) -> ComponentLearning:
+    repository = InMemoryActiveImprovementRepository()
+    for improvement in improvements:
+        repository.save(improvement)
+    return ComponentLearning(
+        LearningComponent.COMPLAINT_DETECTION,
+        RuntimeImprovementService(repository),
+        recorder,
+    )
+
+
+def test_active_complaint_improvements_reach_the_provider_and_usage_is_recorded():
+    provider = LearningAwareComplaintProvider([_detection("Communication")])
+    recorder = RecordingUsage()
+    service = ComplaintAnalysisService(
+        provider, _learning(_active(LearningComponent.COMPLAINT_DETECTION), recorder=recorder)
+    )
+
+    coverage = service.analyze(_conversation(), _coverage())
+
+    assert _status(coverage, "Communication") is ComplaintCoverageStatus.DETECTED
+    assert provider.received_context is not None
+    assert [c.improvement_id for c in provider.received_context] == ["improvement-1"]
+    assert len(recorder.calls) == 1
+    call_id, contexts, output = recorder.calls[0]
+    assert call_id == "call-1"
+    assert contexts == provider.received_context
+    assert output == "Communication"
+
+
+def test_usage_records_no_complaints_output():
+    recorder = RecordingUsage()
+    service = ComplaintAnalysisService(
+        LearningAwareComplaintProvider([]),
+        _learning(_active(LearningComponent.COMPLAINT_DETECTION), recorder=recorder),
+    )
+
+    service.analyze(_conversation(), _coverage())
+
+    assert recorder.calls[0][2] == service_module.NO_COMPLAINTS_OUTPUT
+
+
+def test_improvements_for_other_components_are_not_used():
+    provider = FakeComplaintProvider([_detection()])  # one-argument detect()
+    recorder = RecordingUsage()
+    service = ComplaintAnalysisService(
+        provider, _learning(_active(LearningComponent.SENTIMENT_ANALYSIS), recorder=recorder)
+    )
+
+    service.analyze(_conversation(), _coverage())
+
+    assert provider.call_count == 1
+    assert recorder.calls == []
+
+
+def test_usage_recording_failure_does_not_break_analysis():
+    service = ComplaintAnalysisService(
+        LearningAwareComplaintProvider([_detection()]),
+        _learning(
+            _active(LearningComponent.COMPLAINT_DETECTION),
+            recorder=RecordingUsage(error=RuntimeError("usage store down")),
+        ),
+    )
+
+    coverage = service.analyze(_conversation(), _coverage())
+
+    assert _status(coverage, "Turnaround Time") is ComplaintCoverageStatus.DETECTED

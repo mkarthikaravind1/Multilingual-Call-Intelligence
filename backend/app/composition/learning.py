@@ -36,19 +36,54 @@ from app.services.improvement_effectiveness_service import (
 from app.services.runtime_improvement_service import (
     RuntimeImprovementService,
 )
+from app.domain.learning_feedback_repository import (
+    InMemoryLearningFeedbackRepository,
+    LearningFeedbackRepository,
+)
+from app.services.improvement_application_service import ImprovementApplicationService
+from app.services.improvement_candidate_service import ImprovementCandidateService
+from app.services.learning_candidate_generation_service import (
+    LearningCandidateGenerationService,
+)
+from app.services.learning_feedback_service import LearningFeedbackService
 
 def build_learning_management_service(
     evidence_repository: LearningEvidenceRepository | None = None,
     candidate_repository: ImprovementCandidateRepository | None = None,
+    observation_repository: LearningObservationRepository | None = None,
+    feedback_repository: LearningFeedbackRepository | None = None,
+    active_improvement_repository: ActiveImprovementRepository | None = None,
+    usage_repository: ImprovementUsageRepository | None = None,
 ) -> LearningManagementService:
+    """The whole learning loop. Pass the same repositories the runtime uses
+    (notably active_improvement_repository) so approvals reach live calls."""
     evidence_repository = evidence_repository or InMemoryLearningEvidenceRepository()
     candidate_repository = candidate_repository or InMemoryImprovementCandidateRepository()
+    observation_repository = (
+        observation_repository or InMemoryLearningObservationRepository()
+    )
+    feedback_repository = feedback_repository or InMemoryLearningFeedbackRepository()
+    active_improvement_repository = (
+        active_improvement_repository or InMemoryActiveImprovementRepository()
+    )
     evidence_service = LearningEvidenceService(evidence_repository)
+    observation_service = LearningObservationService(observation_repository)
     return LearningManagementService(
         evidence_service,
         LearningPatternDiscoveryService(evidence_service),
         candidate_repository,
         LearningHumanReviewService(HumanReviewService(), candidate_repository),
+        observation_service=observation_service,
+        feedback_service=LearningFeedbackService(feedback_repository, observation_service),
+        evidence_generation=LearningEvidenceGenerationService(evidence_service),
+        candidate_generation=LearningCandidateGenerationService(
+            ImprovementCandidateService(), repository=candidate_repository
+        ),
+        application_service=ImprovementApplicationService(active_improvement_repository),
+        effectiveness_service=build_improvement_effectiveness_service(
+            usage_repository=usage_repository,
+            evidence_repository=evidence_repository,
+        ),
     )
 
 def build_learning_call_recorder(

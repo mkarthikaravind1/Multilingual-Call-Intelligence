@@ -99,6 +99,7 @@ def test_wired_provider_calls_injected_client_and_returns_none_on_bad_json():
         category="Cost",
         status=SimpleNamespace(value="detected"),
         utterances=[SimpleNamespace(transcript="The bill was too high")],
+        learning_context=(),
     )
 
     result = provider.generate(context) # type: ignore

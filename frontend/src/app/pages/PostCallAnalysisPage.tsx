@@ -7,6 +7,8 @@ import { IntegrationPendingCard } from '../components/IntegrationPendingCard'
 import { StatePanel } from '../components/StatePanel'
 import { formatCallDuration } from '../format/time'
 
+import { AiReviewPanel } from '../features/ai-improvement/components/AiReviewPanel'
+
 import {
   toCallAnalysisViewModel,
   toCallMetadataViewModel,
@@ -298,6 +300,8 @@ export function PostCallAnalysisPage() {
               />
             </aside>
           </div>
+
+          <AiReviewPanel callId={call.callId} />
 
           <section className="panel">
             <p className="panel__label">Customer follow-up</p>

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from app.core.constants import COMPLAINT_CATEGORIES
 from app.domain.conversation import Conversation
+from app.domain.runtime_improvement_context import RuntimeImprovementContext
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,14 @@ class ComplaintDetectionResult:
 
 class ComplaintDetectionProvider(ABC):
     @abstractmethod
-    def detect(self, conversation: Conversation) -> list[ComplaintDetectionResult]:
-        """Return one result per complaint category found; an empty list means none."""
+    def detect(
+        self,
+        conversation: Conversation,
+        learning_context: tuple[RuntimeImprovementContext, ...] = (),
+    ) -> list[ComplaintDetectionResult]:
+        """Return one result per complaint category found; an empty list means none.
+
+        learning_context carries approved improvements for complaint detection;
+        providers that cannot use it ignore it.
+        """
         raise NotImplementedError

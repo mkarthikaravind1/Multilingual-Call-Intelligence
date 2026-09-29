@@ -46,12 +46,9 @@ class PostgresActiveImprovementRepository(ActiveImprovementRepository):
         self._session_factory = session_factory
 
     def save(self, improvement: ActiveImprovement) -> None:
+        # Update in place: deleting the row would cascade to its usage history.
         with self._session_factory() as session, session.begin():
-            existing = session.get(ActiveImprovementModel, improvement.improvement_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(improvement))
+            session.merge(_to_model(improvement))
 
     def get(self, improvement_id: str) -> ActiveImprovement | None:
         with self._session_factory() as session:

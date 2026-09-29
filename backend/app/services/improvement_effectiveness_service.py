@@ -12,7 +12,6 @@ from app.domain.improvement_usage_repository import (
 )
 from app.domain.learning_evidence import (
     EvidenceType,
-    LearningComponent,
     LearningEvidence,
 )
 from app.domain.learning_evidence_repository import (
@@ -20,6 +19,15 @@ from app.domain.learning_evidence_repository import (
 )
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.runtime_improvement_context import RuntimeImprovementContext
+
+
+_FEEDBACK_EVIDENCE_TYPES = frozenset(
+    {
+        EvidenceType.QUESTION_FEEDBACK,
+        EvidenceType.OUTCOME,
+        EvidenceType.HUMAN_CORRECTION,
+    }
+)
 
 
 class ImprovementUsageRecordingError(Exception):
@@ -46,12 +54,23 @@ class ImprovementEffectivenessService:
         contexts: tuple[RuntimeImprovementContext, ...],
         suggestion: QuestionSuggestion,
     ) -> None:
+        self.record_component_usage(call_id, contexts, suggestion.question)
+
+    def record_component_usage(
+        self,
+        call_id: str,
+        contexts: tuple[RuntimeImprovementContext, ...],
+        output_value: str,
+    ) -> None:
+        """Record that these improvements shaped an output on this call. The
+        id is derived from (improvement, call, output), so re-analysing a
+        call with the same result does not add duplicate usage."""
         try:
             for context in contexts:
                 usage_id = self._build_usage_id(
                     context.improvement_id,
                     call_id,
-                    suggestion.question,
+                    output_value,
                 )
 
                 usage = ImprovementUsage(
@@ -60,7 +79,7 @@ class ImprovementEffectivenessService:
                     candidate_id=context.candidate_id,
                     call_id=call_id,
                     component=context.component,
-                    output_value=suggestion.question,
+                    output_value=output_value,
                     used_at=self._clock(),
                 )
 
@@ -89,17 +108,17 @@ class ImprovementEffectivenessService:
             usage.call_id
             for usage in usages
         }
+        # Human feedback on the component the improvement shaped, on the
+        # calls where it was used. Every usage of one improvement shares
+        # its component.
+        components = {usage.component for usage in usages}
 
         evidence = tuple(
             item
             for item in self._evidence_repository.list_all()
             if item.call_id in call_ids
-            and item.component is LearningComponent.NEXT_QUESTION
-            and item.evidence_type
-            in {
-                EvidenceType.QUESTION_FEEDBACK,
-                EvidenceType.OUTCOME,
-            }
+            and item.component in components
+            and item.evidence_type in _FEEDBACK_EVIDENCE_TYPES
         )
 
         observed_outcomes = tuple(

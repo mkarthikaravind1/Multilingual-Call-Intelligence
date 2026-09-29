@@ -98,12 +98,10 @@ class PostgresImprovementCandidateRepository(ImprovementCandidateRepository):
         self._session_factory = session_factory
 
     def save(self, candidate: ImprovementCandidate) -> None:
+        # Update in place: deleting the row would cascade to the active
+        # improvement created from it.
         with self._session_factory() as session, session.begin():
-            existing = session.get(ImprovementCandidateModel, candidate.candidate_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(candidate))
+            session.merge(_to_model(candidate))
 
     def get(self, candidate_id: str) -> ImprovementCandidate | None:
         with self._session_factory() as session:

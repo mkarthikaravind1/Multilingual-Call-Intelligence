@@ -753,3 +753,77 @@ def test_customer_summary_delivery_idempotency_key_is_unique(session_factory):
     with pytest.raises(IntegrityError):
         repo.save(dataclasses.replace(delivery, delivery_id="delivery-2"))
     assert repo.get_by_call_id("call-summary") == (delivery,)
+
+
+# Learning loop: re-saving a parent row must not cascade-delete its children.
+
+
+def _approved_candidate_with_improvement(session_factory):
+    specification = ImprovementSpecification(
+        component=LearningComponent.COMPLAINT_DETECTION,
+        current_behavior="Reviewers corrected 'Turnaround Time' to 'Communication'.",
+        proposed_behavior="Tell the two apart.",
+        reason="Recurred 2 times.",
+    )
+    candidate = ImprovementCandidate(
+        candidate_id="cand-loop",
+        improvement_type=ImprovementType.COMPLAINT_DETECTION,
+        title="Improve complaint detection",
+        description="Recurring issue.",
+        evidence=("e1", "e2"),
+        occurrence_count=2,
+        confidence=0.5,
+        status=ImprovementReviewStatus.APPROVED,
+        created_at=100.0,
+        reviewed_at=200.0,
+        specification=specification,
+    )
+    improvement = ActiveImprovement(
+        improvement_id="imp-loop",
+        candidate_id="cand-loop",
+        component=LearningComponent.COMPLAINT_DETECTION,
+        specification=specification,
+        status=ActiveImprovementStatus.ACTIVE,
+        activated_at=300.0,
+    )
+    candidates = PostgresImprovementCandidateRepository(session_factory)
+    improvements = PostgresActiveImprovementRepository(session_factory)
+    usages = PostgresImprovementUsageRepository(session_factory)
+    candidates.save(candidate)
+    improvements.save(improvement)
+    usages.save(
+        ImprovementUsage(
+            usage_id="usage-loop",
+            improvement_id="imp-loop",
+            candidate_id="cand-loop",
+            call_id="call-1",
+            component=LearningComponent.COMPLAINT_DETECTION,
+            output_value="Communication",
+            used_at=400.0,
+        )
+    )
+    return candidate, improvement, candidates, improvements, usages
+
+
+def test_resaving_a_candidate_keeps_its_active_improvement(session_factory):
+    candidate, improvement, candidates, improvements, _ = (
+        _approved_candidate_with_improvement(session_factory)
+    )
+
+    candidates.save(dataclasses.replace(candidate, description="Updated description."))
+
+    assert candidates.get("cand-loop").description == "Updated description."
+    assert improvements.get("imp-loop") == improvement
+
+
+def test_deactivating_an_improvement_keeps_its_usage_history(session_factory):
+    _, improvement, _, improvements, usages = _approved_candidate_with_improvement(
+        session_factory
+    )
+
+    improvements.save(improvement.deactivate(500.0))
+
+    stored = improvements.get("imp-loop")
+    assert stored.status is ActiveImprovementStatus.INACTIVE
+    assert stored.deactivated_at == 500.0
+    assert [u.usage_id for u in usages.list_for_improvement("imp-loop")] == ["usage-loop"]

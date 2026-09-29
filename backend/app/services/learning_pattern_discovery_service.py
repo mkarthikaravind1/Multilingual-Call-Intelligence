@@ -1,3 +1,4 @@
+from app.domain.learning_evidence import LearningEvidence
 from app.domain.learning_pattern import LearningPattern
 from app.services.learning_evidence_service import LearningEvidenceService
 from app.services.learning_signal_filter_service import LearningSignalFilterService
@@ -16,6 +17,8 @@ class LearningPatternDiscoveryService:
         self._evidence_service = evidence_service
         self._signal_filter = signal_filter or LearningSignalFilterService()
 
+    def signals(self) -> list[LearningEvidence]:
+        return self._signal_filter.filter(self._evidence_service.list_all())
+
     def discover(self) -> list[LearningPattern]:
-        signals = self._signal_filter.filter(self._evidence_service.list_all())
-        return PatternDiscoveryService(signals).discover_patterns()
+        return PatternDiscoveryService(self.signals()).discover_patterns()

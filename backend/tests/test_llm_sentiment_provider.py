@@ -7,6 +7,9 @@ from app.ai.llm.client import LLMClient, LLMRequest, LLMResponse
 from app.ai.sentiment.llm_provider import LLMSentimentProvider
 from app.ai.sentiment.provider import SentimentLabel, SentimentResult
 from app.domain.conversation import Conversation
+from app.domain.improvement_candidate import ImprovementSpecification
+from app.domain.learning_evidence import LearningComponent
+from app.domain.runtime_improvement_context import RuntimeImprovementContext
 from app.domain.utterance import SpeakerRole, Utterance
 
 
@@ -144,3 +147,34 @@ def test_invalid_confidence_returns_safe_result(confidence):
 @pytest.mark.parametrize("evidence", ["", "   ", None, 123])
 def test_invalid_evidence_returns_safe_result(evidence):
     _assert_safe_result(_analyze(_payload(evidence=evidence)))
+
+
+GUIDANCE = "Reviewers corrected 'NEUTRAL' to 'NEGATIVE' for unresolved delays."
+
+
+def test_approved_guidance_is_added_after_the_rules():
+    client = FakeLLMClient(_payload())
+    context = RuntimeImprovementContext(
+        improvement_id="improvement-1",
+        candidate_id="candidate-1",
+        component=LearningComponent.SENTIMENT_ANALYSIS,
+        specification=ImprovementSpecification(
+            component=LearningComponent.SENTIMENT_ANALYSIS,
+            current_behavior=GUIDANCE,
+            proposed_behavior="Weigh unresolved delays as negative.",
+            reason="Recurred 2 times.",
+        ),
+    )
+
+    LLMSentimentProvider(client).analyze(_sample_conversation(), (context,))
+
+    prompt = client.requests[0].prompt
+    assert prompt.index("Rules:") < prompt.index(GUIDANCE) < prompt.index("Respond with ONLY")
+
+
+def test_prompt_has_no_guidance_section_without_improvements():
+    client = FakeLLMClient(_payload())
+
+    LLMSentimentProvider(client).analyze(_sample_conversation())
+
+    assert "human reviewers" not in client.requests[0].prompt

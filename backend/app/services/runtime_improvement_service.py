@@ -1,4 +1,5 @@
 import logging
+from typing import Protocol
 
 from app.domain.active_improvement import ActiveImprovement
 from app.domain.active_improvement_repository import ActiveImprovementRepository
@@ -39,3 +40,50 @@ class RuntimeImprovementService:
             component=improvement.component,
             specification=improvement.specification,
         )
+
+
+class ComponentUsageRecorder(Protocol):
+    def record_component_usage(
+        self,
+        call_id: str,
+        contexts: tuple[RuntimeImprovementContext, ...],
+        output_value: str,
+    ) -> None: ...
+
+
+class ComponentLearning:
+    """Runtime learning for one AI component: which approved improvements
+    apply to it, and a record of the output they influenced. Neither step
+    may break call processing."""
+
+    def __init__(
+        self,
+        component: LearningComponent,
+        runtime_improvement_service: RuntimeImprovementService,
+        usage_recorder: ComponentUsageRecorder | None = None,
+    ) -> None:
+        self._component = component
+        self._runtime_improvement_service = runtime_improvement_service
+        self._usage_recorder = usage_recorder
+
+    def contexts(self) -> tuple[RuntimeImprovementContext, ...]:
+        return self._runtime_improvement_service.get_context_for_component(
+            self._component
+        )
+
+    def record_usage(
+        self,
+        call_id: str,
+        contexts: tuple[RuntimeImprovementContext, ...],
+        output_value: str,
+    ) -> None:
+        if self._usage_recorder is None or not contexts:
+            return
+        try:
+            self._usage_recorder.record_component_usage(call_id, contexts, output_value)
+        except Exception:
+            logger.exception(
+                "Failed to record %s improvement usage for call %r; continuing.",
+                self._component.value,
+                call_id,
+            )

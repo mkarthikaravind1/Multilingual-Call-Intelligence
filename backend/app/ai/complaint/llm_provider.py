@@ -6,9 +6,11 @@ from app.ai.complaint.provider import (
     ComplaintDetectionProvider,
     ComplaintDetectionResult,
 )
+from app.ai.learning_guidance import format_learning_guidance
 from app.ai.llm.client import LLMClient, LLMRequest
 from app.core.constants import COMPLAINT_CATEGORIES
 from app.domain.conversation import Conversation
+from app.domain.runtime_improvement_context import RuntimeImprovementContext
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +36,16 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
     def __init__(self, llm_client: LLMClient) -> None:
         self._llm_client = llm_client
 
-    def detect(self, conversation: Conversation) -> list[ComplaintDetectionResult]:
+    def detect(
+        self,
+        conversation: Conversation,
+        learning_context: tuple[RuntimeImprovementContext, ...] = (),
+    ) -> list[ComplaintDetectionResult]:
         if not conversation.utterances:
             return []
-        response = self._llm_client.complete(self._build_request(conversation))
+        response = self._llm_client.complete(
+            self._build_request(conversation, learning_context)
+        )
         return self._parse_response(response.text)
 
     @staticmethod
@@ -47,7 +55,11 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
             for u in conversation.utterances
         )
 
-    def _build_request(self, conversation: Conversation) -> LLMRequest:
+    def _build_request(
+        self,
+        conversation: Conversation,
+        learning_context: tuple[RuntimeImprovementContext, ...] = (),
+    ) -> LLMRequest:
         categories = "\n".join(f"- {category}" for category in COMPLAINT_CATEGORIES)
         rules = "\n".join(f"- {rule}" for rule in _GUARDRAILS)
         prompt = (
@@ -57,6 +69,7 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
             f"Complaint categories:\n{categories}\n\n"
             f"Conversation:\n{self._transcript(conversation)}\n\n"
             f"Rules:\n{rules}\n\n"
+            f"{format_learning_guidance(learning_context)}"
             "Respond with ONLY a JSON array and nothing else "
             "(no markdown, no commentary), in exactly this shape:\n"
             f"{_RESPONSE_SHAPE}\n"

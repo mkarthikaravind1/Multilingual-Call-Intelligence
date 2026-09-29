@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.domain.conversation import Conversation
+from app.domain.runtime_improvement_context import RuntimeImprovementContext
 
 
 class SentimentLabel(str, Enum):
@@ -46,5 +47,11 @@ class SentimentResult:
 
 class SentimentAnalysisProvider(ABC):
     @abstractmethod
-    def analyze(self, conversation: Conversation) -> SentimentResult:
+    def analyze(
+        self,
+        conversation: Conversation,
+        learning_context: tuple[RuntimeImprovementContext, ...] = (),
+    ) -> SentimentResult:
+        """learning_context carries approved improvements for sentiment
+        analysis; providers that cannot use it ignore it."""
         raise NotImplementedError

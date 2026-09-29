@@ -69,8 +69,10 @@ from app.services.improvement_effectiveness_service import (
     ImprovementEffectivenessService,
 )
 from app.services.runtime_improvement_service import (
+    ComponentLearning,
     RuntimeImprovementService,
 )
+from app.domain.learning_evidence import LearningComponent
 
 def build_post_call_summary_service(
     settings: Settings | None = None,
@@ -157,10 +159,23 @@ def build_next_question_service(
 def build_conversation_analysis_service(
     complaint_provider: ComplaintDetectionProvider,
     sentiment_provider: SentimentAnalysisProvider,
+    runtime_improvement_service: RuntimeImprovementService | None = None,
+    improvement_usage_recorder: ImprovementEffectivenessService | None = None,
 ) -> ConversationAnalysisService:
+    def learning_for(component: LearningComponent) -> ComponentLearning | None:
+        if runtime_improvement_service is None:
+            return None
+        return ComponentLearning(
+            component, runtime_improvement_service, improvement_usage_recorder
+        )
+
     return ConversationAnalysisService(
-        complaint_service=ComplaintAnalysisService(complaint_provider),
-        sentiment_service=SentimentAnalysisService(sentiment_provider),
+        complaint_service=ComplaintAnalysisService(
+            complaint_provider, learning_for(LearningComponent.COMPLAINT_DETECTION)
+        ),
+        sentiment_service=SentimentAnalysisService(
+            sentiment_provider, learning_for(LearningComponent.SENTIMENT_ANALYSIS)
+        ),
     )
 
 
@@ -187,6 +202,8 @@ def build_call_workflow_service(
         analysis_service=build_conversation_analysis_service(
             complaint_provider=create_complaint_provider(llm_client),
             sentiment_provider=create_sentiment_provider(llm_client),
+            runtime_improvement_service=runtime_improvement_service,
+            improvement_usage_recorder=improvement_usage_recorder,
         ),
         next_question_service=build_next_question_service(
             provider=create_question_provider(llm_client),

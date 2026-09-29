@@ -2,10 +2,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.domain.conversation import ConversationAlreadyExistsError
 from app.services.conversation_service import ConversationNotFoundError
+from app.services.improvement_application_service import ActiveImprovementNotFoundError
 from app.services.learning_management_service import (
     CandidateNotFoundError,
     CandidateReviewConflictError,
+    LearningFeedbackConflictError,
 )
+from app.services.learning_observation_service import LearningObservationNotFoundError
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ConversationNotFoundError)
@@ -29,6 +32,24 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(CandidateReviewConflictError)
     async def handle_candidate_review_conflict(
         request: Request, exc: CandidateReviewConflictError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(LearningObservationNotFoundError)
+    async def handle_observation_not_found(
+        request: Request, exc: LearningObservationNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(ActiveImprovementNotFoundError)
+    async def handle_improvement_not_found(
+        request: Request, exc: ActiveImprovementNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(LearningFeedbackConflictError)
+    async def handle_feedback_conflict(
+        request: Request, exc: LearningFeedbackConflictError
     ) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 

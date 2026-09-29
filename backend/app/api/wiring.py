@@ -72,6 +72,12 @@ from app.domain.improvement_usage_repository import (
     InMemoryImprovementUsageRepository,
 )
 from app.domain.customer_contact import CustomerContact
+from app.domain.learning_evidence import LearningComponent
+from app.domain.learning_feedback_repository import (
+    InMemoryLearningFeedbackRepository,
+    LearningFeedbackRepository,
+)
+from app.services.runtime_improvement_service import ComponentLearning
 from app.domain.user_repository import InMemoryUserRepository, UserRepository
 from app.services.auth_service import AuthService
 
@@ -91,6 +97,7 @@ def build_api_services(
     candidate_repository: ImprovementCandidateRepository | None = None,
     active_improvement_repository: ActiveImprovementRepository | None = None,
     usage_repository: ImprovementUsageRepository | None = None,
+    feedback_repository: LearningFeedbackRepository | None = None,
     user_repository: UserRepository | None = None,
     customer_contact_resolver: Callable[[str], CustomerContact | None] | None = None,
     post_call_summary_repository: PostCallSummaryRepository | None = None,
@@ -114,6 +121,7 @@ def build_api_services(
         active_improvement_repository or InMemoryActiveImprovementRepository()
     )
     usage_repository = usage_repository or InMemoryImprovementUsageRepository()
+    feedback_repository = feedback_repository or InMemoryLearningFeedbackRepository()
 
     call_service = CallService(ConversationService(conversation_repository))
 
@@ -143,8 +151,22 @@ def build_api_services(
         call_service,
         coverage_repository,
         ConversationAnalysisService(
-            ComplaintAnalysisService(complaint_provider),
-            SentimentAnalysisService(sentiment_provider),
+            ComplaintAnalysisService(
+                complaint_provider,
+                ComponentLearning(
+                    LearningComponent.COMPLAINT_DETECTION,
+                    runtime_improvement_service,
+                    improvement_effectiveness_service,
+                ),
+            ),
+            SentimentAnalysisService(
+                sentiment_provider,
+                ComponentLearning(
+                    LearningComponent.SENTIMENT_ANALYSIS,
+                    runtime_improvement_service,
+                    improvement_effectiveness_service,
+                ),
+            ),
         ),
         NextQuestionService(
             provider=question_provider,
@@ -220,6 +242,10 @@ def build_api_services(
         or build_learning_management_service(
             evidence_repository=evidence_repository,
             candidate_repository=candidate_repository,
+            observation_repository=observation_repository,
+            feedback_repository=feedback_repository,
+            active_improvement_repository=active_improvement_repository,
+            usage_repository=usage_repository,
         ),
         auth=auth_service,
         user_repository=user_repository,

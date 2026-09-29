@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any
 
+from app.ai.learning_guidance import format_learning_guidance
 from app.ai.llm.client import LLMClient, LLMRequest
 from app.ai.question.provider import (
     QuestionGenerationContext,
@@ -59,6 +60,7 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
             f"Current complaint status: {context.status.value}\n"
             f"Conversation so far:\n{self._conversation_text(context) or _NO_CONVERSATION}\n\n"
             f"Rules:\n{rules}\n\n"
+            f"{format_learning_guidance(context.learning_context)}"
             "Respond with ONLY a single JSON object and nothing else "
             "(no markdown, no commentary), in exactly this shape:\n"
             f"{_RESPONSE_SHAPE}\n"
