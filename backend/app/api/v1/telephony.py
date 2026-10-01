@@ -7,6 +7,7 @@ from app.api.dependencies import (
     get_workflow_service,
 )
 from app.core.config import get_settings
+from app.security.stream_token import create_stream_token
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import TelephonyProvider, TelephonyWebhookError
@@ -57,6 +58,7 @@ async def plivo_answer(
     stream_url = (
         f"{settings.plivo_stream_base_url.rstrip('/')}"
         f"/api/v1/calls/{call_id}/telephony-stream"
+        f"?token={create_stream_token(call_id, settings)}"
     )
     telephony_response = provider.build_stream_response(stream_url)
 

@@ -45,3 +45,5 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+# Filled-in production settings
+deploy/.env.production

@@ -16,6 +16,11 @@ class UserRepository(ABC):
     def get_by_email(self, email: str) -> User | None:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_all(self) -> tuple[User, ...]:
+        """Every user, oldest first."""
+        raise NotImplementedError
+
 
 class InMemoryUserRepository(UserRepository):
     def __init__(self) -> None:
@@ -32,3 +37,6 @@ class InMemoryUserRepository(UserRepository):
             if user.email == email:
                 return user
         return None
+
+    def list_all(self) -> tuple[User, ...]:
+        return tuple(sorted(self._by_id.values(), key=lambda user: user.created_at))

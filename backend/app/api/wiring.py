@@ -16,6 +16,7 @@ from app.composition.providers import (
     create_call_mapping_repository,
     create_language_provider,
     create_telephony_provider,
+    warm_up_diarization,
 )
 from app.core.config import Settings, get_settings
 from app.composition.speaker_sessions import build_speaker_session_registry
@@ -109,6 +110,13 @@ from app.services.emerging_complaint_repository import (
     InMemoryEmergingComplaintRepository,
 )
 from app.services.emerging_complaint_service import EmergingComplaintService
+from app.composition.providers import create_live_state_store
+from app.domain.conversation import ConversationStatus
+from app.observability.metrics import REGISTRY, Gauge
+from app.services.background_jobs import BackgroundJobRunner, PeriodicJob
+from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
+from app.services.post_call_repair_service import PostCallRepairService
+from app.services.user_management_service import UserManagementService
 from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
@@ -139,6 +147,7 @@ def build_api_services(
     complaint_lifecycle_repository: ComplaintLifecycleRepository | None = None,
     emerging_complaint_repository: EmergingComplaintRepository | None = None,
     emerging_complaint_provider: EmergingComplaintDiscoveryProvider | None = None,
+    live_state_store: LiveStateStore | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -149,6 +158,21 @@ def build_api_services(
     """
     settings = settings or get_settings()
 
+    # --- Live state shared between API instances ---
+    shared_live_state = live_state_store is not None
+    if live_state_store is None:
+        try:
+            live_state_store = create_live_state_store(settings)
+            shared_live_state = settings.live_state_store_provider.strip().lower() != "in_memory"
+        except Exception as exc:
+            if settings.is_production:
+                raise
+            logger.error("Live state store unavailable, keeping it in memory: %s", exc)
+            live_state_store = InMemoryLiveStateStore()
+
+    post_call_summary_repository = (
+        post_call_summary_repository or InMemoryPostCallSummaryRepository()
+    )
     conversation_repository = conversation_repository or InMemoryConversationRepository()
     coverage_repository = coverage_repository or InMemoryConversationCoverageRepository()
     evidence_repository = evidence_repository or InMemoryLearningEvidenceRepository()
@@ -173,6 +197,13 @@ def build_api_services(
 
     user_repository = user_repository or InMemoryUserRepository()
     auth_service = AuthService(user_repository)
+    user_management_service = UserManagementService(user_repository, auth_service)
+    try:
+        user_management_service.bootstrap_admin(
+            settings.bootstrap_admin_email, settings.bootstrap_admin_password
+        )
+    except Exception:
+        logger.exception("Could not bootstrap the first admin user")
 
     # --- Caller identity and the CRM boundary ---
     if customer_directory is None:
@@ -217,6 +248,7 @@ def build_api_services(
         call_service,
         coverage_repository,
         max_calls=settings.emerging_complaint_discovery_max_calls,
+        store=live_state_store,
     )
 
     try:
@@ -263,14 +295,34 @@ def build_api_services(
             evidence_repository=evidence_repository,
             observation_repository=observation_repository,
         ),
-        post_call_summary_repository=post_call_summary_repository
-        or InMemoryPostCallSummaryRepository(),
+        post_call_summary_repository=post_call_summary_repository,
         customer_summary_enabled=settings.customer_summary_enabled,
         escalation_service=escalation_service,
         complaint_lifecycle_service=complaint_lifecycle_service,
         customer_id_resolver=call_customer_service.resolve_customer_id,
         emerging_complaint_service=emerging_complaint_service,
         emerging_complaint_auto_discovery=settings.emerging_complaint_auto_discovery,
+    )
+
+    # --- Post-call repair ---
+    post_call_repair_service = PostCallRepairService(
+        call_service,
+        workflow_service.process_completed_call,
+        post_call_summary_repository,
+        live_state_store,
+        min_age_seconds=settings.post_call_repair_min_age_seconds,
+        max_attempts=settings.post_call_repair_max_attempts,
+        scan_limit=settings.post_call_repair_scan_limit,
+        background_interval_seconds=settings.post_call_repair_interval_seconds,
+    )
+    background_jobs = BackgroundJobRunner(
+        [
+            PeriodicJob(
+                "post_call_repair",
+                settings.post_call_repair_interval_seconds,
+                post_call_repair_service.run,
+            )
+        ]
     )
 
     # --- Telephony (Production Telephony) ---
@@ -291,6 +343,7 @@ def build_api_services(
         call_service,
         call_mapping_repository,
         call_customer_service=call_customer_service,
+        live_state=live_state_store,
     )
 
     try:
@@ -320,11 +373,23 @@ def build_api_services(
                 settings=settings,
                 asr_provider=asr_provider,
                 language_provider=language_provider,
-                registry=build_speaker_session_registry(),
+                registry=build_speaker_session_registry(
+                    live_state_store if shared_live_state else None
+                ),
             )
         except Exception as exc:
             logger.warning("Live chunk processing is not available: %s", exc)
+
+    def warm_up_live_models() -> None:
+        try:
+            warm_up_diarization(settings)
+        except Exception as exc:
+            logger.warning("Diarization model could not be preloaded: %s", exc)
             live_chunk_processing_service = None
+
+    _register_domain_gauges(
+        call_service, escalation_service, complaint_lifecycle_service, post_call_repair_service
+    )
 
     return ApiServices(
         call_service=call_service,
@@ -351,4 +416,53 @@ def build_api_services(
         escalation_service=escalation_service,
         complaint_lifecycle_service=complaint_lifecycle_service,
         emerging_complaint_service=emerging_complaint_service,
+        live_state_store=live_state_store,
+        post_call_repair_service=post_call_repair_service,
+        user_management_service=user_management_service,
+        background_jobs=background_jobs,
+        warm_up=warm_up_live_models if live_chunk_processing_service is not None else None,
+        health_checks={"live_state": live_state_store.ping} if shared_live_state else {},
     )
+
+
+def _register_domain_gauges(
+    call_service: CallService,
+    escalation_service: EscalationService,
+    complaint_lifecycle_service: ComplaintLifecycleService,
+    post_call_repair_service: PostCallRepairService,
+) -> None:
+    """Gauges read from stored data when /metrics is scraped."""
+
+    def calls_by_status():
+        counts = call_service.count_calls_by_status()
+        return {(status.value,): float(counts.get(status, 0)) for status in ConversationStatus}
+
+    def open_escalations():
+        queue = escalation_service.list_queue(active=True)
+        levels: dict[tuple[str, ...], float] = {}
+        for escalation in queue:
+            key = (escalation.level.value,)
+            levels[key] = levels.get(key, 0.0) + 1
+        return levels
+
+    def open_complaints():
+        views = complaint_lifecycle_service.list_queue("open", limit=100_000)
+        follow_up = sum(1 for v in views if v.record.follow_up_required)
+        return {("follow_up",): float(follow_up), ("other",): float(len(views) - follow_up)}
+
+    def unprocessed_calls():
+        run = post_call_repair_service.last_run
+        return {(): float(0 if run is None else run.pending)}
+
+    for gauge in (
+        Gauge("calls", "Calls by status.", ("status",), calls_by_status),
+        Gauge("escalations_open", "Open escalations by level.", ("level",), open_escalations),
+        Gauge("complaints_open", "Open complaints, by whether they need follow-up.", ("kind",), open_complaints),
+        Gauge(
+            "post_call_unprocessed_calls",
+            "Completed calls without a post-call summary at the last repair sweep.",
+            (),
+            unprocessed_calls,
+        ),
+    ):
+        REGISTRY.register(gauge)

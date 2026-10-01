@@ -1,3 +1,4 @@
+from xml.sax.saxutils import escape
 from collections.abc import Mapping
 from typing import Any
 
@@ -89,22 +90,13 @@ class PlivoTelephonyProvider(TelephonyProvider):
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             "<Response>"
-            f'<Stream bidirectional="false" keepCallAlive="true">{stream_url}</Stream>'
+            f'<Stream bidirectional="false" keepCallAlive="true">{escape(stream_url)}</Stream>'
             "</Response>"
         )
         return TelephonyResponse(content=xml, content_type="application/xml")
 
     def parse_media_stream_event(self, raw_event: Mapping[str, Any]) -> MediaStreamEvent:
-        event_type = str(raw_event.get("event", "")).strip().lower()
-
-        if event_type == "start":
-            return self._parse_start(raw_event)
-        if event_type == "media":
-            return self._parse_media(raw_event)
-        if event_type == "stop":
-            return MediaStreamEvent(event_type="stop")
-
-        raise TelephonyStreamError(f"Unknown Plivo stream event: {event_type!r}.")
+        return parse_plivo_media_stream_event(raw_event)
 
     @staticmethod
     def _parse_start(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
@@ -143,3 +135,18 @@ class PlivoTelephonyProvider(TelephonyProvider):
             raise TelephonyStreamError(str(exc)) from exc
 
         return MediaStreamEvent(event_type="media", sequence=sequence, audio=audio)
+
+
+def parse_plivo_media_stream_event(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
+    """Parse one Plivo media-stream frame. Needs no Plivo credentials, so test
+    calls can stream Plivo-format audio without a Plivo account."""
+    event_type = str(raw_event.get("event", "")).strip().lower()
+
+    if event_type == "start":
+        return PlivoTelephonyProvider._parse_start(raw_event)
+    if event_type == "media":
+        return PlivoTelephonyProvider._parse_media(raw_event)
+    if event_type == "stop":
+        return MediaStreamEvent(event_type="stop")
+
+    raise TelephonyStreamError(f"Unknown Plivo stream event: {event_type!r}.")

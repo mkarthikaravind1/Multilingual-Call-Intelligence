@@ -231,12 +231,42 @@ def test_coverage_is_created_lazily_and_saved():
     harness = _build(complaint_provider=FakeComplaintProvider([_TURNAROUND]))
     assert harness.coverage_repository.get(CALL_ID) is None
 
-    result = harness.workflow.analyze_call(CALL_ID)
+    result = harness.workflow.process_utterance(CALL_ID, _utterance(0))
 
     saved = harness.coverage_repository.get(CALL_ID)
     assert saved is result.coverage
     assert saved is not None and saved.call_id == CALL_ID
     assert _statuses(saved) == {"Turnaround Time": ComplaintCoverageStatus.DETECTED}
+
+
+def test_reading_an_active_call_before_any_speech_runs_no_providers():
+    harness = _build(complaint_provider=FakeComplaintProvider([_TURNAROUND]))
+
+    result = harness.workflow.analyze_call(CALL_ID)
+
+    assert result.coverage.call_id == CALL_ID
+    assert _statuses(result.coverage) == {}
+    assert result.sentiment is None
+    assert result.question_suggestion is None
+    assert harness.complaint_provider.calls == 0
+    assert harness.sentiment_provider.calls == 0
+    assert harness.coverage_repository.get(CALL_ID) is None
+
+
+def test_polling_an_active_call_returns_the_latest_analysis_without_provider_calls():
+    harness = _build(complaint_provider=FakeComplaintProvider([_TURNAROUND]))
+    live = harness.workflow.process_utterance(CALL_ID, _utterance(0))
+    complaint_calls = harness.complaint_provider.calls
+    sentiment_calls = harness.sentiment_provider.calls
+
+    for _ in range(3):
+        result = harness.workflow.analyze_call(CALL_ID)
+
+    assert result.sentiment == live.sentiment
+    assert result.question_suggestion == live.question_suggestion
+    assert _statuses(result.coverage) == {"Turnaround Time": ComplaintCoverageStatus.DETECTED}
+    assert harness.complaint_provider.calls == complaint_calls
+    assert harness.sentiment_provider.calls == sentiment_calls
 
 
 def test_coverage_persists_across_multiple_utterances():

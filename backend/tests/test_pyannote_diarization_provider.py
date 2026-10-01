@@ -141,3 +141,30 @@ def test_loader_failure_is_wrapped() -> None:
 def test_rejects_empty_model() -> None:
     with pytest.raises(ValueError, match="model"):
         PyannoteDiarizationProvider("  ")
+
+def test_cpu_threads_are_capped_before_the_pipeline_loads():
+    calls: list[str] = []
+    provider = PyannoteDiarizationProvider(
+        MODEL,
+        pipeline_loader=lambda model, token: calls.append("load") or FakePipeline([]),
+        cpu_threads=4,
+        set_cpu_threads=lambda threads: calls.append(f"threads={threads}"),
+    )
+
+    provider.warm_up()
+    provider.warm_up()
+
+    assert calls == ["threads=4", "load"]
+
+
+def test_cpu_threads_are_left_alone_when_not_configured():
+    calls: list[int] = []
+    provider = PyannoteDiarizationProvider(
+        MODEL,
+        pipeline_loader=lambda model, token: FakePipeline([]),
+        set_cpu_threads=calls.append,
+    )
+
+    provider.warm_up()
+
+    assert calls == []

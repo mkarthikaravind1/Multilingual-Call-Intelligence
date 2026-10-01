@@ -1,0 +1,75 @@
+# Production-style stack: PostgreSQL, Redis, the API and the web app.
+#
+#   cp deploy/.env.production.example deploy/.env.production   # then edit it
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
+#
+# Put a TLS-terminating proxy (or load balancer) in front of the "web"
+# service: Plivo needs https:// webhooks and a wss:// media stream URL.
+
+name: call-intelligence
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-calls}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-multilingual_call_intelligence}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ../backend
+      args:
+        INSTALL_DIARIZATION: ${INSTALL_DIARIZATION:-false}
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-calls}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-multilingual_call_intelligence}
+      REDIS_URL: redis://redis:6379/0
+      LIVE_STATE_STORE_PROVIDER: redis
+      CALL_MAPPING_STORE_PROVIDER: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Not published: reached through "web". Expose 8000 only to your
+    # monitoring network if Prometheus scrapes /metrics directly.
+    expose:
+      - "8000"
+
+  web:
+    build:
+      context: ../frontend
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  postgres_data:
+  redis_data:

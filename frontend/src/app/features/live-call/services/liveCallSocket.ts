@@ -27,8 +27,9 @@ export interface LiveCallSocketHandlers {
   onError: (event: LiveErrorEventDto) => void
 }
 
-function toWebSocketBaseUrl(apiBaseUrl: string): string {
-  const url = new URL(apiBaseUrl)
+export function toWebSocketBaseUrl(apiBaseUrl: string): string {
+  // An empty base URL means "same origin" (the API behind the web server).
+  const url = new URL(apiBaseUrl || window.location.origin, window.location.origin)
 
   url.protocol =
     url.protocol === 'https:'

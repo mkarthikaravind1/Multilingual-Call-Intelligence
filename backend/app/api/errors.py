@@ -9,6 +9,8 @@ from app.services.complaint_lifecycle_service import (
     ComplaintLifecycleNotFoundError,
 )
 from app.services.emerging_complaint_service import EmergingComplaintNotFoundError
+from app.services.post_call_repair_service import CallNotRepairableError
+from app.services.user_management_service import UserManagementError, UserNotFoundError
 from app.services.conversation_service import ConversationNotFoundError
 from app.services.improvement_application_service import ActiveImprovementNotFoundError
 from app.services.learning_management_service import (
@@ -94,6 +96,22 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(EmergingComplaintReviewError)
     async def handle_emerging_complaint_review(
         request: Request, exc: EmergingComplaintReviewError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(UserNotFoundError)
+    async def handle_user_not_found(request: Request, exc: UserNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(UserManagementError)
+    async def handle_user_management(
+        request: Request, exc: UserManagementError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(CallNotRepairableError)
+    async def handle_call_not_repairable(
+        request: Request, exc: CallNotRepairableError
     ) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 

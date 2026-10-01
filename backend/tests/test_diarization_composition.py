@@ -32,10 +32,11 @@ def test_pyannote_builds_provider_with_model_and_token(monkeypatch) -> None:
         diarization_provider=" Pyannote ",
         pyannote_model="custom/model",
         huggingface_token="tok",
+        diarization_cpu_threads=6,
     )
     provider = create_diarization_provider((), settings)
     assert isinstance(provider, Recorder)
-    assert Recorder.captured == {"model": "custom/model", "token": "tok"}
+    assert Recorder.captured == {"model": "custom/model", "token": "tok", "cpu_threads": 6}
 
 
 def test_pyannote_empty_token_becomes_none(monkeypatch) -> None:

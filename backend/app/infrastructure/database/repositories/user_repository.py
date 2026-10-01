@@ -49,3 +49,8 @@ class PostgresUserRepository(UserRepository):
         with self._session_factory() as session:
             model = session.scalar(select(UserModel).where(UserModel.email == email))
             return None if model is None else _to_domain(model)
+
+    def list_all(self) -> tuple[User, ...]:
+        with self._session_factory() as session:
+            models = session.scalars(select(UserModel).order_by(UserModel.created_at)).all()
+            return tuple(_to_domain(model) for model in models)

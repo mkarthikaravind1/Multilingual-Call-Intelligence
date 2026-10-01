@@ -3,7 +3,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Executor, ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 
 from app.ai.emerging_complaint.provider import (
     CallComplaintRecord,
@@ -18,6 +18,7 @@ from app.domain.emerging_complaint_candidate import (
 from app.services.call_service import CallService
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
 from app.services.emerging_complaint_repository import EmergingComplaintRepository
+from app.services.live_state_store import LiveStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ MIN_CALLS_FOR_DISCOVERY = 2
 # Quotes kept per candidate; the rule-based provider returns every match.
 MAX_EVIDENCE_PER_CANDIDATE = 10
 _PAGE_SIZE = 100
+_LAST_RUN_KEY = "emerging_complaints:last_run"
 
 
 class EmergingComplaintNotFoundError(Exception):
@@ -63,8 +65,11 @@ class EmergingComplaintService:
         max_calls: int = 200,
         executor: Executor | None = None,
         clock: Callable[[], float] = time.time,
+        store: LiveStateStore | None = None,
     ) -> None:
         self._repository = repository
+        # Shares the last run with every instance; per-instance without it.
+        self._live_state = store
         self._provider = provider
         self._call_service = call_service
         self._coverage_repository = coverage_repository
@@ -79,7 +84,21 @@ class EmergingComplaintService:
 
     @property
     def last_run(self) -> DiscoveryRun | None:
+        if self._live_state is not None:
+            try:
+                raw = self._live_state.get_json(_LAST_RUN_KEY)
+                return None if raw is None else DiscoveryRun(**raw)
+            except Exception:
+                logger.exception("Could not read the last emerging-complaint discovery run")
         return self._last_run
+
+    def _remember(self, run: DiscoveryRun) -> None:
+        self._last_run = run
+        if self._live_state is not None:
+            try:
+                self._live_state.set_json(_LAST_RUN_KEY, asdict(run))
+            except Exception:
+                logger.exception("Could not share the emerging-complaint discovery run")
 
     def request_discovery(self) -> bool:
         """Schedule a background run unless one is already waiting. Returns
@@ -118,7 +137,7 @@ class EmergingComplaintService:
                         "speech are needed."
                     ),
                 )
-                self._last_run = run
+                self._remember(run)
                 return run
 
             discovered = self._provider.discover(
@@ -135,7 +154,7 @@ class EmergingComplaintService:
                 candidates_found=len(discovered),
                 new_candidates=new_count,
             )
-            self._last_run = run
+            self._remember(run)
             if new_count:
                 logger.info("Emerging-complaint discovery found %d new theme(s)", new_count)
             return run

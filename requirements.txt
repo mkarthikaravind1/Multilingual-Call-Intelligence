@@ -113,3 +113,14 @@ triton==3.8.0
 typing_extensions==4.16.0
 urllib3==2.8.0
 yarl==1.25.1
+# API server (previously installed by hand; see backend/requirements-api.txt)
+bcrypt==4.3.0
+email-validator==2.3.0
+fastapi==0.141.1
+groq==1.7.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+starlette==1.7.0
+uvicorn==0.54.0
+websockets==17.1

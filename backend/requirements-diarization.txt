@@ -1,0 +1,5 @@
+# Only for DIARIZATION_PROVIDER=pyannote (local speaker diarization).
+# Installed into the image with --build-arg INSTALL_DIARIZATION=true.
+pyannote-audio==4.0.7
+torch==2.14.0
+torchaudio==2.11.0

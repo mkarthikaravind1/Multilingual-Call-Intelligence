@@ -1,0 +1,13 @@
+pyannote-env/
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+tests/
+data/
+scripts/
+*.wav
+sarvam_error.txt
+dev_run_sample_two_speakers.py
+steps_to_run.txt
+.env*

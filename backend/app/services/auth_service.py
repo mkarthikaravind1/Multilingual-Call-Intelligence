@@ -34,7 +34,10 @@ class AuthService:
         return user
 
     def authenticate(self, email: str, password: str) -> User:
-        user = self._user_repository.get_by_email(email)
+        # New accounts are stored lower-cased; older ones may not be.
+        user = self._user_repository.get_by_email(email.strip().lower())
+        if user is None:
+            user = self._user_repository.get_by_email(email)
         # Same generic error whether the email is unknown or the password is
         # wrong, and whether the account is inactive — never reveal which.
         if user is None or not user.is_active or not verify_password(password, user.password_hash):

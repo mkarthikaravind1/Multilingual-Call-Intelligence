@@ -12,6 +12,7 @@ import { EscalationCard } from '../features/escalation/components/EscalationCard
 import { CallComplaintsPanel } from '../features/complaints/components/CallComplaintsPanel'
 import { useAuth } from '../auth/useAuth'
 import { SummaryDeliveryPanel } from '../features/customer/components/SummaryDeliveryPanel'
+import { adminRestService } from '../features/admin/services/adminRestService'
 
 import {
   toCallAnalysisViewModel,
@@ -59,6 +60,8 @@ export function PostCallAnalysisPage() {
   const [isCompleting, setIsCompleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [summaryPollFinishedFor, setSummaryPollFinishedFor] = useState<string | null>(null)
+  const [isRetrying, setIsRetrying] = useState(false)
+  const [retryNotice, setRetryNotice] = useState<string | null>(null)
 
   useEffect(() => {
     if (!callId) {
@@ -193,6 +196,23 @@ export function PostCallAnalysisPage() {
     }
   }
 
+  const handleRetryProcessing = async () => {
+    setIsRetrying(true)
+    setRetryNotice(null)
+    try {
+      const result = await adminRestService.retryPostCall(callId)
+      if (result.repaired) {
+        setAnalysis(toCallAnalysisViewModel(await callRestService.getAnalysis(callId)))
+      } else {
+        setRetryNotice('Post-call processing failed again. Check the server logs.')
+      }
+    } catch (err) {
+      setRetryNotice(err instanceof ApiError ? err.message : 'Unable to retry post-call processing.')
+    } finally {
+      setIsRetrying(false)
+    }
+  }
+
   const summaryState: PostCallSummaryState = hasSummary
     ? 'available'
     : isActiveCall
@@ -277,6 +297,31 @@ export function PostCallAnalysisPage() {
             state={summaryState}
             summary={analysis.postCallSummary}
           />
+
+          {summaryState === 'unavailable' && canManageEscalations && (
+            <section className="panel">
+              <p className="panel__label">Post-call processing</p>
+              <p className="customer-panel__muted">
+                Post-call processing did not finish for this call. It is retried automatically; you
+                can also retry it now.
+              </p>
+              <div className="button-row">
+                <button
+                  type="button"
+                  className="button"
+                  disabled={isRetrying}
+                  onClick={() => void handleRetryProcessing()}
+                >
+                  {isRetrying ? 'Retrying…' : 'Retry post-call processing'}
+                </button>
+              </div>
+              {retryNotice && (
+                <p className="review-form__error" role="alert">
+                  {retryNotice}
+                </p>
+              )}
+            </section>
+          )}
 
           <div className="live-call__workspace-grid">
             <div className="live-call__main-column">

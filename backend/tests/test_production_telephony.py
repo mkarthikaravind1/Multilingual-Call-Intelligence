@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.domain.conversation import Conversation
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.telephony_call_mapping import TelephonyCallMapping
+from app.security.stream_token import create_stream_token
 from app.services.call_service import CallService
 from app.services.conversation_service import ConversationService
 from app.services.in_memory_conversation_repository import InMemoryConversationRepository
@@ -41,6 +42,12 @@ ANSWER_PATH = "/api/v1/telephony/plivo/answer"
 STATUS_PATH = "/api/v1/telephony/plivo/status"
 ANSWER_URL = "http://testserver" + ANSWER_PATH
 STATUS_URL = "http://testserver" + STATUS_PATH
+
+
+
+def _stream_path(call_id: str) -> str:
+    """The media stream URL, with the signed token the answer webhook issues."""
+    return f"/api/v1/calls/{call_id}/telephony-stream?token={create_stream_token(call_id)}"
 
 
 def _plivo_settings(**overrides) -> Settings:
@@ -242,7 +249,7 @@ def test_handle_status_event_ends_call_on_terminal_status():
     conversation = call_service.get_call(call_id)
     assert handled is True
     assert conversation.status.value == "completed"
-    assert conversation.end_time == 30.0
+    assert conversation.end_time == conversation.start_time + 30.0
 
 
 def test_handle_status_event_is_idempotent_on_repeat():
@@ -261,7 +268,8 @@ def test_handle_status_event_is_idempotent_on_repeat():
         CallStatusEvent("uuid-1", CallProviderStatus.COMPLETED, duration_seconds=9999.0)
     )
 
-    assert call_service.get_call(call_id).end_time == 30.0
+    call = call_service.get_call(call_id)
+    assert call.end_time == call.start_time + 30.0
 
 
 def test_handle_status_event_ignores_non_terminal_status():
@@ -406,7 +414,7 @@ def test_status_webhook_rejects_invalid_signature():
 def test_telephony_stream_rejects_unknown_call():
     client = _build_client()
 
-    with client.websocket_connect("/api/v1/calls/unknown-call/telephony-stream") as ws:
+    with client.websocket_connect(_stream_path("unknown-call")) as ws:
         error = ws.receive_json()
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
@@ -424,7 +432,7 @@ def test_telephony_stream_accepts_known_call_and_handles_frames():
     )
     call_id = _extract_call_id(answer.text)
 
-    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream") as ws:
+    with client.websocket_connect(_stream_path(call_id)) as ws:
         ws.send_text(json.dumps({"event": "start", "start": {"callId": call_id}}))
         ws.send_text(json.dumps({"event": "media", "media": {"payload": "AAAA"}}))
         ws.send_text(json.dumps({"event": "stop"}))

@@ -52,6 +52,11 @@ from app.ai.emerging_complaint.provider import EmergingComplaintDiscoveryProvide
 from app.ai.emerging_complaint.rule_based_provider import (
     RuleBasedEmergingComplaintDiscoveryProvider,
 )
+from app.services.live_state_store import (
+    InMemoryLiveStateStore,
+    LiveStateStore,
+    RedisLiveStateStore,
+)
 from app.crm.json_file_directory import JsonFileCustomerDirectory
 from app.crm.provider import CustomerDirectory, NoCustomerDirectory
 
@@ -200,6 +205,7 @@ def _build_pyannote_diarization(
     return PyannoteDiarizationProvider(
         model=settings.pyannote_model,
         token=settings.huggingface_token or None,
+        cpu_threads=settings.diarization_cpu_threads,
     )
 
 
@@ -209,6 +215,13 @@ _DIARIZATION_PROVIDER_BUILDERS: dict[
     "scripted": _build_scripted_diarization,
     "pyannote": _build_pyannote_diarization,
 }
+
+def warm_up_diarization(settings: Settings | None = None) -> None:
+    """Load the diarization model now, so the first live call does not wait
+    for it. The pyannote pipeline is cached per process, so every provider
+    built afterwards reuses it."""
+    create_diarization_provider((), settings).warm_up()
+
 
 def create_diarization_provider(
     segments: Sequence[DiarizedSegment], settings: Settings | None = None
@@ -378,6 +391,23 @@ def create_escalation_provider(
     raise UnsupportedProviderError(
         f"Unsupported escalation provider: {settings.escalation_provider!r}. "
         "Available: ['llm', 'rule_based']."
+    )
+
+
+def create_live_state_store(settings: Settings | None = None) -> LiveStateStore:
+    """"in_memory" for a single API instance, "redis" when several share
+    calls (open media streams, speaker roles, job locks)."""
+    settings = settings or get_settings()
+    name = settings.live_state_store_provider.strip().lower()
+    if name == "in_memory":
+        return InMemoryLiveStateStore()
+    if name == "redis":
+        from app.infrastructure.cache.redis_client import build_redis_client
+
+        return RedisLiveStateStore(build_redis_client(settings), settings.live_state_key_prefix)
+    raise UnsupportedProviderError(
+        f"Unsupported live state store provider: {settings.live_state_store_provider!r}. "
+        "Available: ['in_memory', 'redis']."
     )
 
 

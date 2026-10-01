@@ -1,53 +1,50 @@
-import { IntegrationPendingCard } from '../components/IntegrationPendingCard'
 import { useAuth } from '../auth/useAuth'
+import { decodeJwtClaims } from '../auth/session'
+import { PostCallRepairPanel } from '../features/admin/components/PostCallRepairPanel'
+import { UserManagementPanel } from '../features/admin/components/UserManagementPanel'
 
 // Mirrors the permissions the application enforces today.
 const ROLE_CAPABILITIES = [
   {
     role: 'ICR',
-    description: 'Handles calls: live call workspace, call history, post-call analysis and learning insights (read-only).',
+    description:
+      'Handles calls: live call workspace, call history, post-call analysis, complaints and learning insights (read-only).',
   },
   {
     role: 'SUPERVISOR',
-    description: 'Everything an ICR can do, plus approving or rejecting AI improvement candidates.',
+    description:
+      'Everything an ICR can do, plus the escalation queue, reviewing AI improvements and emerging complaints, and retrying post-call processing.',
   },
   {
     role: 'ADMIN',
-    description: 'Everything a Supervisor can do, plus access to administration.',
+    description: 'Everything a Supervisor can do, plus managing users and roles.',
   },
 ]
 
 export function AdministrationPage() {
   const { session } = useAuth()
+  const currentUserId = session ? (decodeJwtClaims(session.accessToken).sub ?? null) : null
 
   return (
     <section className="page-shell">
-      <div className="page-shell__grid page-shell__grid--wide">
-        <section className="panel">
-          <h3 className="section-title">Roles</h3>
-          <div className="card-stack">
-            {ROLE_CAPABILITIES.map(({ role, description }) => (
-              <article key={role} className="list-card">
-                <div className="list-card__meta">
-                  <strong className="list-card__title">{role}</strong>
-                  {session?.role === role && (
-                    <span className="badge badge--active">Your role</span>
-                  )}
-                </div>
-                <p>{description}</p>
-              </article>
-            ))}
-          </div>
-        </section>
+      <UserManagementPanel currentUserId={currentUserId} />
 
-        <section className="panel">
-          <h3 className="section-title">User management</h3>
-          <IntegrationPendingCard
-            title="Users and invitations"
-            description="Creating users, assigning roles and deactivating accounts will be available here once the user-management API is added to the backend."
-          />
-        </section>
-      </div>
+      <PostCallRepairPanel />
+
+      <section className="panel">
+        <h3 className="section-title">Roles</h3>
+        <div className="card-stack">
+          {ROLE_CAPABILITIES.map(({ role, description }) => (
+            <article key={role} className="list-card">
+              <div className="list-card__meta">
+                <strong className="list-card__title">{role}</strong>
+                {session?.role === role && <span className="badge badge--active">Your role</span>}
+              </div>
+              <p>{description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
     </section>
   )
 }

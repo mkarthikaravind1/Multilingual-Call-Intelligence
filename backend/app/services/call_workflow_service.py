@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 import logging
+import threading
 from typing import Callable, Protocol
 
 from app.ai.sentiment.provider import SentimentResult
@@ -91,6 +92,11 @@ class CallWorkflowService:
             post_call_summary_repository or InMemoryPostCallSummaryRepository()
         )
         self._customer_summary_enabled = customer_summary_enabled
+        # call_id -> the analysis of the call's latest speech. Reads of an
+        # active call return it rather than re-running the AI providers, so
+        # polling a call costs no LLM calls. Per process; dropped on completion.
+        self._live_results: dict[str, CallAnalysisResult] = {}
+        self._live_results_guard = threading.Lock()
 
     def process_utterance(
         self,
@@ -112,6 +118,8 @@ class CallWorkflowService:
                         conversation, result.coverage, result.sentiment
                     ),
                 )
+            with self._live_results_guard:
+                self._live_results[call_id] = result
         if self._learning_recorder is not None:
             try:
                 self._learning_recorder.record(call_id, result)
@@ -123,12 +131,36 @@ class CallWorkflowService:
         conversation = self._call_service.get_call(call_id)
 
         if conversation.status == ConversationStatus.COMPLETED:
+            self._forget_live_result(call_id)
             return self._read_completed_analysis(conversation)
+        return self._read_active_analysis(conversation)
 
+    def _read_active_analysis(self, conversation: Conversation) -> CallAnalysisResult:
+        # Read-only, like _read_completed_analysis: the providers run only
+        # when new speech arrives (process_utterance).
+        call_id = conversation.call_id
+        with self._live_results_guard:
+            latest = self._live_results.get(call_id)
+        # Stored coverage is the source of truth: it also reflects complaint
+        # updates made outside the live analysis.
+        coverage = self._coverage_repository.get(call_id)
+        if latest is None:
+            return CallAnalysisResult(
+                coverage=coverage or ConversationCoverage(call_id=call_id),
+                sentiment=None,
+                question_suggestion=None,
+                service_estimate=None,
+                escalation=self._stored_escalation(call_id),
+            )
         return replace(
-            self._analyze_active_call(conversation),
+            latest,
+            coverage=coverage or latest.coverage,
             escalation=self._stored_escalation(call_id),
         )
+
+    def _forget_live_result(self, call_id: str) -> None:
+        with self._live_results_guard:
+            self._live_results.pop(call_id, None)
 
     def _analyze_active_call(self, conversation: Conversation) -> CallAnalysisResult:
         analysis = self._analyze_and_save_coverage(conversation)
@@ -173,6 +205,7 @@ class CallWorkflowService:
         if conversation.status != ConversationStatus.COMPLETED:
             logger.warning("Skipping post-call processing for active call %r", call_id)
             return None
+        self._forget_live_result(call_id)
 
         existing = self._post_call_summary_repository.get(call_id)
         if existing is not None:

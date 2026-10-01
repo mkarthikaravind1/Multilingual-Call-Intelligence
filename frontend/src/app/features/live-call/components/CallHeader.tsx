@@ -63,11 +63,8 @@ export function CallHeader({
             Live call workspace
           </p>
 
-          <h3>
-            {call
-              ? `Call ${call.callId}`
-              : 'Open a live call'}
-          </h3>
+          {/* The open call's ID is already shown in the Call ID field below. */}
+          {!call && <h3>Open a live call</h3>}
 
           <p className="live-call__header-meta">
             {call

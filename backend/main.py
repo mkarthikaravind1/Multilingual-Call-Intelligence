@@ -5,6 +5,9 @@ DATABASE_URL) — see app.composition.database. Tests use in-memory
 repositories directly and never import this module.
 """
 
+import dataclasses
+import logging
+
 import uvicorn
 
 from app.api.app_factory import create_app
@@ -19,10 +22,16 @@ from app.composition.providers import (
     create_sentiment_provider,
 )
 from app.core.config import get_settings
+from app.core.production_checks import check_configuration
+from app.observability.logging import configure_logging
+
+logger = logging.getLogger("app")
 
 
 def build_app():
     settings = get_settings()
+    configure_logging(settings.log_level, settings.log_format)
+    check_configuration(settings, logger)
     repositories = build_production_repositories(settings)
 
     llm_client = create_llm_client(settings)
@@ -49,10 +58,14 @@ def build_app():
         emerging_complaint_repository=repositories.emerging_complaint,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),
     )
+    services = dataclasses.replace(
+        services,
+        health_checks={"database": repositories.ping, **services.health_checks},
+    )
     return create_app(services)
 
 
 app = build_app()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, proxy_headers=True, log_config=None)

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings, get_settings
@@ -92,6 +93,14 @@ class PostgresRepositories:
     call_customer: CallCustomerRepository
     escalation: EscalationRepository
     emerging_complaint: EmergingComplaintRepository
+    session_factory: sessionmaker[Session] | None = None
+
+    def ping(self) -> None:
+        """Raise if the database cannot be reached (readiness checks)."""
+        if self.session_factory is None:
+            return
+        with self.session_factory() as session:
+            session.execute(text("SELECT 1"))
 
 def build_postgres_repositories(
     session_factory: sessionmaker[Session],
@@ -113,6 +122,7 @@ def build_postgres_repositories(
         call_customer=PostgresCallCustomerRepository(session_factory),
         escalation=PostgresEscalationRepository(session_factory),
         emerging_complaint=PostgresEmergingComplaintRepository(session_factory),
+        session_factory=session_factory,
     )
 
 

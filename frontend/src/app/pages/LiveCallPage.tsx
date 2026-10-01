@@ -15,6 +15,8 @@ import { OtherFeaturesPanel } from '../features/live-call/components/OtherFeatur
 import { ToneIndicator } from '../features/live-call/components/ToneIndicator'
 import { TranscriptPanel } from '../features/live-call/components/TranscriptPanel'
 import { useLiveCall } from '../features/live-call/hooks/useLiveCall'
+import { TestAudioPanel } from '../features/test-audio/components/TestAudioPanel'
+import { useTestAudioReplay } from '../features/test-audio/hooks/useTestAudioReplay'
 
 function newestEscalation(
   ...candidates: (EscalationViewModel | null)[]
@@ -57,10 +59,14 @@ export function LiveCallPage() {
     [setSearchParams],
   )
 
+  const testAudio = useTestAudioReplay(openCall)
+  const { reset: resetTestAudio } = testAudio
+
   const clearCall = useCallback(() => {
-  setSearchParams({})
-  clearLiveCall()
-}, [setSearchParams, clearLiveCall])
+    setSearchParams({})
+    clearLiveCall()
+    void resetTestAudio()
+  }, [setSearchParams, clearLiveCall, resetTestAudio])
 
   const [isStarting, setIsStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
@@ -98,6 +104,8 @@ export function LiveCallPage() {
           void liveCall.completeCall()
         }}
       />
+
+      {canManageEscalations && <TestAudioPanel replay={testAudio} />}
 
       {liveCall.error && (
         <div

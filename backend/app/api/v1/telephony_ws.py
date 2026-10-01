@@ -1,5 +1,8 @@
+import asyncio
 import json
 import logging
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from fastapi import APIRouter, Depends, WebSocket
 from fastapi.concurrency import run_in_threadpool
@@ -14,7 +17,7 @@ from app.api.dependencies import (
     get_telephony_stream_flush_seconds,
     get_workflow_service,
 )
-from app.api.v1.live import CALL_NOT_FOUND_CLOSE_CODE
+from app.api.v1.live import AUTH_FAILED_CLOSE_CODE, CALL_NOT_FOUND_CLOSE_CODE
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.conversation import ConversationAlreadyCompletedError, ConversationStatus
 from app.services.audio_chunking_service import AudioChunk
@@ -30,7 +33,12 @@ from app.services.telephony_audio_buffer import (
     TelephonyAudioBufferError,
 )
 from app.services.telephony_call_service import TelephonyCallService
-from app.telephony.provider import TelephonyProvider, TelephonyStreamError
+from app.core.config import get_settings
+from app.observability.metrics import TELEPHONY_STREAMS_OPEN
+from app.security.stream_token import is_valid_stream_token
+from app.telephony.plivo.provider import parse_plivo_media_stream_event
+from app.telephony.provider import MediaStreamEvent, TelephonyStreamError, TelephonyProvider
+from app.api.v1.test_calls import TEST_PROVIDER
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +69,41 @@ async def telephony_stream(
     ),
     flush_after_seconds: float = Depends(get_telephony_stream_flush_seconds),
 ) -> None:
+    settings = get_settings()
+    if settings.telephony_stream_auth_required and not is_valid_stream_token(
+        websocket.query_params.get("token"), call_id, settings
+    ):
+        logger.warning("Rejected telephony stream for call %r: missing or invalid token", call_id)
+        await websocket.close(code=AUTH_FAILED_CLOSE_CODE)
+        return
+
     await websocket.accept()
+    TELEPHONY_STREAMS_OPEN.inc()
+    try:
+        await _serve_stream(
+            websocket,
+            call_id,
+            handler,
+            provider,
+            live_chunk_processing_service,
+            call_service,
+            telephony_call_service,
+            flush_after_seconds,
+        )
+    finally:
+        TELEPHONY_STREAMS_OPEN.dec()
+
+
+async def _serve_stream(
+    websocket: WebSocket,
+    call_id: str,
+    handler: LiveCallHandler,
+    provider: TelephonyProvider | None,
+    live_chunk_processing_service: LiveChunkProcessingService | None,
+    call_service: CallService,
+    telephony_call_service: TelephonyCallService | None,
+    flush_after_seconds: float,
+) -> None:
 
     rejection = await run_in_threadpool(handler.open, call_id)
     if rejection is not None:
@@ -69,7 +111,17 @@ async def telephony_stream(
         await websocket.close(code=CALL_NOT_FOUND_CLOSE_CODE)
         return
 
-    if provider is None:
+    # Test calls (see test_calls.py) stream Plivo-format frames whichever
+    # provider is configured, or even when none is.
+    parse_stream_event: Callable[[Mapping[str, Any]], MediaStreamEvent] | None
+    if call_id.startswith(f"{TEST_PROVIDER}-"):
+        parse_stream_event = parse_plivo_media_stream_event
+    elif provider is not None:
+        parse_stream_event = provider.parse_media_stream_event
+    else:
+        parse_stream_event = None
+
+    if parse_stream_event is None:
         logger.error(
             "Telephony stream for call %r cannot be processed: no telephony provider is configured.",
             call_id,
@@ -86,7 +138,10 @@ async def telephony_stream(
         return
 
     buffer: TelephonyAudioBuffer | None = None
-    next_chunk_sequence = 0
+    # Chunks are processed in order on a worker, off this receive loop: one
+    # chunk can take longer to process than the websocket keepalive allows,
+    # and a socket that stops reading gets dropped mid-call.
+    worker = _ChunkWorker(call_id, call_service, live_chunk_processing_service)
 
     # While the stream is open, a terminal status waits for it to drain
     # before completing the call (see TelephonyCallService).
@@ -111,7 +166,7 @@ async def telephony_stream(
                 continue
 
             try:
-                stream_event = provider.parse_media_stream_event(raw_event)
+                stream_event = parse_stream_event(raw_event)
             except TelephonyStreamError as exc:
                 logger.warning("Invalid telephony stream frame for call %r: %s", call_id, exc)
                 continue
@@ -123,16 +178,7 @@ async def telephony_stream(
                     # A second "start" on the same connection (e.g. a
                     # provider-side stream restart) without a "stop" first
                     # must not silently discard whatever was already buffered.
-                    next_chunk_sequence = await _flush_and_process(
-                        buffer,
-                        force=True,
-                        min_duration=_MIN_FLUSH_AUDIO_SECONDS,
-                        call_id=call_id,
-                        chunk_sequence=next_chunk_sequence,
-                        call_service=call_service,
-                        live_chunk_processing_service=live_chunk_processing_service,
-                        is_final=False,
-                    )
+                    _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=False)
                 buffer = TelephonyAudioBuffer(
                     sample_rate=stream_event.sample_rate or 8000,
                     flush_after_seconds=flush_after_seconds,
@@ -142,30 +188,13 @@ async def telephony_stream(
                 if buffer is not None:
                     accepted = buffer.accept(stream_event.sequence, stream_event.audio or b"")
                     if accepted:
-                        next_chunk_sequence = await _flush_and_process(
-                            buffer,
-                            force=False,
-                            min_duration=0.0,
-                            call_id=call_id,
-                            chunk_sequence=next_chunk_sequence,
-                            call_service=call_service,
-                            live_chunk_processing_service=live_chunk_processing_service,
-                            is_final=False,
-                        )
+                        _flush(buffer, worker, force=False, min_duration=0.0, is_final=False)
 
             elif stream_event.event_type == "stop":
                 if buffer is not None:
-                    next_chunk_sequence = await _flush_and_process(
-                        buffer,
-                        force=True,
-                        min_duration=_MIN_FLUSH_AUDIO_SECONDS,
-                        call_id=call_id,
-                        chunk_sequence=next_chunk_sequence,
-                        call_service=call_service,
-                        live_chunk_processing_service=live_chunk_processing_service,
-                        is_final=True,
-                    )
+                    _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
                     buffer = None
+                await worker.drain()
                 # All of this stream's audio has been processed.
                 if telephony_call_service is not None:
                     telephony_call_service.stream_drained(call_id)
@@ -176,16 +205,7 @@ async def telephony_stream(
             # arrive would otherwise strand any further buffered audio.
             if await _call_is_completed(call_id, call_service):
                 if buffer is not None:
-                    next_chunk_sequence = await _flush_and_process(
-                        buffer,
-                        force=True,
-                        min_duration=_MIN_FLUSH_AUDIO_SECONDS,
-                        call_id=call_id,
-                        chunk_sequence=next_chunk_sequence,
-                        call_service=call_service,
-                        live_chunk_processing_service=live_chunk_processing_service,
-                        is_final=True,
-                    )
+                    _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
                     buffer = None
                 await websocket.close(code=STREAM_CALL_COMPLETED_CLOSE_CODE)
                 return
@@ -202,16 +222,8 @@ async def telephony_stream(
         # audio. _process_chunk drops it if the call already completed.
         try:
             if buffer is not None:
-                await _flush_and_process(
-                    buffer,
-                    force=True,
-                    min_duration=_MIN_FLUSH_AUDIO_SECONDS,
-                    call_id=call_id,
-                    chunk_sequence=next_chunk_sequence,
-                    call_service=call_service,
-                    live_chunk_processing_service=live_chunk_processing_service,
-                    is_final=True,
-                )
+                _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
+            await worker.close()
         finally:
             if telephony_call_service is not None:
                 telephony_call_service.stream_drained(call_id)
@@ -225,39 +237,78 @@ async def _call_is_completed(call_id: str, call_service: CallService) -> bool:
     return conversation.status == ConversationStatus.COMPLETED
 
 
-async def _flush_and_process(
+class _ChunkWorker:
+    """Processes one stream's audio chunks, in the order submitted, on a
+    background task."""
+
+    def __init__(
+        self,
+        call_id: str,
+        call_service: CallService,
+        live_chunk_processing_service: LiveChunkProcessingService,
+    ) -> None:
+        self.call_id = call_id
+        self._call_service = call_service
+        self._live_chunk_processing_service = live_chunk_processing_service
+        self._queue: asyncio.Queue[tuple[BufferedAudioChunk, int, bool] | None] = asyncio.Queue()
+        self._next_sequence = 0
+        self._task = asyncio.create_task(self._run())
+
+    def submit(self, chunk: BufferedAudioChunk, is_final: bool) -> None:
+        self._queue.put_nowait((chunk, self._next_sequence, is_final))
+        self._next_sequence += 1
+
+    async def drain(self) -> None:
+        """Wait until every chunk submitted so far has been processed."""
+        await self._queue.join()
+
+    async def close(self) -> None:
+        """Process everything submitted, then stop."""
+        self._queue.put_nowait(None)
+        await self._task
+
+    async def _run(self) -> None:
+        while True:
+            item = await self._queue.get()
+            try:
+                if item is None:
+                    return
+                chunk, sequence, is_final = item
+                await _process_chunk(
+                    self.call_id,
+                    chunk,
+                    sequence,
+                    self._call_service,
+                    self._live_chunk_processing_service,
+                    is_final,
+                )
+            except Exception:
+                logger.exception("Live pipeline processing failed for call %r", self.call_id)
+            finally:
+                self._queue.task_done()
+
+
+def _flush(
     buffer: TelephonyAudioBuffer,
+    worker: _ChunkWorker,
     *,
     force: bool,
     min_duration: float,
-    call_id: str,
-    chunk_sequence: int,
-    call_service: CallService,
-    live_chunk_processing_service: LiveChunkProcessingService | None,
     is_final: bool,
-) -> int:
+) -> None:
     try:
         chunk = buffer.flush(force=force)
     except TelephonyAudioBufferError as exc:
         # A single malformed buffer flush must never take down the whole
         # stream — drop this chunk's audio and keep the phone call alive.
-        logger.warning("Dropping unencodable audio buffer for call %r: %s", call_id, exc)
-        return chunk_sequence
+        logger.warning("Dropping unencodable audio buffer for call %r: %s", worker.call_id, exc)
+        return
 
     if chunk is None:
-        return chunk_sequence
+        return
     if min_duration and chunk.duration < min_duration:
-        return chunk_sequence
-
-    await _process_chunk(
-        call_id,
-        chunk,
-        chunk_sequence,
-        call_service,
-        live_chunk_processing_service,
-        is_final,
-    )
-    return chunk_sequence + 1
+        return
+    worker.submit(chunk, is_final)
 
 
 async def _process_chunk(

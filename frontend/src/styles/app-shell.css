@@ -2091,3 +2091,128 @@
   color: var(--color-text);
   font-size: 0.84rem;
 }
+
+/* Administration */
+.user-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.user-create-form .panel__label {
+  margin: 0;
+}
+
+.user-card--inactive {
+  opacity: 0.75;
+}
+
+/* Test audio (Live call page, supervisors and admins) */
+.test-audio {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.test-audio__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.test-audio__intro {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.test-audio__hint {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--color-text-muted);
+}
+
+.test-audio__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 220px;
+  min-width: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.test-audio__field input {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.test-audio__button {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: #fff;
+  padding: 10px 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.test-audio__button:hover:not(:disabled) {
+  background: var(--color-primary-strong);
+}
+
+.test-audio__button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.test-audio__status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.test-audio__status-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 0.88rem;
+}
+
+.test-audio__status-line strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.test-audio__progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  overflow: hidden;
+}
+
+.test-audio__progress span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 0.1s linear;
+}
+
+.test-audio__error {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #b42318;
+}

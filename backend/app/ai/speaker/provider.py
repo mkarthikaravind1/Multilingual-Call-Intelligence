@@ -40,6 +40,9 @@ class DiarizationProvider(ABC):
     def diarize(self, audio: bytes) -> list[DiarizedSegment]:
         raise NotImplementedError
 
+    def warm_up(self) -> None:
+        """Load any models ahead of the first call. Nothing to load by default."""
+
 
 class RoleIdentificationProvider(ABC):
     @abstractmethod

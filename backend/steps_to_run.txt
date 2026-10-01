@@ -6,6 +6,6 @@ python dev_run_sample_two_speakers.py
 
 cd "/mnt/d/Data/Protosem/Multilingual_Call_Intelligence/backend"
 source pyannote-env/bin/activate
+python main.py
 python dev_run_sample_two_speakers.py
 
-python main.py
