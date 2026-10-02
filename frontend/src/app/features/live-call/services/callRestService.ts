@@ -6,6 +6,7 @@ import type {
   CallResponseDto,
   CallStatsResponseDto,
   CompleteCallRequestDto,
+  LiveTokenResponseDto,
   UtteranceRequestDto,
 } from '../types/dto'
 
@@ -60,6 +61,15 @@ export class CallRestService {
     return apiClient.post<CallAnalysisResponseDto>(
       `/api/v1/calls/${encodeURIComponent(callId)}/utterances`,
       request,
+    )
+  }
+
+  // A single-use, short-lived ticket for opening the call's live
+  // WebSocket, so the access token never appears in a URL.
+  createLiveToken(callId: string) {
+    return apiClient.post<LiveTokenResponseDto>(
+      `/api/v1/calls/${encodeURIComponent(callId)}/live-token`,
+      {},
     )
   }
 

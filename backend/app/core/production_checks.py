@@ -6,6 +6,8 @@ from app.core.config import Settings
 
 _UNSET = {"", "not_configured", "change-me-in-development"}
 MIN_SECRET_LENGTH = 32
+# Prefix of every placeholder in deploy/.env.production.example.
+PLACEHOLDER_PREFIX = "replace-with-"
 
 
 class UnsafeConfigurationError(RuntimeError):
@@ -45,6 +47,16 @@ def configuration_problems(settings: Settings) -> list[str]:
         problems.append(
             "CALL_MAPPING_STORE_PROVIDER must be redis when LIVE_STATE_STORE_PROVIDER is redis "
             "(several instances must share the telephony call mapping)."
+        )
+
+    placeholders = sorted(
+        name.upper()
+        for name, value in settings.model_dump().items()
+        if isinstance(value, str) and value.strip().lower().startswith(PLACEHOLDER_PREFIX)
+    )
+    if placeholders:
+        problems.append(
+            "These settings still hold example placeholders: " + ", ".join(placeholders) + "."
         )
 
     if settings.bootstrap_admin_password and len(settings.bootstrap_admin_password) < 12:

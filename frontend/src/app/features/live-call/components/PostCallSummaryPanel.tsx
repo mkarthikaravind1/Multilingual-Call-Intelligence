@@ -75,9 +75,7 @@ export function PostCallSummaryPanel({ state, summary }: PostCallSummaryPanelPro
         <SummaryStatus state={effectiveState === 'available' ? 'unavailable' : effectiveState} />
       ) : (
         <>
-          <p className="summary-text summary-text--lead">{summary.overallSummary}</p>
-
-          <div className="fact-grid spaced-top">
+          <div className="fact-grid">
             <div className="fact">
               <span>Sentiment</span>
               <div className="list-card__meta">
@@ -109,34 +107,16 @@ export function PostCallSummaryPanel({ state, summary }: PostCallSummaryPanelPro
             </div>
           </div>
 
-          <div className="summary-grid">
-            <div>
-              <p className="panel__label">Customer summary</p>
-              <p className="summary-callout">{summary.customerSummary}</p>
+          {summary.actionsPromised.length > 0 && (
+            <div className="spaced-top">
+              <p className="panel__label">Actions promised</p>
+              <ul className="bullet-list">
+                {summary.actionsPromised.map((action) => (
+                  <li key={action}>{action}</li>
+                ))}
+              </ul>
             </div>
-
-            {summary.unresolvedIssues.length > 0 && (
-              <div>
-                <p className="panel__label">Unresolved issues</p>
-                <ul className="bullet-list">
-                  {summary.unresolvedIssues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {summary.actionsPromised.length > 0 && (
-              <div>
-                <p className="panel__label">Actions promised</p>
-                <ul className="bullet-list">
-                  {summary.actionsPromised.map((action) => (
-                    <li key={action}>{action}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
+          )}
 
           {summary.complaints.length > 0 && (
             <div className="spaced-top">

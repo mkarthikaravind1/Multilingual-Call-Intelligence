@@ -33,6 +33,31 @@ class LiveCallHandler:
             return _error(call_id, LiveErrorCode.CALL_NOT_FOUND, str(exc))
         return None
 
+    def revision(self, call_id: str) -> str | None:
+        return self._workflow_service.live_revision(call_id)
+
+    def snapshot(self, call_id: str) -> LiveEvent:
+        """The call's current analysis, pushed when it changed elsewhere
+        (e.g. speech from the telephony stream). Never runs the AI providers."""
+        try:
+            conversation = self._call_service.get_call(call_id)
+            result = self._workflow_service.analyze_call(call_id)
+        except ConversationNotFoundError as exc:
+            return _error(call_id, LiveErrorCode.CALL_NOT_FOUND, str(exc))
+        except Exception:
+            logger.exception("Reading the live analysis failed for call %r", call_id)
+            return _error(
+                call_id,
+                LiveErrorCode.INTERNAL_ERROR,
+                "Could not refresh the analysis.",
+            )
+        latest = conversation.latest_utterance
+        analysis = to_analysis_response(call_id, result)
+        return LiveAnalysisEvent(
+            utterance_id="" if latest is None else latest.utterance_id,
+            **analysis.model_dump(),
+        )
+
     def handle(self, call_id: str, raw_message: str | None) -> LiveEvent:
         if raw_message is None:
             return _error(

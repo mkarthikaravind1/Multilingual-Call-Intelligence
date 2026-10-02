@@ -164,7 +164,12 @@ export function ComplaintLifecycleCard({
     }
   }
 
-  const lastNote = [...complaint.events].reverse().find((event) => event.note)
+  // Only notes people wrote: the system's own note ("the call ended before
+  // this complaint was resolved…") repeats the Needs follow-up badge, and
+  // stays visible in the history.
+  const lastNote = [...complaint.events]
+    .reverse()
+    .find((event) => event.note && event.actor !== 'system')
   const noteId = `complaint-note-${complaint.complaint_id.replace(/[^\w-]/g, '-')}`
 
   return (
@@ -176,61 +181,62 @@ export function ComplaintLifecycleCard({
         complaint.follow_up_required && complaint.is_open ? 'complaint-card--follow-up' : '',
       ].join(' ')}
     >
-      <div className="section-heading complaint-card__heading">
-        <div>
+      <div className="complaint-card__top">
+        <div className="complaint-card__title">
           <strong className="list-card__title">{complaint.category}</strong>
           {showCallLink && (
-            <div className="list-card__facts">
-              <span>
-                Call{' '}
-                <Link
-                  className="text-link"
-                  to={`/post-call-analysis?call_id=${encodeURIComponent(complaint.call_id)}`}
-                >
-                  {complaint.call_id}
-                </Link>
-              </span>
-            </div>
+            <span className="complaint-card__call">
+              Call{' '}
+              <Link
+                className="text-link"
+                to={`/post-call-analysis?call_id=${encodeURIComponent(complaint.call_id)}`}
+              >
+                {complaint.call_id}
+              </Link>
+            </span>
           )}
         </div>
-        <div className="list-card__meta">
-          {complaint.follow_up_required &&
-            complaint.is_open &&
-            complaint.status !== 'follow_up' && (
-            <span className="badge badge--warning">Needs follow-up</span>
+
+        <div className="complaint-card__actions">
+          {canAct && complaint.allowed_actions.length > 0 && pendingAction === null && (
+            <div className="button-row complaint-card__buttons">
+              {complaint.allowed_actions.map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  className={ACTIONS[action].primary ? 'button' : 'button button--secondary'}
+                  disabled={isSaving}
+                  onClick={() => {
+                    setError(null)
+                    setPendingAction(action)
+                  }}
+                >
+                  {ACTIONS[action].label}
+                </button>
+              ))}
+            </div>
           )}
-          <ComplaintStatusBadge status={complaint.status} />
+          <div className="list-card__meta">
+            {complaint.follow_up_required &&
+              complaint.is_open &&
+              complaint.status !== 'follow_up' && (
+              <span className="badge badge--warning">Needs follow-up</span>
+            )}
+            <ComplaintStatusBadge status={complaint.status} />
+          </div>
         </div>
       </div>
 
-      {!compact && <LifecycleTrack complaint={complaint} />}
-
-      <div className="list-card__facts">
-        <span>Detected: {formatRecordTimestamp(complaint.first_detected_at)}</span>
-        <span>Last change: {formatRecordTimestamp(complaint.last_updated_at)}</span>
-        {complaint.customer_id && <span>Customer: {complaint.customer_id}</span>}
+      <div className="complaint-card__progress">
+        {!compact && <LifecycleTrack complaint={complaint} />}
+        <div className="list-card__facts">
+          <span>Detected: {formatRecordTimestamp(complaint.first_detected_at)}</span>
+          <span>Last change: {formatRecordTimestamp(complaint.last_updated_at)}</span>
+          {complaint.customer_id && <span>Customer: {complaint.customer_id}</span>}
+        </div>
       </div>
 
       {lastNote && <p className="summary-delivery__message">{lastNote.note}</p>}
-
-      {canAct && complaint.allowed_actions.length > 0 && pendingAction === null && (
-        <div className="button-row">
-          {complaint.allowed_actions.map((action) => (
-            <button
-              key={action}
-              type="button"
-              className={ACTIONS[action].primary ? 'button' : 'button button--secondary'}
-              disabled={isSaving}
-              onClick={() => {
-                setError(null)
-                setPendingAction(action)
-              }}
-            >
-              {ACTIONS[action].label}
-            </button>
-          ))}
-        </div>
-      )}
 
       {canAct && pendingAction !== null && (
         <div className="escalation-card__resolve">

@@ -30,6 +30,9 @@ type EscalationCardProps = {
   // Supervisors and admins can acknowledge and resolve.
   canManage?: boolean
   showCallLink?: boolean
+  // Live view: whether the call is escalating and why, without the quoted
+  // transcript or the timeline.
+  compact?: boolean
   onUpdated?: (escalation: EscalationViewModel) => void
 }
 
@@ -38,6 +41,7 @@ export function EscalationCard({
   isCallActive = false,
   canManage = false,
   showCallLink = false,
+  compact = false,
   onUpdated,
 }: EscalationCardProps) {
   const [isResolving, setIsResolving] = useState(false)
@@ -48,7 +52,11 @@ export function EscalationCard({
   if (!escalation) {
     return (
       <section className="panel escalation-card escalation-card--calm">
-        <p className="panel__label">Escalation</p>
+        {compact ? (
+          <h4 className="live-call__panel-title">Escalation</h4>
+        ) : (
+          <p className="panel__label">Escalation</p>
+        )}
         <p className="customer-panel__muted">
           {isCallActive
             ? 'No signs of escalation so far.'
@@ -82,7 +90,11 @@ export function EscalationCard({
     >
       <div className="section-heading">
         <div>
-          <p className="panel__label">Escalation</p>
+          {compact ? (
+            <h4 className="live-call__panel-title">Escalation</h4>
+          ) : (
+            <p className="panel__label">Escalation</p>
+          )}
           {showCallLink ? (
             <Link
               className="text-link escalation-card__call"
@@ -104,27 +116,29 @@ export function EscalationCard({
         {escalation.signals.map((signal) => (
           <li key={signal.type}>
             <strong>{signal.description}</strong>
-            {signal.evidence && <q>{signal.evidence}</q>}
+            {!compact && signal.evidence && <q>{signal.evidence}</q>}
           </li>
         ))}
       </ul>
 
-      <div className="list-card__facts">
-        <span>Detected: {formatRecordTimestamp(escalation.firstDetectedAt)}</span>
-        {escalation.acknowledgedBy && escalation.acknowledgedAt !== null && (
-          <span>
-            Acknowledged by {escalation.acknowledgedBy},{' '}
-            {formatRecordTimestamp(escalation.acknowledgedAt)}
-          </span>
-        )}
-        {escalation.resolvedBy && escalation.resolvedAt !== null && (
-          <span>
-            Resolved by {escalation.resolvedBy}, {formatRecordTimestamp(escalation.resolvedAt)}
-          </span>
-        )}
-      </div>
+      {!compact && (
+        <div className="list-card__facts">
+          <span>Detected: {formatRecordTimestamp(escalation.firstDetectedAt)}</span>
+          {escalation.acknowledgedBy && escalation.acknowledgedAt !== null && (
+            <span>
+              Acknowledged by {escalation.acknowledgedBy},{' '}
+              {formatRecordTimestamp(escalation.acknowledgedAt)}
+            </span>
+          )}
+          {escalation.resolvedBy && escalation.resolvedAt !== null && (
+            <span>
+              Resolved by {escalation.resolvedBy}, {formatRecordTimestamp(escalation.resolvedAt)}
+            </span>
+          )}
+        </div>
+      )}
 
-      {escalation.resolutionNote && <p className="summary-delivery__message">{escalation.resolutionNote}</p>}
+      {!compact && escalation.resolutionNote && <p className="summary-delivery__message">{escalation.resolutionNote}</p>}
 
       {canManage && !isResolved && !isResolving && (
         <div className="button-row">

@@ -46,6 +46,8 @@ class ApiServices:
     complaint_lifecycle_service: ComplaintLifecycleService | None = None
     emerging_complaint_service: EmergingComplaintService | None = None
     live_state_store: LiveStateStore | None = None
+    # How often an open live-call WebSocket checks for new analysis to push.
+    live_call_push_interval_seconds: float = 0.5
     post_call_repair_service: PostCallRepairService | None = None
     user_management_service: UserManagementService | None = None
     background_jobs: BackgroundJobRunner | None = None

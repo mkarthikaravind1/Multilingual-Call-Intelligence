@@ -29,13 +29,17 @@ import time
 
 from app.domain.user import User, UserRole
 from app.security.jwt import create_access_token
-from app import services
+from app.security.stream_token import create_live_call_ticket
 
 CALL_ID = "call-1"
+USER_ID = "test-icr"
 LIVE_URL = f"/api/v1/calls/{CALL_ID}/live"
 
-def _live_url(token: str) -> str:
-    return f"{LIVE_URL}?token={token}"
+
+def _live_url(_: str | None = None, user_id: str = USER_ID, call_id: str = CALL_ID) -> str:
+    """A live URL carrying a fresh single-use ticket (never the access token)."""
+    ticket = create_live_call_ticket(user_id, call_id).token
+    return f"/api/v1/calls/{call_id}/live?ticket={ticket}"
 
 _TURNAROUND = ComplaintDetectionResult(
     "Turnaround Time", 0.93, "The vehicle was supposed to be ready yesterday."
@@ -82,6 +86,9 @@ class SpyWorkflowService(CallWorkflowService):
         self._fail_first = fail_first
         self.received: list[tuple[str, Utterance]] = []
 
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
     def process_utterance(self, call_id: str, utterance: Utterance) -> CallAnalysisResult:
         self.received.append((call_id, utterance))
         if self._fail_first is not None:
@@ -110,11 +117,14 @@ def _setup(
         ApiServices(
             call_service=api_services.call_service,
             workflow_service=spy,
+            user_repository=api_services.user_repository,
+            live_state_store=api_services.live_state_store,
+            live_call_push_interval_seconds=0.02,
         )
     )
 
     user = User(
-        user_id="test-icr",
+        user_id=USER_ID,
         email="test-icr@example.com",
         password_hash="test-password-hash",
         role=UserRole.ICR,
@@ -365,3 +375,241 @@ def test_websocket_is_only_available_under_api_v1():
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect(f"/calls/{CALL_ID}/live"):
             pass
+
+# ---- Authentication: single-use live-call tickets ----
+
+
+def _expect_auth_close(client: TestClient, url: str) -> None:
+    with client.websocket_connect(url) as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    assert closed.value.code == 4401
+
+
+def test_ticket_endpoint_issues_a_short_lived_ticket():
+    client, _, _ = _setup()
+
+    response = client.post(f"/api/v1/calls/{CALL_ID}/live-token")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token"] and 0 < body["expires_in"] <= 300
+    with client.websocket_connect(f"{LIVE_URL}?ticket={body['token']}") as ws:
+        ws.send_json(_message())
+        assert ws.receive_json()["type"] == "analysis"
+
+
+def test_ticket_endpoint_requires_a_signed_in_user_and_a_known_call():
+    client, _, _ = _setup()
+
+    assert TestClient(client.app).post(f"/api/v1/calls/{CALL_ID}/live-token").status_code == 401
+    assert client.post("/api/v1/calls/unknown/live-token").status_code == 404
+
+
+def test_connection_without_a_ticket_is_refused():
+    client, spy, _ = _setup()
+
+    _expect_auth_close(client, LIVE_URL)
+    assert spy.received == []
+
+
+def test_access_token_in_the_url_is_refused():
+    client, _, token = _setup()
+
+    _expect_auth_close(client, f"{LIVE_URL}?token={token}")
+    _expect_auth_close(client, f"{LIVE_URL}?ticket={token}")
+
+
+@pytest.mark.parametrize("ticket", ["garbage", "a.b.c", ""])
+def test_invalid_ticket_is_refused(ticket):
+    client, _, _ = _setup()
+
+    _expect_auth_close(client, f"{LIVE_URL}?ticket={ticket}")
+
+
+def test_ticket_signed_with_another_key_is_refused():
+    import jwt
+
+    client, _, _ = _setup()
+    forged = jwt.encode(
+        {
+            "sub": USER_ID,
+            "call_id": CALL_ID,
+            "purpose": "live_call_ws",
+            "jti": "x",
+            "exp": int(time.time()) + 60,
+        },
+        "some-other-secret-key-that-is-long-enough",
+        algorithm="HS256",
+    )
+
+    _expect_auth_close(client, f"{LIVE_URL}?ticket={forged}")
+
+
+def test_expired_ticket_is_refused():
+    import jwt
+
+    from app.core.config import get_settings
+
+    client, _, _ = _setup()
+    expired = jwt.encode(
+        {
+            "sub": USER_ID,
+            "call_id": CALL_ID,
+            "purpose": "live_call_ws",
+            "jti": "expired",
+            "iat": int(time.time()) - 120,
+            "exp": int(time.time()) - 60,
+        },
+        get_settings().auth_secret_key,
+        algorithm="HS256",
+    )
+
+    _expect_auth_close(client, f"{LIVE_URL}?ticket={expired}")
+
+
+def test_ticket_for_another_call_is_refused():
+    client, _, _ = _setup()
+    other_call_ticket = create_live_call_ticket(USER_ID, "call-2").token
+
+    _expect_auth_close(client, f"{LIVE_URL}?ticket={other_call_ticket}")
+
+
+def test_ticket_for_an_unknown_or_inactive_user_is_refused():
+    import dataclasses
+
+    client, _, _ = _setup()
+    _expect_auth_close(client, _live_url(user_id="someone-else"))
+
+    repository = client.app.state.services.user_repository
+    repository.save(dataclasses.replace(repository.get_by_id(USER_ID), is_active=False))
+    _expect_auth_close(client, _live_url())
+
+
+def test_ticket_is_single_use():
+    client, _, _ = _setup()
+    url = _live_url()
+
+    with client.websocket_connect(url) as ws:
+        ws.send_json(_message())
+        assert ws.receive_json()["type"] == "analysis"
+
+    _expect_auth_close(client, url)
+
+
+def test_ticket_is_not_accepted_as_an_access_token():
+    client, _, _ = _setup()
+    ticket = create_live_call_ticket(USER_ID, CALL_ID).token
+
+    response = TestClient(client.app).get(
+        f"/api/v1/calls/{CALL_ID}", headers={"Authorization": f"Bearer {ticket}"}
+    )
+
+    assert response.status_code == 401
+
+
+def _receive_until_analysed(ws, limit: int = 5) -> dict:
+    """Speech is pushed as soon as it is stored, and again once analysed."""
+    for _ in range(limit):
+        event = ws.receive_json()
+        if event.get("sentiment") is not None:
+            return event
+    raise AssertionError("no analysed event was pushed")
+
+
+# ---- Server push ----
+
+
+def test_speech_processed_elsewhere_is_pushed_to_the_socket():
+    client, _, _ = _setup([_TURNAROUND])
+
+    with client.websocket_connect(_live_url()) as ws:
+        # e.g. the telephony stream, or another API instance.
+        assert client.post(
+            f"/api/v1/calls/{CALL_ID}/utterances",
+            json={k: v for k, v in _message().items() if k != "type"},
+        ).status_code == 200
+        event = _receive_until_analysed(ws)
+
+    assert event["type"] == "analysis"
+    assert event["utterance_id"] == "1"
+    assert event["sentiment"]["label"] == "NEGATIVE"
+    assert event["question_suggestion"]["target_category"] == "Turnaround Time"
+
+
+def test_completion_is_pushed_to_the_socket():
+    client, _, _ = _setup()
+    client.post(
+        f"/api/v1/calls/{CALL_ID}/utterances",
+        json={k: v for k, v in _message().items() if k != "type"},
+    )
+
+    with client.websocket_connect(_live_url()) as ws:
+        assert client.post(
+            f"/api/v1/calls/{CALL_ID}/complete", json={"end_time": 99.0}
+        ).status_code == 200
+        event = ws.receive_json()
+
+    assert event["type"] == "analysis"
+    assert event["post_call_summary"] is not None
+
+
+def test_socket_on_one_instance_receives_speech_processed_on_another():
+    from app.services.in_memory_conversation_coverage_repository import (
+        InMemoryConversationCoverageRepository,
+    )
+    from app.services.in_memory_conversation_repository import (
+        InMemoryConversationRepository,
+    )
+    from app.domain.user_repository import InMemoryUserRepository
+    from app.services.live_state_store import InMemoryLiveStateStore
+
+    # What instances share in production: the database and Redis.
+    shared = dict(
+        conversation_repository=InMemoryConversationRepository(),
+        coverage_repository=InMemoryConversationCoverageRepository(),
+        user_repository=InMemoryUserRepository(),
+        live_state_store=InMemoryLiveStateStore(),
+    )
+
+    def instance():
+        services = build_api_services(
+            complaint_provider=FakeComplaintProvider([_TURNAROUND]),
+            sentiment_provider=FakeSentimentProvider(),
+            question_provider=FakeQuestionProvider(),
+            **shared,
+        )
+        import dataclasses
+
+        return create_app(dataclasses.replace(services, live_call_push_interval_seconds=0.02))
+
+    app_a, app_b = instance(), instance()
+    user = User(
+        user_id=USER_ID,
+        email="icr@example.com",
+        password_hash="x",
+        role=UserRole.ICR,
+        is_active=True,
+        created_at=time.time(),
+    )
+    shared["user_repository"].save(user)
+    headers = {"Authorization": f"Bearer {create_access_token(user)}"}
+    client_a = TestClient(app_a, headers=headers)
+    client_b = TestClient(app_b, headers=headers)
+    assert client_a.post("/api/v1/calls", json={"call_id": CALL_ID}).status_code == 201
+
+    # The browser gets its ticket from one instance and connects to the other.
+    ticket = client_a.post(f"/api/v1/calls/{CALL_ID}/live-token").json()["token"]
+    with client_b.websocket_connect(f"{LIVE_URL}?ticket={ticket}") as ws:
+        client_a.post(
+            f"/api/v1/calls/{CALL_ID}/utterances",
+            json={k: v for k, v in _message().items() if k != "type"},
+        )
+        event = _receive_until_analysed(ws)
+
+    assert event["sentiment"]["label"] == "NEGATIVE"
+    assert event["question_suggestion"]["target_category"] == "Turnaround Time"
+    # And plain polling on instance B sees the same live analysis.
+    polled = client_b.get(f"/api/v1/calls/{CALL_ID}/analysis").json()
+    assert polled["sentiment"] == event["sentiment"]
+    assert polled["question_suggestion"] == event["question_suggestion"]

@@ -1,0 +1,5 @@
+# Development and test dependencies: the API runtime plus the test runner.
+# Enough for the whole backend test suite (the diarization tests fake the
+# pyannote/torch stack). CI installs this file.
+-r requirements-api.txt
+pytest==9.1.1

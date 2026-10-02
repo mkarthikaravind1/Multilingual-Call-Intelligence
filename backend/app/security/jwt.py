@@ -27,6 +27,11 @@ def create_access_token(user: User, settings: Settings | None = None) -> str:
 def decode_access_token(token: str, settings: Settings | None = None) -> dict:
     settings = settings or get_settings()
     try:
-        return jwt.decode(token, settings.auth_secret_key, algorithms=[_ALGORITHM])
+        payload = jwt.decode(token, settings.auth_secret_key, algorithms=[_ALGORITHM])
     except jwt.PyJWTError as exc:
         raise TokenError("Invalid or expired token.") from exc
+    # Purpose-bound tokens (stream tokens, live-call tickets) share the
+    # signing key but must never authenticate as a user session.
+    if "purpose" in payload:
+        raise TokenError("Invalid or expired token.")
+    return payload

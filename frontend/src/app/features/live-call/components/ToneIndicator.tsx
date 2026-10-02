@@ -7,10 +7,13 @@ import type {
 
 type ToneIndicatorProps = {
   sentiment: SentimentViewModel | null
+  // Names the panel in its heading (for pages that hide the small labels).
+  compact?: boolean
 }
 
 export function ToneIndicator({
   sentiment,
+  compact = false,
 }: ToneIndicatorProps) {
   const tone = sentiment ? sentimentTone(sentiment.label) : 'neutral'
 
@@ -21,6 +24,7 @@ export function ToneIndicator({
       </p>
 
       <h4 className="live-call__metric-title">
+        {compact && 'Customer tone: '}
         {sentiment
           ? humanizeLabel(sentiment.label)
           : 'Not available yet'}

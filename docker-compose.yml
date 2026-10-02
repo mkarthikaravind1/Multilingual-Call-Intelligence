@@ -1,14 +1,29 @@
+# LOCAL DEVELOPMENT ONLY: PostgreSQL (and optionally Redis) for running the
+# backend on your machine. The default credentials below are deliberately
+# simple and match .env.example; override them with POSTGRES_USER,
+# POSTGRES_PASSWORD and POSTGRES_DB in the root .env or your shell.
+#
+#   docker compose up -d postgres            # database only
+#   docker compose up -d postgres redis      # + Redis (multi-instance live state)
+#
+# Production uses deploy/docker-compose.prod.yml, which has no default
+# password and requires secrets from deploy/.env.production.
 services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: multilingual_call_intelligence
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-multilingual_call_intelligence}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
 
 volumes:
   postgres_data:

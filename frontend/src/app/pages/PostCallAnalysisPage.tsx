@@ -24,8 +24,6 @@ import {
   callRestService,
 } from '../features/live-call/services/callRestService'
 
-import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
-import { NextQuestionPanel } from '../features/live-call/components/NextQuestionPanel'
 import {
   PostCallSummaryPanel,
   type PostCallSummaryState,
@@ -261,9 +259,14 @@ export function PostCallAnalysisPage() {
         <>
           <div className="panel">
             <div className="section-heading">
-              <div>
-                <p className="panel__label">Call</p>
+              <div className="post-call__call-line">
                 <h3 className="section-title">{call.callId}</h3>
+                <span>
+                  Duration: <strong>{formatCallDuration(call.startTime, call.endTime)}</strong>
+                </span>
+                <span>
+                  Utterances: <strong>{call.utteranceCount}</strong>
+                </span>
               </div>
 
               <div className="button-row">
@@ -278,17 +281,6 @@ export function PostCallAnalysisPage() {
                     {isCompleting ? 'Completing…' : 'Complete call'}
                   </button>
                 )}
-              </div>
-            </div>
-
-            <div className="fact-grid">
-              <div className="fact">
-                <span>Duration</span>
-                <strong>{formatCallDuration(call.startTime, call.endTime)}</strong>
-              </div>
-              <div className="fact">
-                <span>Utterances</span>
-                <strong>{call.utteranceCount}</strong>
               </div>
             </div>
           </div>
@@ -350,16 +342,7 @@ export function PostCallAnalysisPage() {
                   }
                 />
               </section>
-              <ComplaintPanel complaints={analysis.complaints} />
               <ToneIndicator sentiment={analysis.sentiment} />
-              <NextQuestionPanel
-                suggestion={analysis.questionSuggestion}
-                emptyMessage={
-                  isActiveCall
-                    ? undefined
-                    : 'Next-question suggestions are only generated while a call is active.'
-                }
-              />
             </aside>
           </div>
 

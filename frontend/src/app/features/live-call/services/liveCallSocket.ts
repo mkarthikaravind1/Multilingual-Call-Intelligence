@@ -1,4 +1,5 @@
-import { authService } from '../../../auth/AuthService'
+import { ApiError } from '../../../api/errors'
+import { callRestService } from './callRestService'
 
 import type {
   LiveAnalysisEventDto,
@@ -9,9 +10,16 @@ import type {
 const DEFAULT_API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
+// Reconnects back off exponentially (with jitter) up to this cap and keep
+// trying for as long as the call is open; the page polls meanwhile.
 const RECONNECT_BASE_DELAY_MS = 1000
-const RECONNECT_MAX_DELAY_MS = 10000
-const MAX_RECONNECT_ATTEMPTS = 5
+const RECONNECT_MAX_DELAY_MS = 30000
+
+const AUTH_FAILED_CLOSE_CODE = 4401
+const CALL_NOT_FOUND_CLOSE_CODE = 4404
+// A ticket is single-use and short-lived, so one rejected ticket is retried
+// with a fresh one; repeated rejections mean the user may no longer connect.
+const MAX_CONSECUTIVE_AUTH_FAILURES = 2
 
 export type LiveSocketStatus =
   | 'disconnected'
@@ -79,8 +87,11 @@ export class LiveCallSocket {
   private handlers: LiveCallSocketHandlers | null = null
   private reconnectTimer: number | null = null
   private reconnectAttempts = 0
-  private manuallyClosed = false
+  private authFailures = 0
   private terminal = false
+  // Increases on every connect/disconnect, so a ticket request that
+  // resolves after the call was closed or switched is ignored.
+  private generation = 0
 
   connect(
     callId: string,
@@ -90,11 +101,11 @@ export class LiveCallSocket {
 
     this.callId = callId
     this.handlers = handlers
-    this.manuallyClosed = false
     this.terminal = false
     this.reconnectAttempts = 0
+    this.authFailures = 0
 
-    this.openSocket(false)
+    void this.openSocket(false)
   }
 
   sendUtterance(
@@ -113,7 +124,7 @@ export class LiveCallSocket {
   }
 
   disconnect() {
-    this.manuallyClosed = true
+    this.generation += 1
     this.terminal = true
 
     this.clearReconnectTimer()
@@ -131,17 +142,11 @@ export class LiveCallSocket {
     this.handlers = null
   }
 
-  private openSocket(isReconnect: boolean) {
+  private async openSocket(isReconnect: boolean) {
     const callId = this.callId
-    const token = authService.getAccessToken()
+    const generation = this.generation
 
-    if (
-      !callId ||
-      !token ||
-      this.manuallyClosed ||
-      this.terminal
-    ) {
-      this.handlers?.onStatusChange('error')
+    if (!callId || this.terminal) {
       return
     }
 
@@ -151,13 +156,39 @@ export class LiveCallSocket {
         : 'connecting',
     )
 
+    let ticket: string
+
+    try {
+      ticket = (await callRestService.createLiveToken(callId)).token
+    } catch (error) {
+      if (generation !== this.generation) {
+        return
+      }
+
+      if (
+        error instanceof ApiError &&
+        [401, 403, 404].includes(error.status)
+      ) {
+        // Signed out, not allowed, or no such call: retrying cannot help.
+        this.fail(callId, error.message)
+        return
+      }
+
+      this.scheduleReconnect()
+      return
+    }
+
+    if (generation !== this.generation) {
+      return
+    }
+
     const baseUrl =
       toWebSocketBaseUrl(DEFAULT_API_BASE_URL)
 
     const url =
       `${baseUrl}/api/v1/calls/` +
       `${encodeURIComponent(callId)}/live` +
-      `?token=${encodeURIComponent(token)}`
+      `?ticket=${encodeURIComponent(ticket)}`
 
     const socket = new WebSocket(url)
 
@@ -169,11 +200,12 @@ export class LiveCallSocket {
     }
 
     socket.onmessage = (event) => {
+      this.authFailures = 0
       this.handleMessage(event.data)
     }
 
     socket.onerror = () => {
-      this.handlers?.onStatusChange('error')
+      // onclose follows and decides whether to reconnect.
     }
 
     socket.onclose = (event) => {
@@ -182,37 +214,49 @@ export class LiveCallSocket {
       }
 
       if (
-        this.manuallyClosed ||
-        this.terminal
+        this.terminal ||
+        generation !== this.generation
       ) {
         return
       }
 
-      if (event.code === 4404) {
+      if (event.code === CALL_NOT_FOUND_CLOSE_CODE) {
         this.terminal = true
         this.handlers?.onStatusChange('error')
         return
       }
 
-      if (event.code === 4401) {
-        this.terminal = true
-        this.handlers?.onError({
-          type: 'error',
-          code: 'internal_error',
-          call_id: callId ?? '',
-          message: 'Could not validate credentials.',
-        })
-        this.handlers?.onStatusChange('error')
-        return
+      if (event.code !== AUTH_FAILED_CLOSE_CODE) {
+        this.authFailures = 0
+      } else {
+        this.authFailures += 1
+
+        if (
+          this.authFailures >=
+          MAX_CONSECUTIVE_AUTH_FAILURES
+        ) {
+          this.fail(callId, 'Could not validate credentials.')
+          return
+        }
       }
 
       this.scheduleReconnect()
     }
   }
 
+  private fail(callId: string, message: string) {
+    this.terminal = true
+    this.handlers?.onError({
+      type: 'error',
+      code: 'internal_error',
+      call_id: callId,
+      message,
+    })
+    this.handlers?.onStatusChange('error')
+  }
+
   private handleMessage(rawData: unknown) {
     if (typeof rawData !== 'string') {
-      this.handlers?.onStatusChange('error')
       return
     }
 
@@ -221,7 +265,6 @@ export class LiveCallSocket {
     try {
       payload = JSON.parse(rawData)
     } catch {
-      this.handlers?.onStatusChange('error')
       return
     }
 
@@ -236,27 +279,20 @@ export class LiveCallSocket {
       if (payload.code === 'call_not_found') {
         this.terminal = true
       }
-
-      return
     }
-
-    this.handlers?.onStatusChange('error')
   }
 
   private scheduleReconnect() {
-    if (
-      this.reconnectAttempts >=
-      MAX_RECONNECT_ATTEMPTS
-    ) {
-      this.handlers?.onStatusChange('error')
-      return
-    }
-
     const delay = Math.min(
       RECONNECT_BASE_DELAY_MS *
         2 ** this.reconnectAttempts,
       RECONNECT_MAX_DELAY_MS,
     )
+
+    // Jitter keeps many browsers from reconnecting in lockstep after an
+    // API restart.
+    const jitteredDelay =
+      delay * (0.8 + Math.random() * 0.4)
 
     this.reconnectAttempts += 1
 
@@ -269,8 +305,8 @@ export class LiveCallSocket {
     this.reconnectTimer =
       window.setTimeout(() => {
         this.reconnectTimer = null
-        this.openSocket(true)
-      }, delay)
+        void this.openSocket(true)
+      }, jitteredDelay)
   }
 
   private clearReconnectTimer() {

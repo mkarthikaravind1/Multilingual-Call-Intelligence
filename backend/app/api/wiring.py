@@ -114,6 +114,7 @@ from app.composition.providers import create_live_state_store
 from app.domain.conversation import ConversationStatus
 from app.observability.metrics import REGISTRY, Gauge
 from app.services.background_jobs import BackgroundJobRunner, PeriodicJob
+from app.services.live_analysis_scheduler import LiveAnalysisScheduler
 from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
 from app.services.post_call_repair_service import PostCallRepairService
 from app.services.user_management_service import UserManagementService
@@ -249,6 +250,7 @@ def build_api_services(
         coverage_repository,
         max_calls=settings.emerging_complaint_discovery_max_calls,
         store=live_state_store,
+        min_interval_seconds=settings.emerging_complaint_discovery_min_interval_seconds,
     )
 
     try:
@@ -302,6 +304,8 @@ def build_api_services(
         customer_id_resolver=call_customer_service.resolve_customer_id,
         emerging_complaint_service=emerging_complaint_service,
         emerging_complaint_auto_discovery=settings.emerging_complaint_auto_discovery,
+        live_state_store=live_state_store,
+        live_analysis_ttl_seconds=settings.live_analysis_ttl_seconds,
     )
 
     # --- Post-call repair ---
@@ -368,7 +372,10 @@ def build_api_services(
     if asr_provider is not None and language_provider is not None:
         try:
             live_chunk_processing_service = build_live_chunk_processing_service(
-                workflow_service=workflow_service,
+                # Speech is stored and shown as soon as it is transcribed;
+                # the AI analysis follows in the background (see
+                # LiveAnalysisScheduler), so it never delays the next chunk.
+                workflow_service=LiveAnalysisScheduler(workflow_service),
                 diarization_segments=(),
                 settings=settings,
                 asr_provider=asr_provider,
@@ -417,6 +424,7 @@ def build_api_services(
         complaint_lifecycle_service=complaint_lifecycle_service,
         emerging_complaint_service=emerging_complaint_service,
         live_state_store=live_state_store,
+        live_call_push_interval_seconds=settings.live_call_push_interval_seconds,
         post_call_repair_service=post_call_repair_service,
         user_management_service=user_management_service,
         background_jobs=background_jobs,

@@ -14,12 +14,25 @@ through `web`, so one public host name serves everything.
 
 ## First deployment
 
+Run these from the repository root:
+
 ```bash
 cp deploy/.env.production.example deploy/.env.production
-# Fill in POSTGRES_PASSWORD, AUTH_SECRET_KEY, CORS_ALLOWED_ORIGINS,
-# BOOTSTRAP_ADMIN_EMAIL/PASSWORD and your provider keys.
+# Replace every "replace-with-..." value: POSTGRES_PASSWORD, AUTH_SECRET_KEY,
+# CORS_ALLOWED_ORIGINS, BOOTSTRAP_ADMIN_EMAIL/PASSWORD and your provider keys.
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production config --quiet
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
 ```
+
+`deploy/.env.production` is git-ignored; only the example (placeholders) is
+committed. The file is used twice: `--env-file` fills in the compose file's
+own variables (`POSTGRES_*`, `WEB_PORT`, `INSTALL_DIARIZATION`), and the
+backend service loads it as its environment (`env_file`). The compose file
+itself sets `APP_ENV=production`, `DATABASE_URL`, `REDIS_URL` and the Redis
+store providers, so those need not be in the file.
+
+The root `docker-compose.yml` is for local development only (a database
+with a default password); never use it in production.
 
 - **Migrations** run automatically when the backend container starts
   (`alembic upgrade head`). Set `RUN_MIGRATIONS=false` to run them yourself.
@@ -39,7 +52,8 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.producti
 With `APP_ENV=production` the API refuses to start on unsafe settings (weak
 `AUTH_SECRET_KEY`, missing database, wildcard CORS, telephony without
 webhook signatures or stream tokens, a Redis live-state store with an
-in-memory call mapping) and lists what to fix.
+in-memory call mapping, any `replace-with-...` placeholder left from the
+example file) and lists what to fix.
 
 ## Plivo
 
@@ -60,10 +74,31 @@ stream endpoint refuses connections without it.
 Run **one uvicorn worker per container** and scale by adding backend
 containers. Everything that must be shared between instances is:
 
-- persistent data in PostgreSQL;
-- open media streams, speaker roles, job locks and job status in Redis
-  (`LIVE_STATE_STORE_PROVIDER=redis`);
+- persistent data in PostgreSQL (calls, transcripts, complaint coverage,
+  escalations, summaries, learning data);
+- in Redis (`LIVE_STATE_STORE_PROVIDER=redis`): open media streams, speaker
+  roles, job locks and job status, and each active call's latest live
+  analysis (sentiment, next-question suggestion, service estimate) with a
+  revision number. The live analysis expires after
+  `LIVE_ANALYSIS_TTL_SECONDS` without new speech (default 4 hours) and is
+  dropped when the call completes; transcripts and audio are never put in
+  Redis;
 - the Plivo call mapping in Redis (`CALL_MAPPING_STORE_PROVIDER=redis`).
+
+So a browser's poll or WebSocket can land on any instance and still see the
+analysis produced by the instance that processed the speech. Each open
+live-call WebSocket checks the call's revision in Redis every
+`LIVE_CALL_PUSH_INTERVAL_SECONDS` (one small `GET`) and pushes the new
+analysis when it changes. If Redis is briefly unavailable, calls continue
+and reads fall back to what PostgreSQL holds (coverage and escalations,
+without the live sentiment/suggestion) until it is back.
+
+Browser live-call WebSockets do not carry the access token in the URL. The
+web app first calls `POST /api/v1/calls/{call_id}/live-token` (with the
+normal `Authorization` header) and connects with the returned ticket, which
+is bound to the user and the call, expires after
+`LIVE_CALL_WS_TOKEN_TTL_SECONDS` (default 60) and works once (enforced
+through Redis across instances).
 
 A status webhook that lands on a different instance than the call's media
 stream waits (up to 30 s) for that stream to finish its final audio before
@@ -76,7 +111,13 @@ a call (the bundled nginx allows 3 hours).
 ## Post-call repair
 
 Post-call processing (summary, complaint close-out, customer message,
-emerging-complaint discovery) normally runs right after a call ends. If it
+emerging-complaint discovery) normally runs right after a call ends.
+Emerging-complaint discovery runs in the background, never blocks call
+completion, starts at most every
+`EMERGING_COMPLAINT_DISCOVERY_MIN_INTERVAL_SECONDS` (default 300), runs on
+one instance at a time, reads at most `EMERGING_COMPLAINT_DISCOVERY_MAX_CALLS`
+recent calls, and is skipped when no completed call changed since the last
+run, so an LLM discovery provider is not asked the same question twice. If it
 doesn't finish (a crash, a provider outage), the repair sweep retries it:
 
 - every `POST_CALL_REPAIR_INTERVAL_SECONDS` (default 300; `0` disables it),

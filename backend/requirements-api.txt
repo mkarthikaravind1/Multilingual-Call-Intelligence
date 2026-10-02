@@ -1,6 +1,7 @@
 # Runtime dependencies of the API server (what the Docker image installs).
-# The ML stack for local speaker diarization (pyannote/torch) lives in the
-# root requirements.txt and is only needed with DIARIZATION_PROVIDER=pyannote.
+# The ML stack for local speaker diarization (pyannote/torch) lives in
+# requirements-diarization.txt and is only needed with
+# DIARIZATION_PROVIDER=pyannote. Tests: requirements-dev.txt.
 fastapi==0.141.1
 starlette==1.7.0
 uvicorn==0.54.0

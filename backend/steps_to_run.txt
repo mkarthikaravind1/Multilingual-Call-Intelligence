@@ -1,3 +1,33 @@
+Quick reference for running the backend locally. See README.md for the full guide.
+
+Paths are relative to the repository root (Multilingual-Call-Intelligence/).
+Use Python 3.12: the telephony audio path needs the stdlib audioop module,
+which Python 3.13 removed. On Windows, run these inside WSL (Ubuntu).
+
+1. Configure (once)
+   cp .env.example .env              # then fill in your keys
+   docker compose up -d postgres     # local development database
+
+2. Install (once)
+   cd backend
+   python3.12 -m venv .venv
+   source .venv/bin/activate         # Windows PowerShell: .venv\Scripts\Activate.ps1
+   pip install -r requirements-dev.txt
+   # Only for local speaker diarization (DIARIZATION_PROVIDER=pyannote; large download):
+   pip install -r requirements-diarization.txt
+
+3. Create the database schema
+   alembic upgrade head
+
+4. Run the API (http://localhost:8000, docs at /docs)
+   python main.py
+
+5. Run the tests
+   python -m pytest
+
+Optional: run the sample two-speaker audio through the pipeline
+   python dev_run_sample_two_speakers.py
+
 cd "/mnt/d/Data/Protosem/Multilingual_Call_Intelligence/backend"
 python3.12 -m venv pyannote-env
 source pyannote-env/bin/activate
@@ -8,4 +38,3 @@ cd "/mnt/d/Data/Protosem/Multilingual_Call_Intelligence/backend"
 source pyannote-env/bin/activate
 python main.py
 python dev_run_sample_two_speakers.py
-

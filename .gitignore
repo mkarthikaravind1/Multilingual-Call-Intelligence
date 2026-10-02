@@ -1,31 +1,10 @@
-# Environment variables (never commit real secrets)
+# Environment files hold secrets: never commit them. Only the examples,
+# which contain placeholders, are tracked.
 .env
-.env.example
-
-# Python virtual environment
-.venv/
-
-# Python cache
-__pycache__/
-*.pyc
-
-# Node dependencies
-node_modules/
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-ToDoInFuture.txt
-sample_chunk_00.wav
-sample_chunk_01.wav
-sample_chunk_02.wav
-sample_two_speakers.wav
-Old.wav
-
-# ZIP archives
-*.zip
+.env.*
+!.env.example
+deploy/.env.production
+!deploy/.env.production.example
 
 # Python virtual environments
 .venv/
@@ -33,17 +12,34 @@ venv/
 env/
 backend/pyannote-env/
 
-# Python cache
+# Python cache and tooling
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Environment variables
-.env
-.env.*
+# Node dependencies
+node_modules/
+secrets.txt
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Build artifacts
 build/
 dist/
 *.egg-info/
-# Filled-in production settings
-deploy/.env.production
+
+# ZIP archives
+*.zip
+
+# Local notes and sample audio
+ToDoInFuture.txt
+sample_chunk_00.wav
+sample_chunk_01.wav
+sample_chunk_02.wav
+sample_two_speakers.wav
+Old.wav

@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom'
 
 import { toUserErrorMessage } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
-import { CustomerPanel } from '../features/customer/components/CustomerPanel'
 import { EscalationCard } from '../features/escalation/components/EscalationCard'
 import { useAuth } from '../auth/useAuth'
 import type { EscalationViewModel } from '../features/escalation/types/view-models'
@@ -11,7 +10,7 @@ import { callRestService } from '../features/live-call/services/callRestService'
 import { CallHeader } from '../features/live-call/components/CallHeader'
 import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
 import { NextQuestionPanel } from '../features/live-call/components/NextQuestionPanel'
-import { OtherFeaturesPanel } from '../features/live-call/components/OtherFeaturesPanel'
+import { ServiceEstimatePanel } from '../features/live-call/components/ServiceEstimatePanel'
 import { ToneIndicator } from '../features/live-call/components/ToneIndicator'
 import { TranscriptPanel } from '../features/live-call/components/TranscriptPanel'
 import { useLiveCall } from '../features/live-call/hooks/useLiveCall'
@@ -103,9 +102,10 @@ export function LiveCallPage() {
         onCompleteCall={() => {
           void liveCall.completeCall()
         }}
-      />
+      >
+        {canManageEscalations && <TestAudioPanel replay={testAudio} />}
+      </CallHeader>
 
-      {canManageEscalations && <TestAudioPanel replay={testAudio} />}
 
       {liveCall.error && (
         <div
@@ -157,7 +157,7 @@ export function LiveCallPage() {
 
       {callId && liveCall.call && (
         <>
-          <div className="live-call__workspace-grid">
+          <div className="live-call__workspace-grid live-call__workspace-grid--live">
             <div className="live-call__main-column">
               <TranscriptPanel
                 transcript={liveCall.transcript}
@@ -165,19 +165,6 @@ export function LiveCallPage() {
             </div>
 
             <aside className="live-call__side-column">
-              <EscalationCard
-                key={callId}
-                escalation={newestEscalation(
-                  liveCall.analysis?.escalation ?? null,
-                  savedEscalation?.callId === callId ? savedEscalation : null,
-                )}
-                isCallActive={liveCall.call.status.toLowerCase() === 'active'}
-                canManage={canManageEscalations}
-                onUpdated={setSavedEscalation}
-              />
-
-              <CustomerPanel callId={callId} />
-
               <NextQuestionPanel
                 suggestion={
                   liveCall.analysis?.questionSuggestion ?? null
@@ -194,16 +181,30 @@ export function LiveCallPage() {
                 sentiment={
                   liveCall.analysis?.sentiment ?? null
                 }
+                compact
               />
+
+              <EscalationCard
+                key={callId}
+                escalation={newestEscalation(
+                  liveCall.analysis?.escalation ?? null,
+                  savedEscalation?.callId === callId ? savedEscalation : null,
+                )}
+                isCallActive={liveCall.call.status.toLowerCase() === 'active'}
+                canManage={canManageEscalations}
+                compact
+                onUpdated={setSavedEscalation}
+              />
+
+              <section className="panel">
+                <h4 className="live-call__panel-title">Service estimate</h4>
+                <ServiceEstimatePanel
+                  estimate={liveCall.analysis?.serviceEstimate ?? null}
+                  showTitle={false}
+                />
+              </section>
             </aside>
           </div>
-
-          <OtherFeaturesPanel
-            callId={callId}
-            serviceEstimate={
-              liveCall.analysis?.serviceEstimate ?? null
-            }
-          />
         </>
       )}
     </section>

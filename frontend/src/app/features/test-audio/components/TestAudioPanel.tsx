@@ -33,25 +33,18 @@ export function TestAudioPanel({ replay }: TestAudioPanelProps) {
   }
 
   return (
-    <section className="test-audio panel" aria-label="Test audio">
+    // A row inside the Live Call box: caller number, upload, progress.
+    <div className="test-audio" aria-label="Test audio">
       <div className="test-audio__row">
-        <div className="test-audio__intro">
-          <p className="panel__label">Test audio</p>
-          <p className="test-audio__hint">
-            Plays a recording as a live phone call, in real time, through the telephony pipeline.
-          </p>
-        </div>
-
-        <label className="test-audio__field">
-          <span>Caller number (optional)</span>
-          <input
-            value={fromNumber}
-            onChange={(event) => setFromNumber(event.target.value)}
-            placeholder="e.g. 9845000002"
-            autoComplete="off"
-            disabled={isBusy}
-          />
-        </label>
+        <input
+          className="test-audio__number"
+          value={fromNumber}
+          onChange={(event) => setFromNumber(event.target.value)}
+          placeholder="Caller number (optional)"
+          aria-label="Caller number (optional)"
+          autoComplete="off"
+          disabled={isBusy}
+        />
 
         <input
           ref={fileInputRef}
@@ -71,6 +64,7 @@ export function TestAudioPanel({ replay }: TestAudioPanelProps) {
             className="test-audio__button"
             disabled={isBusy}
             onClick={() => fileInputRef.current?.click()}
+            title="Plays a recording as a live phone call, in real time, through the telephony pipeline."
           >
             {replay.phase === 'preparing'
               ? 'Preparing…'
@@ -79,42 +73,39 @@ export function TestAudioPanel({ replay }: TestAudioPanelProps) {
                 : 'Upload test audio'}
           </button>
         )}
-      </div>
 
-      {replay.fileName && replay.phase !== 'idle' && (
-        <div className="test-audio__status">
-          <div className="test-audio__status-line">
-            <strong>{replay.fileName}</strong>
-            <span>
+        {replay.fileName && replay.phase !== 'idle' && (
+          <div className="test-audio__status">
+            <strong title={replay.fileName}>{replay.fileName}</strong>
+            <div
+              className="test-audio__progress"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+            >
+              <span style={{ width: `${progress}%` }} />
+            </div>
+            <span className="test-audio__clock">
               {formatClock(replay.elapsedSeconds)} / {formatClock(replay.durationSeconds)}
             </span>
+            {replay.phase === 'finished' && replay.callId && (
+              <Link
+                className="test-audio__link"
+                to={`/post-call-analysis?call_id=${encodeURIComponent(replay.callId)}`}
+              >
+                Post-call analysis →
+              </Link>
+            )}
           </div>
-          <div
-            className="test-audio__progress"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(progress)}
-          >
-            <span style={{ width: `${progress}%` }} />
-          </div>
-          {replay.phase === 'finished' && replay.callId && (
-            <p className="test-audio__hint">
-              Call ended. Post-call analysis runs in the background —{' '}
-              <Link to={`/post-call-analysis?call_id=${encodeURIComponent(replay.callId)}`}>
-                open post-call analysis
-              </Link>{' '}
-              in a minute.
-            </p>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       {replay.error && (
         <p className="test-audio__error" role="alert">
           {replay.error}
         </p>
       )}
-    </section>
+    </div>
   )
 }

@@ -559,9 +559,9 @@ def test_supervisor_works_the_queue(api):
 def test_live_websocket_analysis_carries_the_escalation(api):
     icr, _, _ = api
     icr.post("/api/v1/calls", json={"call_id": "ws-1"})
-    token = icr.headers["Authorization"].removeprefix("Bearer ")
+    ticket = icr.post("/api/v1/calls/ws-1/live-token").json()["token"]
 
-    with icr.websocket_connect(f"/api/v1/calls/ws-1/live?token={token}") as ws:
+    with icr.websocket_connect(f"/api/v1/calls/ws-1/live?ticket={ticket}") as ws:
         ws.send_text(
             json.dumps(
                 {

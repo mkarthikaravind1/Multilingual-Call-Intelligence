@@ -131,6 +131,11 @@ export interface CompleteCallRequestDto {
   end_time: number
 }
 
+export interface LiveTokenResponseDto {
+  token: string
+  expires_in: number
+}
+
 export interface LiveUtteranceMessageDto extends UtteranceRequestDto {
   type: 'utterance'
 }

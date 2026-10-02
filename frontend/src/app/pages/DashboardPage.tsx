@@ -45,38 +45,28 @@ export function DashboardPage() {
   }, [])
 
   const metrics = [
-    { label: 'Total calls', value: data?.stats.total, caption: 'All recorded calls', highlight: true },
-    { label: 'Active calls', value: data?.stats.active, caption: 'Calls currently in progress' },
-    { label: 'Completed calls', value: data?.stats.completed, caption: 'Calls that have ended' },
+    { label: 'Total calls', value: data?.stats.total, highlight: true },
+    { label: 'Active calls', value: data?.stats.active },
+    { label: 'Completed calls', value: data?.stats.completed },
   ]
 
   return (
     <section className="page-shell">
-      <div className="page-shell__header page-shell__header--actions">
-        <div className="button-row">
-          <Link className="button" to="/live-call">
-            Open Live Call
-          </Link>
-          <Link className="button button--secondary" to="/call-history">
-            View call history
-          </Link>
-        </div>
-      </div>
-
       {error && (
         <StatePanel variant="error" title="Could not load the dashboard" description={error} />
       )}
 
-      <div className="kpi-grid">
+      <div className="dashboard-stats">
         {metrics.map((metric) => (
-          <article
+          <div
             key={metric.label}
-            className={metric.highlight ? 'panel panel--highlight' : 'panel'}
+            className={`dashboard-stat${metric.highlight ? ' dashboard-stat--highlight' : ''}`}
           >
-            <p className="panel__label">{metric.label}</p>
-            <h3>{data ? metric.value : error ? '—' : <span className="spinner" aria-label="Loading" />}</h3>
-            <span>{metric.caption}</span>
-          </article>
+            <span>{metric.label}:</span>
+            <strong>
+              {data ? metric.value : error ? '—' : <span className="spinner" aria-label="Loading" />}
+            </strong>
+          </div>
         ))}
       </div>
 

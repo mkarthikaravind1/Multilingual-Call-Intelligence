@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import threading
 import time
@@ -28,6 +29,11 @@ MIN_CALLS_FOR_DISCOVERY = 2
 MAX_EVIDENCE_PER_CANDIDATE = 10
 _PAGE_SIZE = 100
 _LAST_RUN_KEY = "emerging_complaints:last_run"
+# What the last run read; a background run over the same calls is skipped.
+_FINGERPRINT_KEY = "emerging_complaints:last_fingerprint"
+# Only one instance runs background discovery at a time.
+_RUN_LOCK_NAME = "emerging_complaints:discovery"
+_RUN_LOCK_TTL_SECONDS = 900.0
 
 
 class EmergingComplaintNotFoundError(Exception):
@@ -54,6 +60,12 @@ class EmergingComplaintService:
     Discovery runs on demand (discover) or after calls complete
     (request_discovery), in the background and coalesced so a burst of
     completed calls causes at most one extra run.
+
+    Background runs are kept cheap, which matters most with an LLM provider:
+    they start at most once per min_interval_seconds (later requests wait
+    and share one run), only one instance runs at a time, and a run whose
+    calls are exactly those the previous run read is skipped without asking
+    the provider. Manual runs always ask the provider.
     """
 
     def __init__(
@@ -66,6 +78,8 @@ class EmergingComplaintService:
         executor: Executor | None = None,
         clock: Callable[[], float] = time.time,
         store: LiveStateStore | None = None,
+        min_interval_seconds: float = 0.0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._repository = repository
         # Shares the last run with every instance; per-instance without it.
@@ -76,6 +90,9 @@ class EmergingComplaintService:
         self._max_calls = max_calls
         self._executor = executor
         self._clock = clock
+        self._sleep = sleep
+        self._min_interval_seconds = max(0.0, min_interval_seconds)
+        self._last_fingerprint: str | None = None
         self._lock = threading.Lock()
         # Serialises discovery runs (manual and background).
         self._run_lock = threading.Lock()
@@ -92,13 +109,34 @@ class EmergingComplaintService:
                 logger.exception("Could not read the last emerging-complaint discovery run")
         return self._last_run
 
-    def _remember(self, run: DiscoveryRun) -> None:
+    def _remember(self, run: DiscoveryRun, fingerprint: str) -> None:
         self._last_run = run
+        self._last_fingerprint = fingerprint
         if self._live_state is not None:
             try:
                 self._live_state.set_json(_LAST_RUN_KEY, asdict(run))
+                self._live_state.set_json(_FINGERPRINT_KEY, fingerprint)
             except Exception:
                 logger.exception("Could not share the emerging-complaint discovery run")
+
+    def _stored_fingerprint(self) -> str | None:
+        if self._live_state is not None:
+            try:
+                return self._live_state.get_json(_FINGERPRINT_KEY)
+            except Exception:
+                logger.exception("Could not read the last emerging-complaint discovery input")
+        return self._last_fingerprint
+
+    def _fingerprint(self, records: tuple[CallComplaintRecord, ...]) -> str:
+        """Identifies what a run would read: which calls, how much was said
+        in each, their complaint coverage, and which provider reads it."""
+        digest = hashlib.sha256(type(self._provider).__name__.encode("utf-8"))
+        for record in sorted(records, key=lambda r: r.call_id):
+            complaints = sorted(
+                (c.category, c.status.value) for c in record.complaint_coverages
+            )
+            digest.update(repr((record.call_id, len(record.utterances), complaints)).encode("utf-8"))
+        return digest.hexdigest()
 
     def request_discovery(self) -> bool:
         """Schedule a background run unless one is already waiting. Returns
@@ -115,16 +153,59 @@ class EmergingComplaintService:
         return True
 
     def _run_pending(self) -> None:
-        with self._lock:
-            self._pending = False
+        # Requests made while this waits are coalesced into this run.
         try:
-            self.discover()
+            self._wait_for_min_interval()
+        finally:
+            with self._lock:
+                self._pending = False
+        try:
+            self._discover_in_background()
         except Exception:
             logger.exception("Background emerging-complaint discovery failed")
 
+    def _wait_for_min_interval(self) -> None:
+        if not self._min_interval_seconds:
+            return
+        last = self.last_run
+        if last is None:
+            return
+        delay = last.ran_at + self._min_interval_seconds - self._clock()
+        if delay > 0:
+            self._sleep(delay)
+
+    def _discover_in_background(self) -> DiscoveryRun | None:
+        token = None
+        if self._live_state is not None:
+            try:
+                token = self._live_state.acquire_lock(_RUN_LOCK_NAME, _RUN_LOCK_TTL_SECONDS)
+            except Exception:
+                logger.exception("Could not take the emerging-complaint discovery lock")
+                token = ""  # run anyway; this instance's own lock still applies
+            if token is None:
+                logger.info("Emerging-complaint discovery is running on another instance")
+                return None
+        try:
+            return self._discover(skip_if_unchanged=True)
+        finally:
+            if token:
+                try:
+                    self._live_state.release_lock(_RUN_LOCK_NAME, token)
+                except Exception:
+                    logger.exception("Could not release the emerging-complaint discovery lock")
+
     def discover(self) -> DiscoveryRun:
+        """Run discovery now (a person asked for it), even over unchanged calls."""
+        # Never None: only background runs skip unchanged calls.
+        return self._discover(skip_if_unchanged=False)  # type: ignore[return-value]
+
+    def _discover(self, skip_if_unchanged: bool) -> DiscoveryRun | None:
         with self._run_lock:
             records = self._recent_completed_calls()
+            fingerprint = self._fingerprint(records)
+            if skip_if_unchanged and fingerprint == self._stored_fingerprint():
+                logger.debug("Emerging-complaint discovery skipped: no new completed calls")
+                return None
             now = self._clock()
             if len(records) < MIN_CALLS_FOR_DISCOVERY:
                 run = DiscoveryRun(
@@ -137,7 +218,7 @@ class EmergingComplaintService:
                         "speech are needed."
                     ),
                 )
-                self._remember(run)
+                self._remember(run, fingerprint)
                 return run
 
             discovered = self._provider.discover(
@@ -154,7 +235,7 @@ class EmergingComplaintService:
                 candidates_found=len(discovered),
                 new_candidates=new_count,
             )
-            self._remember(run)
+            self._remember(run, fingerprint)
             if new_count:
                 logger.info("Emerging-complaint discovery found %d new theme(s)", new_count)
             return run

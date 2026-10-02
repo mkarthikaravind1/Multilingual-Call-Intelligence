@@ -582,3 +582,26 @@ def test_safe_production_configuration_passes_and_development_only_warns(caplog)
     with caplog.at_level(logging.WARNING):
         check_configuration(_settings(auth_secret_key="short"), logging.getLogger("test"))
     assert "AUTH_SECRET_KEY" in caplog.text
+
+
+def test_example_placeholders_are_refused_in_production():
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parents[2] / "deploy" / ".env.production.example"
+    placeholder_keys = {
+        line.split("=", 1)[0]
+        for line in example.read_text(encoding="utf-8").splitlines()
+        if "=replace-with-" in line and not line.startswith("#")
+    }
+    assert {"AUTH_SECRET_KEY", "GROQ_API_KEY", "SARVAM_API_KEY"} <= placeholder_keys
+
+    unedited = _settings(
+        app_env="production",
+        auth_secret_key="replace-with-at-least-32-random-characters",
+        groq_api_key="replace-with-your-groq-api-key",
+        database_url="postgresql+psycopg://u:p@db/app",
+        cors_allowed_origins="https://calls.example.com",
+    )
+
+    (problem,) = configuration_problems(unedited)
+    assert "AUTH_SECRET_KEY" in problem and "GROQ_API_KEY" in problem

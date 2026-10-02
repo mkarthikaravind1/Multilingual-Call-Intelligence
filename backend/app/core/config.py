@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     emerging_complaint_auto_discovery: bool = True
     # How many of the most recent completed calls one discovery run reads.
     emerging_complaint_discovery_max_calls: int = 200
+    # Background runs start at most this often (a burst of completed calls
+    # waits and is covered by one run). Manual runs are not limited.
+    emerging_complaint_discovery_min_interval_seconds: float = 300.0
     redis_key_prefix: str = "conversation_coverage"
     redis_ttl_seconds: float = 86400.0
     redis_socket_timeout_seconds: float = 5.0
@@ -51,6 +54,13 @@ class Settings(BaseSettings):
     plivo_stream_base_url: str = "not_configured"
     plivo_public_base_url: str = ""
     plivo_stream_flush_seconds: float = 4.0
+    # Live audio is sent for transcription when the speaker pauses: at least
+    # PLIVO_STREAM_MIN_SPEECH_SECONDS of speech, then PLIVO_STREAM_PAUSE_SECONDS
+    # quieter than PLIVO_STREAM_SILENCE_RMS (16-bit PCM level).
+    # PLIVO_STREAM_FLUSH_SECONDS stays the upper limit; pause 0 = fixed chunks.
+    plivo_stream_pause_seconds: float = 0.6
+    plivo_stream_min_speech_seconds: float = 1.5
+    plivo_stream_silence_rms: int = 350
     call_mapping_store_provider: str = "in_memory"
     call_mapping_key_prefix: str = "telephony_call_mapping"
     # CRM boundary: "none" (no CRM connected) or "json_file" (crm_json_path).
@@ -91,6 +101,14 @@ class Settings(BaseSettings):
     # streams, speaker roles, job locks): "in_memory" (one instance) or "redis".
     live_state_store_provider: str = "in_memory"
     live_state_key_prefix: str = "live_state"
+    # How long an active call's live analysis (sentiment, next question,
+    # estimate) is kept without new speech.
+    live_analysis_ttl_seconds: float = 14400.0
+    # Browser live-call WebSockets authenticate with a single-use ticket
+    # (POST /api/v1/calls/{call_id}/live-token), never the access token.
+    live_call_ws_token_ttl_seconds: int = 60
+    # How often an open live-call WebSocket checks for new analysis to push.
+    live_call_push_interval_seconds: float = 0.5
     # Telephony media streams must present a signed per-call token.
     telephony_stream_auth_required: bool = True
     telephony_stream_token_ttl_seconds: int = 3600

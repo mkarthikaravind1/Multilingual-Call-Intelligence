@@ -377,6 +377,146 @@ def test_background_discovery_is_coalesced():
     assert service.request_discovery() is True
 
 
+def _background_service(app, provider, **kwargs):
+    return EmergingComplaintService(
+        InMemoryEmergingComplaintRepository(),
+        provider,
+        app.state.services.call_service,
+        InMemoryCoverage(),
+        **kwargs,
+    )
+
+
+def test_background_discovery_skips_unchanged_calls_but_manual_runs_do_not():
+    provider = FakeProvider()
+    executor = InlineExecutor()
+    app = _api(provider)
+    service = _background_service(app, provider, executor=executor)
+    icr = _client(app, UserRole.ICR)
+    _completed_call(icr, "a", "one two")
+    _completed_call(icr, "b", "three four")
+
+    service.request_discovery()
+    executor.run_all()
+    service.request_discovery()  # e.g. a post-call repair of an old call
+    executor.run_all()
+    assert len(provider.requests) == 1
+
+    service.discover()  # a supervisor asked explicitly
+    assert len(provider.requests) == 2
+
+    _completed_call(icr, "c", "five six")
+    service.request_discovery()
+    executor.run_all()
+    assert len(provider.requests) == 3
+    assert len(provider.requests[-1].call_records) == 3
+
+
+def test_background_discovery_waits_for_the_minimum_interval():
+    provider = FakeProvider()
+    executor = InlineExecutor()
+    now = [1000.0]
+    slept: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        now[0] += seconds
+
+    app = _api(provider)
+    service = _background_service(
+        app,
+        provider,
+        executor=executor,
+        clock=lambda: now[0],
+        sleep=sleep,
+        min_interval_seconds=300,
+    )
+    icr = _client(app, UserRole.ICR)
+    _completed_call(icr, "a", "one two")
+    _completed_call(icr, "b", "three four")
+
+    service.request_discovery()
+    executor.run_all()
+    assert slept == [] and len(provider.requests) == 1
+
+    now[0] += 100
+    _completed_call(icr, "c", "five six")
+    assert service.request_discovery() is True
+    assert service.request_discovery() is False  # coalesced while waiting
+    executor.run_all()
+
+    assert slept == [200.0]
+    assert len(provider.requests) == 2
+
+
+def test_background_discovery_runs_on_one_instance_at_a_time():
+    from app.services.live_state_store import InMemoryLiveStateStore
+
+    provider = FakeProvider()
+    executor = InlineExecutor()
+    store = InMemoryLiveStateStore()
+    app = _api(provider)
+    service = _background_service(app, provider, executor=executor, store=store)
+    icr = _client(app, UserRole.ICR)
+    _completed_call(icr, "a", "one two")
+    _completed_call(icr, "b", "three four")
+
+    token = store.acquire_lock("emerging_complaints:discovery", 60)  # another instance
+    service.request_discovery()
+    executor.run_all()
+    assert provider.requests == []
+
+    store.release_lock("emerging_complaints:discovery", token)
+    service.request_discovery()
+    executor.run_all()
+    assert len(provider.requests) == 1
+
+
+def test_instances_sharing_live_state_do_not_repeat_a_scan():
+    from app.services.live_state_store import InMemoryLiveStateStore
+
+    provider = FakeProvider()
+    executor = InlineExecutor()
+    store = InMemoryLiveStateStore()
+    app = _api(provider)
+    first = _background_service(app, provider, executor=executor, store=store)
+    second = _background_service(app, provider, executor=executor, store=store)
+    icr = _client(app, UserRole.ICR)
+    _completed_call(icr, "a", "one two")
+    _completed_call(icr, "b", "three four")
+
+    first.request_discovery()
+    second.request_discovery()
+    executor.run_all()
+
+    assert len(provider.requests) == 1
+    assert second.last_run is not None
+
+
+def test_failed_background_discovery_is_retried_next_time():
+    class Flaky(FakeProvider):
+        def discover(self, request):
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                raise RuntimeError("LLM unavailable")
+            return ()
+
+    provider = Flaky()
+    executor = InlineExecutor()
+    app = _api(provider)
+    service = _background_service(app, provider, executor=executor)
+    icr = _client(app, UserRole.ICR)
+    _completed_call(icr, "a", "one two")
+    _completed_call(icr, "b", "three four")
+
+    service.request_discovery()
+    executor.run_all()
+    service.request_discovery()
+    executor.run_all()
+
+    assert len(provider.requests) == 2
+
+
 def test_evidence_is_trimmed_when_stored():
     many = tuple(f"quote {i}" for i in range(MAX_EVIDENCE_PER_CANDIDATE + 5))
     app = _api(FakeProvider(candidate(evidence=many)))

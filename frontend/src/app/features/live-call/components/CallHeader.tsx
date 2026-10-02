@@ -2,7 +2,7 @@ import {
   useState,
 } from 'react'
 
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import type {
   CallMetadataViewModel,
@@ -25,6 +25,8 @@ type CallHeaderProps = {
   onOpenCall: (callId: string) => void
   onClearCall: () => void
   onCompleteCall: () => void
+  // Extra controls shown in the same box (e.g. test audio).
+  children?: ReactNode
 }
 
 export function CallHeader({
@@ -38,6 +40,7 @@ export function CallHeader({
   onOpenCall,
   onClearCall,
   onCompleteCall,
+  children,
 }: CallHeaderProps) {
   const [callIdInput, setCallIdInput] =
     useState(initialCallId)
@@ -57,43 +60,6 @@ export function CallHeader({
 
   return (
     <section className="live-call__header panel">
-      <div className="live-call__header-main">
-        <div>
-          <p className="panel__label">
-            Live call workspace
-          </p>
-
-          {/* The open call's ID is already shown in the Call ID field below. */}
-          {!call && <h3>Open a live call</h3>}
-
-          <p className="live-call__header-meta">
-            {call
-              ? `${call.utteranceCount} recorded utterance${
-                  call.utteranceCount === 1
-                    ? ''
-                    : 's'
-                }`
-              : 'Open an existing call by ID, or start a new manual call.'}
-          </p>
-        </div>
-
-        <div className="live-call__header-status">
-          <span
-            className={`live-call__call-status live-call__call-status--${
-              call?.status?.toLowerCase() ??
-              'idle'
-            }`}
-          >
-            {call?.status ??
-              'No call selected'}
-          </span>
-
-          <ConnectionStatus
-            status={connectionStatus}
-          />
-        </div>
-      </div>
-
       <form
         className="live-call__call-selector"
         onSubmit={handleSubmit}
@@ -160,7 +126,25 @@ export function CallHeader({
             Clear
           </button>
         )}
+
+        <div className="live-call__header-status">
+          <span
+            className={`live-call__call-status live-call__call-status--${
+              call?.status?.toLowerCase() ??
+              'idle'
+            }`}
+          >
+            {call?.status ??
+              'No call selected'}
+          </span>
+
+          <ConnectionStatus
+            status={connectionStatus}
+          />
+        </div>
       </form>
+
+      {children}
     </section>
   )
 }

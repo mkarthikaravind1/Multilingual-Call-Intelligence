@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -179,9 +180,13 @@ async def _serve_stream(
                     # provider-side stream restart) without a "stop" first
                     # must not silently discard whatever was already buffered.
                     _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=False)
+                settings = get_settings()
                 buffer = TelephonyAudioBuffer(
                     sample_rate=stream_event.sample_rate or 8000,
                     flush_after_seconds=flush_after_seconds,
+                    pause_seconds=settings.plivo_stream_pause_seconds,
+                    min_speech_seconds=settings.plivo_stream_min_speech_seconds,
+                    silence_rms=settings.plivo_stream_silence_rms,
                 )
 
             elif stream_event.event_type == "media":
@@ -337,6 +342,7 @@ async def _process_chunk(
         logger.info("Dropping buffered telephony audio for completed call %r", call_id)
         return
 
+    started = time.monotonic()
     try:
         await run_in_threadpool(
             live_chunk_processing_service.process_chunk,
@@ -359,3 +365,12 @@ async def _process_chunk(
         return
     except Exception:
         logger.exception("Live pipeline processing failed for call %r", call_id)
+        return
+    logger.info(
+        "Transcribed %.1fs of audio (call time %.1f-%.1fs) for call %r in %.1fs",
+        chunk.duration,
+        chunk.start_time,
+        chunk.end_time,
+        call_id,
+        time.monotonic() - started,
+    )

@@ -32,7 +32,22 @@ import type {
   TranscriptTurnViewModel,
 } from '../types/view-models'
 
-const POLL_INTERVAL_MS = 2500
+// The WebSocket pushes every analysis update, so while it is connected the
+// page only polls occasionally as a safety net (e.g. for changes made on
+// other pages). While it is down, polling takes over until it reconnects.
+const FALLBACK_POLL_INTERVAL_MS = 2500
+const HEALTHY_POLL_INTERVAL_MS = 30000
+
+export function pollIntervalFor(
+  connectionStatus: LiveSocketStatus,
+  isCompleted: boolean,
+): number {
+  if (isCompleted || connectionStatus === 'connected') {
+    return HEALTHY_POLL_INTERVAL_MS
+  }
+
+  return FALLBACK_POLL_INTERVAL_MS
+}
 
 interface UseLiveCallResult {
   call: CallMetadataViewModel | null
@@ -74,8 +89,15 @@ export function useLiveCall(
   const activeCallIdRef =
     useRef<string | null>(null)
 
+  // Whether the socket has connected since the call was loaded; a later
+  // reconnect refreshes once to catch up on anything missed while down.
+  const hasConnectedRef = useRef(false)
+
   const refreshCallState = useCallback(
-    async (targetCallId: string) => {
+    async (
+      targetCallId: string,
+      includeAnalysis = true,
+    ) => {
       const callResponse =
         await callRestService.getCall(
           targetCallId,
@@ -99,6 +121,10 @@ export function useLiveCall(
           toTranscriptTurnViewModel,
         ),
       )
+
+      if (!includeAnalysis) {
+        return
+      }
 
       try {
         const analysisResponse =
@@ -132,7 +158,9 @@ export function useLiveCall(
       )
 
       try {
-        await refreshCallState(event.call_id)
+        // The event already carries the analysis; only the transcript and
+        // call status need fetching.
+        await refreshCallState(event.call_id, false)
       } catch {
         // Analysis remains usable even if transcript refresh fails.
       }
@@ -170,6 +198,7 @@ export function useLiveCall(
 
       activeCallIdRef.current =
         normalizedCallId
+      hasConnectedRef.current = false
 
       setIsLoading(true)
       setError(null)
@@ -341,34 +370,55 @@ export function useLiveCall(
   }, [callId, loadCall])
 
   const loadedCallId = call?.callId ?? null
+  const isCompleted =
+    call?.status.toLowerCase() === 'completed'
 
   useEffect(() => {
     if (!callId || !loadedCallId) {
       return
     }
 
-    const intervalId = window.setInterval(
-      () => {
-        if (
-          activeCallIdRef.current !==
-          callId
-        ) {
-          return
-        }
+    const refresh = () => {
+      if (
+        activeCallIdRef.current !==
+        callId
+      ) {
+        return
+      }
 
-        void refreshCallState(callId).catch(
-          () => {
-            // Keep showing the last successful snapshot.
-          },
-        )
-      },
-      POLL_INTERVAL_MS,
+      void refreshCallState(callId).catch(
+        () => {
+          // Keep showing the last successful snapshot.
+        },
+      )
+    }
+
+    if (connectionStatus === 'connected') {
+      if (hasConnectedRef.current) {
+        refresh()
+      }
+
+      hasConnectedRef.current = true
+    }
+
+    const intervalId = window.setInterval(
+      refresh,
+      pollIntervalFor(
+        connectionStatus,
+        isCompleted,
+      ),
     )
 
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [loadedCallId, callId, refreshCallState])
+  }, [
+    loadedCallId,
+    callId,
+    connectionStatus,
+    isCompleted,
+    refreshCallState,
+  ])
 
   return {
     call,
