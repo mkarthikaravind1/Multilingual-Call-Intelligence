@@ -2,6 +2,24 @@ export type EscalationLevel = 'watch' | 'high' | 'critical'
 
 export type EscalationStatus = 'open' | 'acknowledged' | 'resolved'
 
+// Queue views (GET /escalations?state=); "active" is open + acknowledged.
+export type EscalationQueueState = 'active' | 'open' | 'acknowledged' | 'resolved' | 'all'
+
+export interface EscalationQueueFilters {
+  // Epoch seconds; from inclusive, to exclusive.
+  detectedFrom?: number
+  detectedTo?: number
+  acknowledgedFrom?: number
+  acknowledgedTo?: number
+}
+
+// Overall queue numbers, independent of any filter.
+export interface EscalationStatsDto {
+  active: number
+  critical: number
+  unacknowledged: number
+}
+
 export type EscalationSignalType =
   | 'manager_request'
   | 'legal_threat'

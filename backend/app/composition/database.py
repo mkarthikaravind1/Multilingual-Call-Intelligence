@@ -67,6 +67,10 @@ from app.infrastructure.database.repositories.escalation_repository import (
     PostgresEscalationRepository,
 )
 from app.services.escalation_repository import EscalationRepository
+from app.infrastructure.database.repositories.call_listing_query import (
+    PostgresCallListingQuery,
+)
+from app.services.call_listing import CallListingQuery
 from app.infrastructure.database.repositories.emerging_complaint_repository import (
     PostgresEmergingComplaintRepository,
 )
@@ -93,6 +97,8 @@ class PostgresRepositories:
     call_customer: CallCustomerRepository
     escalation: EscalationRepository
     emerging_complaint: EmergingComplaintRepository
+    # Read model over conversations, customers, escalations and complaints.
+    call_listing: CallListingQuery | None = None
     session_factory: sessionmaker[Session] | None = None
 
     def ping(self) -> None:
@@ -122,6 +128,7 @@ def build_postgres_repositories(
         call_customer=PostgresCallCustomerRepository(session_factory),
         escalation=PostgresEscalationRepository(session_factory),
         emerging_complaint=PostgresEmergingComplaintRepository(session_factory),
+        call_listing=PostgresCallListingQuery(session_factory),
         session_factory=session_factory,
     )
 

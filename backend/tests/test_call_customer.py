@@ -313,6 +313,76 @@ def test_link_rejects_a_vehicle_without_a_customer():
         CallCustomerLink(call_id="call-1", vehicle_id="V-1")
 
 
+@pytest.mark.parametrize(
+    "changes", [{"customer_name": "Asha Raman"}, {"vehicle_registration": "TN09AB1234"}]
+)
+def test_link_rejects_a_snapshot_without_a_customer(changes):
+    with pytest.raises(ValueError, match="together with its customer"):
+        CallCustomerLink(call_id="call-1", **changes)
+
+
+# ---- Customer name and vehicle snapshot ----
+
+def test_lookup_stores_the_customer_name_and_only_vehicle(directory):
+    repository = InMemoryCallCustomerRepository()
+    service = CallCustomerService(repository, directory, "91")
+    service.record_caller("call-1", "9845000001")
+    assert repository.get("call-1").customer_name is None
+
+    service.get("call-1")
+
+    link = repository.get("call-1")
+    assert (link.customer_id, link.customer_name, link.vehicle_registration) == (
+        "C-1",
+        "Asha Raman",
+        "TN09AB1234",
+    )
+
+
+def test_snapshot_follows_the_vehicle_choice_and_a_new_caller(directory):
+    repository = InMemoryCallCustomerRepository()
+    service = CallCustomerService(repository, directory, "91")
+    service.record_caller("call-1", "9845000002")
+    service.get("call-1")
+    # Several vehicles and none chosen: the name is known, the vehicle is not.
+    assert repository.get("call-1").customer_name == "Rohit Kulkarni"
+    assert repository.get("call-1").vehicle_registration is None
+
+    service.select_vehicle("call-1", "V-3")
+    assert repository.get("call-1").vehicle_registration == "MH12EF9012"
+    service.select_vehicle("call-1", None)
+    assert repository.get("call-1").vehicle_registration is None
+
+    service.record_caller("call-1", "+14155550100")
+    link = repository.get("call-1")
+    assert (link.customer_name, link.vehicle_registration) == (None, None)
+
+
+def test_an_unchanged_snapshot_is_not_rewritten(directory):
+    repository = InMemoryCallCustomerRepository()
+    service = CallCustomerService(repository, directory, "91", clock=lambda: 5.0)
+    service.record_caller("call-1", "9845000001")
+    service.get("call-1")
+    service._clock = lambda: 9.0
+
+    service.get("call-1")
+
+    assert repository.get("call-1").updated_at == 5.0
+
+
+def test_refresh_customer_names_fills_calls_without_one(directory):
+    repository = InMemoryCallCustomerRepository()
+    service = CallCustomerService(repository, directory, "91")
+    # Stored before names were kept: a customer id but no name.
+    repository.save(CallCustomerLink("old", caller_number="+919845000001", customer_id="C-1"))
+    repository.save(CallCustomerLink("stranger", caller_number="+14155550100"))
+    repository.save(CallCustomerLink("withheld"))
+
+    assert service.refresh_customer_names() == (1, 2)
+    assert repository.get("old").customer_name == "Asha Raman"
+    assert [link.call_id for link in repository.list_without_customer_name()] == ["stranger"]
+
+
 # ---- API, through the real composition root ----
 
 class _Complaints(ComplaintDetectionProvider):
@@ -510,3 +580,31 @@ def test_unidentified_caller_gets_no_summary_delivery(crm_file):
     client.post("/api/v1/calls/m-5/complete", json={"end_time": 30.0})
 
     assert deliveries.get_by_call_id("m-5") == ()
+
+
+# ---- The call list shows and searches the customer ----
+
+def test_call_list_shows_and_searches_customers_and_numbers(api):
+    client, _ = api
+    for call_id, number in [("asha", "98450 00001"), ("rohit", "9845000002"), ("anon", None)]:
+        payload = {"call_id": call_id, **({"caller_number": number} if number else {})}
+        client.post("/api/v1/calls", json=payload)
+        client.get(f"/api/v1/calls/{call_id}/customer")  # as the Live Call page does
+    client.put("/api/v1/calls/rohit/customer/vehicle", json={"vehicle_id": "V-3"})
+
+    def listed(**params):
+        items = client.get("/api/v1/calls", params=params).json()["items"]
+        return [item["call_id"] for item in items]
+
+    items = client.get("/api/v1/calls").json()["items"]
+    asha = next(item for item in items if item["call_id"] == "asha")
+    assert (asha["customer_name"], asha["vehicle_registration"], asha["caller_number"]) == (
+        "Asha Raman",
+        "TN09AB1234",
+        "+919845000001",
+    )
+    assert listed(customer="asha") == ["asha"]
+    assert listed(customer="mh12 ef") == ["rohit"]  # registration, spaces ignored
+    assert listed(customer="nobody") == []
+    assert listed(phone="000002") == ["rohit"]
+    assert listed(phone="+91 98450") == ["rohit", "asha"]

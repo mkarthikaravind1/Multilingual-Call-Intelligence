@@ -1,6 +1,6 @@
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from app.domain.complaint_coverage import ComplaintCoverageStatus
@@ -34,6 +34,16 @@ _IN_CALL_ORDER = (
 )
 
 _OPEN_STATUSES = tuple(s for s in ComplaintLifecycleStatus if s not in CLOSED_STATUSES)
+
+# The stages the complaints page filters by, as the complaint's current status.
+COMPLAINT_STAGES: dict[str, frozenset[ComplaintLifecycleStatus]] = {
+    # RAISED is the moment before detection; people see it as detected.
+    "detected": frozenset({ComplaintLifecycleStatus.RAISED, ComplaintLifecycleStatus.DETECTED}),
+    "probed": frozenset({ComplaintLifecycleStatus.PROBED}),
+    "covered": frozenset({ComplaintLifecycleStatus.COVERED}),
+    "outcome": frozenset({ComplaintLifecycleStatus.RESOLVED, ComplaintLifecycleStatus.UNRESOLVED}),
+    "follow_up": frozenset({ComplaintLifecycleStatus.FOLLOW_UP}),
+}
 
 CALL_ENDED_NOTE = "The call ended before this complaint was resolved; it needs a follow-up."
 
@@ -278,10 +288,17 @@ class ComplaintLifecycleService:
         records.sort(key=lambda r: r.first_detected_at, reverse=True)
         return self._with_events(tuple(records))
 
-    def list_queue(self, state: str = "open", limit: int = 200) -> tuple[ComplaintView, ...]:
+    def list_queue(
+        self,
+        state: str = "open",
+        limit: int = 200,
+        categories: Iterable[str] = (),
+        stages: Iterable[str] = (),
+    ) -> tuple[ComplaintView, ...]:
         """"open": complaints needing attention, follow-ups first, then the
         oldest first. "resolved": most recently closed first. "all": newest
-        first."""
+        first. Non-empty categories / stages (keys of COMPLAINT_STAGES) keep
+        only complaints in one of them; the limit applies after filtering."""
         if state == "open":
             records = sorted(
                 self._repository.list_by_status(_OPEN_STATUSES),
@@ -301,6 +318,14 @@ class ComplaintLifecycleService:
             )
         else:
             raise ValueError(f"Unknown complaint queue state: {state!r}.")
+        wanted_categories = set(categories)
+        wanted_statuses = {status for stage in stages for status in COMPLAINT_STAGES[stage]}
+        records = [
+            r
+            for r in records
+            if (not wanted_categories or r.category in wanted_categories)
+            and (not wanted_statuses or r.status in wanted_statuses)
+        ]
         return self._with_events(tuple(records[:limit]))
 
     def _with_events(

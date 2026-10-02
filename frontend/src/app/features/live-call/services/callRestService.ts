@@ -10,6 +10,23 @@ import type {
   UtteranceRequestDto,
 } from '../types/dto'
 
+// Every field is optional; set ones must all match (see GET /api/v1/calls).
+export interface CallListFilters {
+  // Any of these; empty or missing means all.
+  statuses?: Array<'active' | 'completed'>
+  // High or critical escalations, open or resolved.
+  highEscalation?: boolean
+  // Part of the customer name or vehicle registration.
+  customer?: string
+  // Digits that appear in the caller's number.
+  phone?: string
+  // Epoch seconds; from inclusive, to exclusive.
+  startedFrom?: number
+  startedTo?: number
+  resolvedFrom?: number
+  resolvedTo?: number
+}
+
 export interface StartCallRequest {
   call_id: string
   start_time?: number
@@ -32,11 +49,24 @@ export class CallRestService {
     })
   }
 
-  listCalls(limit: number, offset: number) {
+  listCalls(limit: number, offset: number, filters: CallListFilters = {}) {
     const query = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     })
+    filters.statuses?.forEach((status) => query.append('status', status))
+    if (filters.highEscalation) query.set('high_escalation', 'true')
+    if (filters.customer?.trim()) query.set('customer', filters.customer.trim())
+    if (filters.phone?.trim()) query.set('phone', filters.phone.trim())
+    const bounds: Array<[string, number | undefined]> = [
+      ['started_from', filters.startedFrom],
+      ['started_to', filters.startedTo],
+      ['resolved_from', filters.resolvedFrom],
+      ['resolved_to', filters.resolvedTo],
+    ]
+    for (const [name, value] of bounds) {
+      if (value !== undefined) query.set(name, String(value))
+    }
     return apiClient.get<CallListResponseDto>(
       `/api/v1/calls?${query.toString()}`,
     )

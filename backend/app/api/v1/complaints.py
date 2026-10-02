@@ -36,24 +36,52 @@ emerging_router = APIRouter(prefix="/emerging-complaints", tags=["emerging compl
 _SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
 
 
+ComplaintStage = Literal["detected", "probed", "covered", "outcome", "follow_up"]
+
+
+def _responses(
+    views, call_customer_service: CallCustomerService | None
+) -> list[ComplaintResponse]:
+    """Complaint responses carrying each call's stored customer name and vehicle."""
+    links = (
+        call_customer_service.stored_links({view.record.call_id for view in views})
+        if call_customer_service is not None
+        else {}
+    )
+    return [to_complaint_response(view, links.get(view.record.call_id)) for view in views]
+
+
 @router.get("", response_model=list[ComplaintResponse])
 def list_complaints(
     state: Literal["open", "resolved", "all"] = Query("open"),
     limit: int = Query(200, ge=1, le=500),
+    category: list[str] = Query(
+        default=[], description="Any of these categories; none means all."
+    ),
+    stage: list[ComplaintStage] = Query(
+        default=[], description="Current stage is any of these; none means all."
+    ),
     service: ComplaintLifecycleService = Depends(get_complaint_lifecycle_service),
+    call_customer_service: CallCustomerService | None = Depends(
+        get_optional_call_customer_service
+    ),
     _: User = Depends(get_current_user),
 ) -> list[ComplaintResponse]:
     """Open complaints: follow-ups first, then the oldest first."""
-    return [to_complaint_response(view) for view in service.list_queue(state, limit)]
+    views = service.list_queue(state, limit, categories=category, stages=stage)
+    return _responses(views, call_customer_service)
 
 
 @router.get("/{complaint_id}", response_model=ComplaintResponse)
 def get_complaint(
     complaint_id: str,
     service: ComplaintLifecycleService = Depends(get_complaint_lifecycle_service),
+    call_customer_service: CallCustomerService | None = Depends(
+        get_optional_call_customer_service
+    ),
     _: User = Depends(get_current_user),
 ) -> ComplaintResponse:
-    return to_complaint_response(service.get_view(complaint_id))
+    return _responses([service.get_view(complaint_id)], call_customer_service)[0]
 
 
 @router.post("/{complaint_id}/status", response_model=ComplaintResponse)
@@ -61,13 +89,15 @@ def update_complaint_status(
     complaint_id: str,
     payload: ComplaintActionRequest,
     service: ComplaintLifecycleService = Depends(get_complaint_lifecycle_service),
+    call_customer_service: CallCustomerService | None = Depends(
+        get_optional_call_customer_service
+    ),
     user: User = Depends(get_current_user),
 ) -> ComplaintResponse:
-    return to_complaint_response(
-        service.apply_action(
-            complaint_id, ComplaintLifecycleStatus(payload.status), user.email, payload.note
-        )
+    view = service.apply_action(
+        complaint_id, ComplaintLifecycleStatus(payload.status), user.email, payload.note
     )
+    return _responses([view], call_customer_service)[0]
 
 
 @call_complaints_router.get("/calls/{call_id}/complaints", response_model=CallComplaintsResponse)
@@ -93,12 +123,12 @@ def get_call_complaints(
     return CallComplaintsResponse(
         call_id=call_id,
         customer_id=customer_id,
-        complaints=[to_complaint_response(view) for view in service.list_for_call(call_id)],
+        complaints=_responses(service.list_for_call(call_id), call_customer_service),
         customer_history=(
-            [
-                to_complaint_response(view)
-                for view in service.customer_history(customer_id, exclude_call_id=call_id)
-            ]
+            _responses(
+                service.customer_history(customer_id, exclude_call_id=call_id),
+                call_customer_service,
+            )
             if customer_id is not None
             else []
         ),

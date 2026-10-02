@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.call_customer import CallCustomerLink
 from app.domain.complaint_lifecycle import ComplaintLifecycleStatus
 from app.domain.emerging_complaint_candidate import (
     EmergingComplaintCandidate,
@@ -38,6 +39,10 @@ class ComplaintResponse(_Response):
     is_open: bool
     follow_up_required: bool
     customer_id: str | None
+    # The call's customer as stored when they were identified (CRM name and
+    # vehicle registration); null until known.
+    customer_name: str | None = None
+    vehicle_registration: str | None = None
     first_detected_at: float
     last_updated_at: float
     # Statuses a person can move the complaint to now.
@@ -55,13 +60,17 @@ class CallComplaintsResponse(BaseModel):
 
 
 class ComplaintActionRequest(_Request):
-    status: Literal["resolved", "unresolved", "follow_up"]
+    status: Literal["resolved", "unresolved"]
     note: str | None = Field(default=None, max_length=500)
 
 
-def to_complaint_response(view: ComplaintView) -> ComplaintResponse:
+def to_complaint_response(
+    view: ComplaintView, customer: CallCustomerLink | None = None
+) -> ComplaintResponse:
     record = view.record
     return ComplaintResponse(
+        customer_name=None if customer is None else customer.customer_name,
+        vehicle_registration=None if customer is None else customer.vehicle_registration,
         complaint_id=record.complaint_id,
         call_id=record.call_id,
         category=record.category,

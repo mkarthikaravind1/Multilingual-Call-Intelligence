@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError } from '../../../api/errors'
+import { RecordTime } from '../../../components/RecordTime'
 import { StatePanel } from '../../../components/StatePanel'
-import { formatRecordTimestamp } from '../../../format/time'
 import { customerRestService } from '../services/customerRestService'
 
 import type { CallSummaryDeliveriesDto, SummaryDeliveryDto } from '../types/dto'
@@ -93,7 +93,7 @@ export function SummaryDeliveryPanel({
               <span className="badge">{delivery.channel === 'sms' ? 'SMS' : 'WhatsApp'}</span>
             </div>
             <span className="customer-panel__muted">
-              {formatRecordTimestamp(delivery.created_at)}
+              <RecordTime seconds={delivery.created_at} />
               {delivery.provider_message_id && ` · Gateway ID ${delivery.provider_message_id}`}
             </span>
             {reason && <p>{reason}</p>}

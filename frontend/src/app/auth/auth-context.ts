@@ -8,6 +8,8 @@ export interface AuthContextValue {
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  // Renews the access token; see useKeepSessionAlive.
+  refreshSession: () => Promise<void>
   clearUnauthorized: () => void
   statusMessage: string | null
 }

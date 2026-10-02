@@ -411,6 +411,65 @@ def test_queue_is_most_severe_then_oldest_first():
 
     assert [e.call_id for e in service.list_queue()] == ["critical", "high-old", "high-new"]
     assert [e.call_id for e in service.list_queue(active=False)] == ["watch-old"]
+    # All: the active queue first, then resolved ones.
+    assert [e.call_id for e in service.search("all")] == [
+        "critical",
+        "high-old",
+        "high-new",
+        "watch-old",
+    ]
+
+
+def test_search_filters_by_status_and_detected_and_acknowledged_dates():
+    clock = iter([20.0, 30.0]).__next__
+    repository = InMemoryEscalationRepository()
+    service = EscalationService(repository, RuleBasedEscalationProvider(), clock=clock)
+    for call_id, detected in (("a", 1.0), ("b", 5.0), ("c", 9.0)):
+        repository.save(
+            Escalation(
+                call_id,
+                EscalationLevel.HIGH,
+                (signal(level=EscalationLevel.HIGH),),
+                EscalationStatus.OPEN,
+                detected,
+                detected,
+            )
+        )
+    service.acknowledge("a", "sup@example.com")  # at 20
+    service.acknowledge("b", "sup@example.com")  # at 30
+
+    def ids(view="all", **ranges):
+        return sorted(e.call_id for e in service.search(view, **ranges))
+
+    assert ids("open") == ["c"]
+    assert ids("acknowledged") == ["a", "b"]
+    assert ids(detected_from=5.0) == ["b", "c"]
+    assert ids(detected_from=1.0, detected_to=5.0) == ["a"]
+    # Never acknowledged: left out once an acknowledged range is set.
+    assert ids(acknowledged_from=0.0) == ["a", "b"]
+    assert ids(acknowledged_from=25.0, acknowledged_to=31.0) == ["b"]
+
+
+def test_counts_are_overall_active_numbers():
+    repository = InMemoryEscalationRepository()
+    service = EscalationService(repository, RuleBasedEscalationProvider())
+    for call_id, level, status in (
+        ("a", EscalationLevel.CRITICAL, EscalationStatus.OPEN),
+        ("b", EscalationLevel.HIGH, EscalationStatus.OPEN),
+        ("c", EscalationLevel.CRITICAL, EscalationStatus.ACKNOWLEDGED),
+    ):
+        repository.save(
+            Escalation(
+                call_id, level, (signal(level=level),), status, 1.0, 1.0,
+                acknowledged_by="sup" if status is EscalationStatus.ACKNOWLEDGED else None,
+                acknowledged_at=2.0 if status is EscalationStatus.ACKNOWLEDGED else None,
+            )
+        )
+    service.resolve("b", "sup@example.com")
+
+    counts = service.counts()
+
+    assert (counts.active, counts.critical, counts.unacknowledged) == (2, 2, 1)
 
 
 # ---- Through the API ----
@@ -553,6 +612,17 @@ def test_supervisor_works_the_queue(api):
     assert resolved.json()["resolution_note"] == "Called back, offered a discount."
     assert supervisor.get("/api/v1/escalations").json() == []
     assert [e["call_id"] for e in supervisor.get("/api/v1/escalations?state=resolved").json()] == ["q1"]
+    assert [e["call_id"] for e in supervisor.get("/api/v1/escalations?state=all").json()] == ["q1"]
+    assert supervisor.get("/api/v1/escalations?state=open").json() == []
+    assert supervisor.get(
+        "/api/v1/escalations", params={"state": "all", "detected_from": 4102444800}
+    ).json() == []
+    assert supervisor.get("/api/v1/escalations/stats").json() == {
+        "active": 0,
+        "critical": 0,
+        "unacknowledged": 0,
+    }
+    assert icr.get("/api/v1/escalations/stats").status_code == 403
     assert supervisor.post("/api/v1/escalations/q1/resolve", json={}).status_code == 409
 
 

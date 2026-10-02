@@ -50,6 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const refreshSession = useCallback(async () => {
+    setSession(await authService.refresh())
+  }, [])
+
   const logout = useCallback(() => {
     authService.logout()
     setSession(null)
@@ -63,10 +67,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       login,
       logout,
+      refreshSession,
       clearUnauthorized,
       statusMessage,
     }),
-    [clearUnauthorized, isLoading, login, logout, session, statusMessage],
+    [clearUnauthorized, isLoading, login, logout, refreshSession, session, statusMessage],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

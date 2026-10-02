@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { RecordTime } from '../../../components/RecordTime'
 
 import { ApiError } from '../../../api/errors'
-import { formatRecordTimestamp } from '../../../format/time'
 import { humanizeLabel } from '../../../format/text'
 import { toEscalationViewModel } from '../adapters/toEscalationViewModel'
 import { escalationRestService } from '../services/escalationRestService'
@@ -98,17 +98,44 @@ export function EscalationCard({
           {showCallLink ? (
             <Link
               className="text-link escalation-card__call"
-              to={`/post-call-analysis?call_id=${encodeURIComponent(escalation.callId)}`}
+              to={`/live-call?call_id=${encodeURIComponent(escalation.callId)}`}
+              title={`Call ${escalation.callId}`}
             >
-              {escalation.callId}
+              Call Transcript
             </Link>
           ) : null}
         </div>
-        <div className="list-card__meta">
-          <EscalationLevelBadge level={escalation.level} />
-          <span className={`badge${isResolved ? ' badge--success' : ''}`}>
-            {humanizeLabel(escalation.status)}
-          </span>
+        <div className="escalation-card__top-right">
+          <div className="list-card__meta">
+            <EscalationLevelBadge level={escalation.level} />
+            <span className={`badge${isResolved ? ' badge--success' : ''}`}>
+              {humanizeLabel(escalation.status)}
+            </span>
+          </div>
+          {canManage && !isResolved && !isResolving && (
+            <div className="button-row escalation-card__buttons">
+              {escalation.status === 'open' && (
+                <button
+                  type="button"
+                  className="button"
+                  disabled={isSaving}
+                  onClick={() =>
+                    void act(() => escalationRestService.acknowledge(escalation.callId))
+                  }
+                >
+                  {isSaving ? 'Saving…' : 'Acknowledge'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={isSaving}
+                onClick={() => setIsResolving(true)}
+              >
+                Resolve
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -123,45 +150,25 @@ export function EscalationCard({
 
       {!compact && (
         <div className="list-card__facts">
-          <span>Detected: {formatRecordTimestamp(escalation.firstDetectedAt)}</span>
+          <span>
+            <strong>Detected:</strong> <RecordTime seconds={escalation.firstDetectedAt} />
+          </span>
           {escalation.acknowledgedBy && escalation.acknowledgedAt !== null && (
             <span>
-              Acknowledged by {escalation.acknowledgedBy},{' '}
-              {formatRecordTimestamp(escalation.acknowledgedAt)}
+              <strong>Acknowledged</strong> by {escalation.acknowledgedBy},{' '}
+              <RecordTime seconds={escalation.acknowledgedAt} />
             </span>
           )}
           {escalation.resolvedBy && escalation.resolvedAt !== null && (
             <span>
-              Resolved by {escalation.resolvedBy}, {formatRecordTimestamp(escalation.resolvedAt)}
+              <strong>Resolved</strong> by {escalation.resolvedBy},{' '}
+              <RecordTime seconds={escalation.resolvedAt} />
             </span>
           )}
         </div>
       )}
 
       {!compact && escalation.resolutionNote && <p className="summary-delivery__message">{escalation.resolutionNote}</p>}
-
-      {canManage && !isResolved && !isResolving && (
-        <div className="button-row">
-          {escalation.status === 'open' && (
-            <button
-              type="button"
-              className="button"
-              disabled={isSaving}
-              onClick={() => void act(() => escalationRestService.acknowledge(escalation.callId))}
-            >
-              {isSaving ? 'Saving…' : 'Acknowledge'}
-            </button>
-          )}
-          <button
-            type="button"
-            className="button button--secondary"
-            disabled={isSaving}
-            onClick={() => setIsResolving(true)}
-          >
-            Resolve
-          </button>
-        </div>
-      )}
 
       {canManage && isResolving && (
         <div className="escalation-card__resolve">

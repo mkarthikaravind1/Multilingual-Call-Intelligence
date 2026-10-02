@@ -319,6 +319,9 @@ class CallCustomerModel(Base):
     customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
     vehicle_id: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[float] = mapped_column(Float, nullable=False)
+    # Snapshot of the CRM record, for listing and searching calls.
+    customer_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    vehicle_registration: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (
         Index("ix_call_customers_customer_id", "customer_id"),

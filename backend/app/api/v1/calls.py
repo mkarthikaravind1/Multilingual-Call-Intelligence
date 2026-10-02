@@ -2,12 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.dependencies import (
     get_call_customer_service,
+    get_call_listing,
     get_call_service,
     get_optional_call_customer_service,
-    get_optional_escalation_service,
     get_workflow_service,
 )
-from app.services.escalation_service import EscalationService
 from app.api.v1.mappers import (
     to_analysis_response,
     to_call_list_response,
@@ -29,7 +28,9 @@ from app.api.v1.schemas import (
     StartCallRequest,
     UtteranceRequest,
 )
+from app.domain.conversation import ConversationStatus
 from app.services.call_customer_service import CallCustomerService
+from app.services.call_listing import CallListFilters, CallListingQuery
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.api.security_dependencies import get_current_user
@@ -47,23 +48,37 @@ MAX_PAGE_LIMIT = 100
 def list_calls(
     limit: int = Query(DEFAULT_PAGE_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
     offset: int = Query(0, ge=0),
-    call_service: CallService = Depends(get_call_service),
-    escalation_service: EscalationService | None = Depends(get_optional_escalation_service),
+    status: list[ConversationStatus] = Query(
+        default=[], description="Any of these statuses; none means all."
+    ),
+    high_escalation: bool = Query(
+        False, description="Only calls escalated to high or critical (open or resolved)."
+    ),
+    customer: str | None = Query(
+        None, max_length=100, description="Part of the customer name or vehicle registration."
+    ),
+    phone: str | None = Query(
+        None, max_length=32, description="Digits that appear in the caller's number."
+    ),
+    # Epoch seconds; from inclusive, to exclusive.
+    started_from: float | None = Query(None, ge=0),
+    started_to: float | None = Query(None, ge=0),
+    resolved_from: float | None = Query(None, ge=0),
+    resolved_to: float | None = Query(None, ge=0),
+    listing: CallListingQuery = Depends(get_call_listing),
     _: User = Depends(get_current_user),
 ) -> CallListResponse:
-    calls = call_service.list_calls(limit, offset)
-    escalations = (
-        escalation_service.get_many(call.call_id for call in calls)
-        if escalation_service is not None
-        else {}
+    filters = CallListFilters(
+        statuses=frozenset(status),
+        high_escalation=high_escalation,
+        customer=customer,
+        phone=phone,
+        started_from=started_from,
+        started_to=started_to,
+        resolved_from=resolved_from,
+        resolved_to=resolved_to,
     )
-    return to_call_list_response(
-        calls,
-        total=call_service.count_calls(),
-        limit=limit,
-        offset=offset,
-        escalations=escalations,
-    )
+    return to_call_list_response(listing.search(filters, limit, offset), limit, offset)
 
 @stats_router.get("/call-stats", response_model=CallStatsResponse)
 def get_call_stats(

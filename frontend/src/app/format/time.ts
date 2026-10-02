@@ -11,7 +11,8 @@ export function formatElapsedSeconds(seconds: number): string {
 }
 
 // For backend record timestamps that are real epoch seconds (e.g. learning
-// records). Do not use it for call start/end times — see formatCallDuration.
+// records, call start times, complaint resolution). Shows '—' for calls
+// started without a wall-clock time (start_time 0).
 export function formatRecordTimestamp(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return '—'
@@ -23,8 +24,9 @@ export function formatRecordTimestamp(seconds: number): string {
   })
 }
 
-// Call start/end times are not wall-clock dates for every call (telephony
-// calls start at 0), but their difference is always the real duration.
+// Call start/end times are not wall-clock dates for every call (calls
+// started through the API without a time start at 0), but their difference
+// is always the real duration.
 export function formatCallDuration(
   startTime: number,
   endTime: number | null,

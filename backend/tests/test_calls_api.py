@@ -388,6 +388,11 @@ def test_list_calls_returns_newest_first_with_pagination():
         # The fake sentiment is clearly negative, so the call is on watch.
         "escalation_level": "watch",
         "escalation_status": "open",
+        # No caller recorded, no complaints resolved.
+        "caller_number": None,
+        "customer_name": None,
+        "vehicle_registration": None,
+        "complaints_resolved_at": None,
     }
     assert first_page["items"][0]["escalation_level"] is None
 

@@ -1,8 +1,4 @@
-import {
-  useState,
-} from 'react'
-
-import type { FormEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import type {
   CallMetadataViewModel,
@@ -20,10 +16,10 @@ type CallHeaderProps = {
   isLoading: boolean
   isCompleting: boolean
   isStarting: boolean
-  initialCallId: string
+  // True while showing a call started from this page (not one opened
+  // from a call list), so it can be completed before starting another.
+  isLiveSession: boolean
   onStartCall: () => void
-  onOpenCall: (callId: string) => void
-  onClearCall: () => void
   onCompleteCall: () => void
   // Extra controls shown in the same box (e.g. test audio).
   children?: ReactNode
@@ -35,67 +31,29 @@ export function CallHeader({
   isLoading,
   isCompleting,
   isStarting,
-  initialCallId,
+  isLiveSession,
   onStartCall,
-  onOpenCall,
-  onClearCall,
   onCompleteCall,
   children,
 }: CallHeaderProps) {
-  const [callIdInput, setCallIdInput] =
-    useState(initialCallId)
-
-  const handleSubmit = (
-    event: FormEvent<HTMLFormElement>,
-  ) => {
-    event.preventDefault()
-    onOpenCall(callIdInput)
-  }
+  const isActive = call?.status.toLowerCase() === 'active'
 
   const canComplete =
     Boolean(call) &&
-    call?.status.toLowerCase() === 'active' &&
+    isActive &&
     !isLoading &&
     !isCompleting
 
+  // A call in progress on this page is completed first; otherwise
+  // (no call, a finished one, or one opened from a list) a new one can start.
+  const canStartNew = !(isLiveSession && isActive)
+
   return (
     <section className="live-call__header panel">
-      <form
-        className="live-call__call-selector"
-        onSubmit={handleSubmit}
-      >
-        <label htmlFor="live-call-id">
-          Call ID
-        </label>
-
-        <input
-          id="live-call-id"
-          value={callIdInput}
-          onChange={(event) =>
-            setCallIdInput(
-              event.target.value,
-            )
-          }
-          placeholder="Enter an existing call ID"
-          autoComplete="off"
-        />
-
-        <button
-          type="submit"
-          disabled={
-            isLoading ||
-            !callIdInput.trim()
-          }
-        >
-          {isLoading
-            ? 'Loading…'
-            : 'Open call'}
-        </button>
-
-        {!call && (
+      <div className="live-call__call-selector">
+        {canStartNew && (
           <button
             type="button"
-            className="live-call__secondary-button"
             onClick={onStartCall}
             disabled={isStarting || isLoading}
           >
@@ -108,6 +66,7 @@ export function CallHeader({
         {canComplete && (
           <button
             type="button"
+            className={canStartNew ? 'live-call__secondary-button' : undefined}
             onClick={onCompleteCall}
             disabled={isCompleting}
           >
@@ -117,32 +76,20 @@ export function CallHeader({
           </button>
         )}
 
-        {call && (
-          <button
-            type="button"
-            className="live-call__secondary-button"
-            onClick={onClearCall}
-          >
-            Clear
-          </button>
-        )}
-
         <div className="live-call__header-status">
-          <span
-            className={`live-call__call-status live-call__call-status--${
-              call?.status?.toLowerCase() ??
-              'idle'
-            }`}
-          >
-            {call?.status ??
-              'No call selected'}
-          </span>
+          {call && (
+            <span
+              className={`live-call__call-status live-call__call-status--${call.status.toLowerCase()}`}
+            >
+              {call.status}
+            </span>
+          )}
 
           <ConnectionStatus
             status={connectionStatus}
           />
         </div>
-      </form>
+      </div>
 
       {children}
     </section>

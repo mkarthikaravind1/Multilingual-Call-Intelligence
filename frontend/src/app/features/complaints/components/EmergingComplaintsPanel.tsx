@@ -1,9 +1,10 @@
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
+import { RecordTime } from '../../../components/RecordTime'
 import { Link } from 'react-router-dom'
 
 import { ApiError } from '../../../api/errors'
 import { StatePanel } from '../../../components/StatePanel'
-import { formatRecordTimestamp } from '../../../format/time'
 import { emergingComplaintRestService } from '../services/complaintRestService'
 
 import type {
@@ -36,12 +37,17 @@ const STATUS_LABELS: Record<EmergingComplaintStatus, string> = {
 const EVIDENCE_PREVIEW = 3
 const CALL_LINK_PREVIEW = 6
 
-function describeRun(run: DiscoveryRunDto): string {
-  const when = formatRecordTimestamp(run.ran_at)
+function describeRun(run: DiscoveryRunDto): ReactNode {
+  const when = <RecordTime seconds={run.ran_at} />
   if (run.skipped_reason) {
-    return `Last run ${when}: ${run.skipped_reason}`
+    return <>Last run {when}: {run.skipped_reason}</>
   }
-  return `Last run ${when}: read ${run.calls_scanned} completed calls, found ${run.candidates_found} theme${run.candidates_found === 1 ? '' : 's'} (${run.new_candidates} new).`
+  return (
+    <>
+      Last run {when}: read {run.calls_scanned} completed calls, found {run.candidates_found}{' '}
+      theme{run.candidates_found === 1 ? '' : 's'} ({run.new_candidates} new).
+    </>
+  )
 }
 
 type CandidateCardProps = {
@@ -117,8 +123,8 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
 
       <div className="list-card__facts">
         {candidate.related_category && <span>Related to: {candidate.related_category}</span>}
-        <span>First seen: {formatRecordTimestamp(candidate.first_seen_at)}</span>
-        <span>Last seen: {formatRecordTimestamp(candidate.last_seen_at)}</span>
+        <span>First seen: <RecordTime seconds={candidate.first_seen_at} /></span>
+        <span>Last seen: <RecordTime seconds={candidate.last_seen_at} /></span>
         {candidate.call_ids.length > 0 && (
           <span>
             Calls:{' '}
@@ -139,7 +145,7 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
         )}
         {candidate.reviewed_by && candidate.reviewed_at !== null && (
           <span>
-            Reviewed by {candidate.reviewed_by}, {formatRecordTimestamp(candidate.reviewed_at)}
+            Reviewed by {candidate.reviewed_by}, <RecordTime seconds={candidate.reviewed_at} />
           </span>
         )}
       </div>

@@ -8,9 +8,33 @@ export type ComplaintStatus =
   | 'follow_up'
 
 // Statuses a person can set; the others are driven by the call.
-export type ComplaintAction = 'resolved' | 'unresolved' | 'follow_up'
+export type ComplaintAction = 'resolved' | 'unresolved'
 
 export type ComplaintQueueState = 'open' | 'resolved' | 'all'
+
+// A complaint's current stage, as the queue filters it (GET /complaints?stage=).
+// "outcome" is resolved or unresolved.
+export type ComplaintStage = 'detected' | 'probed' | 'covered' | 'outcome' | 'follow_up'
+
+// Mirrors COMPLAINT_CATEGORIES in backend/app/core/constants.py.
+export const COMPLAINT_CATEGORIES = [
+  'Cost',
+  'Hygiene',
+  'Hospitality',
+  'Service Quality',
+  'Turnaround Time',
+  'Communication',
+  'Parts Availability',
+  'Staff Behaviour',
+  'Documentation',
+  'Other',
+] as const
+
+export interface ComplaintQueueFilters {
+  // Any of these; empty means all.
+  categories?: string[]
+  stages?: ComplaintStage[]
+}
 
 export interface ComplaintEventDto {
   status: ComplaintStatus
@@ -29,6 +53,9 @@ export interface ComplaintDto {
   is_open: boolean
   follow_up_required: boolean
   customer_id: string | null
+  // The call's customer as stored when identified; null until known.
+  customer_name?: string | null
+  vehicle_registration?: string | null
   first_detected_at: number
   last_updated_at: number
   allowed_actions: ComplaintAction[]

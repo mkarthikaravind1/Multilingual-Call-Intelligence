@@ -98,8 +98,9 @@ def record(status: ComplaintLifecycleStatus) -> ComplaintLifecycleRecord:
         (S.DETECTED, (S.RESOLVED, S.UNRESOLVED)),
         (S.PROBED, (S.RESOLVED, S.UNRESOLVED)),
         (S.COVERED, (S.RESOLVED, S.UNRESOLVED)),
-        (S.UNRESOLVED, (S.RESOLVED, S.FOLLOW_UP)),
-        (S.RESOLVED, (S.FOLLOW_UP,)),
+        # Follow-ups are no longer scheduled by hand; existing ones resolve.
+        (S.UNRESOLVED, (S.RESOLVED,)),
+        (S.RESOLVED, ()),
         (S.FOLLOW_UP, (S.RESOLVED,)),
     ],
 )
@@ -165,7 +166,7 @@ def test_closing_a_call_flags_open_complaints_for_follow_up_once():
     assert not hygiene.follow_up_required and hygiene.customer_id == "cust-1"
 
 
-def test_people_resolve_and_schedule_follow_ups_with_a_history():
+def test_people_mark_complaints_unresolved_then_resolved_with_a_history():
     clock = Clock()
     service, _ = lifecycle(clock)
     service.sync_from_coverage(coverage("c", Cost=ComplaintCoverageStatus.DETECTED), at=1.0)
@@ -173,15 +174,14 @@ def test_people_resolve_and_schedule_follow_ups_with_a_history():
 
     clock.now = 2000.0
     unresolved = service.apply_action("c:Cost", S.UNRESOLVED, "a@example.com", "  ")
-    follow_up = service.apply_action("c:Cost", S.FOLLOW_UP, "a@example.com", "Call back Monday.")
-    assert follow_up.record.follow_up_required
+    with pytest.raises(ComplaintActionError):
+        service.apply_action("c:Cost", S.FOLLOW_UP, "a@example.com")  # not set by hand
     resolved = service.apply_action("c:Cost", S.RESOLVED, "sup@example.com", "Part replaced.")
 
     assert unresolved.events[-1].note is None
     assert resolved.record.status is S.RESOLVED and not resolved.record.follow_up_required
-    assert [(e.status, e.actor) for e in resolved.events[-3:]] == [
+    assert [(e.status, e.actor) for e in resolved.events[-2:]] == [
         (S.UNRESOLVED, "a@example.com"),
-        (S.FOLLOW_UP, "a@example.com"),
         (S.RESOLVED, "sup@example.com"),
     ]
     assert resolved.events[-1].at == 2000.0
@@ -216,6 +216,31 @@ def test_queue_puts_follow_ups_first_then_oldest():
     assert [v.record.call_id for v in service.list_queue("all")][0] == "new"
     with pytest.raises(ValueError):
         service.list_queue("everything")
+
+
+def test_queue_filters_by_category_and_current_stage_before_the_limit():
+    service, repository = lifecycle()
+    for complaint_id, category, status, detected in (
+        ("a:Cost", "Cost", S.RAISED, 1.0),
+        ("b:Cost", "Cost", S.PROBED, 2.0),
+        ("c:Hygiene", "Hygiene", S.UNRESOLVED, 3.0),
+        ("d:Hygiene", "Hygiene", S.RESOLVED, 4.0),
+        ("e:Communication", "Communication", S.FOLLOW_UP, 5.0),
+    ):
+        call_id = complaint_id.split(":")[0]
+        repository.save(
+            ComplaintLifecycleRecord(complaint_id, call_id, category, status, detected, detected)
+        )
+
+    def ids(**kwargs):
+        return sorted(v.record.complaint_id for v in service.list_queue("all", **kwargs))
+
+    assert ids(categories=["Hygiene"]) == ["c:Hygiene", "d:Hygiene"]
+    assert ids(stages=["detected"]) == ["a:Cost"]  # raised counts as detected
+    assert ids(stages=["outcome"]) == ["c:Hygiene", "d:Hygiene"]
+    assert ids(stages=["probed", "follow_up"]) == ["b:Cost", "e:Communication"]
+    assert ids(categories=["Cost"], stages=["outcome"]) == []
+    assert [v.record.complaint_id for v in service.list_queue("all", 1, ["Cost"])] == ["b:Cost"]
 
 
 def test_customer_history_excludes_the_current_call_and_attach_backfills():
@@ -618,6 +643,21 @@ def test_calls_feed_the_lifecycle_and_completion_flags_follow_up():
     assert complaint["customer_id"] == "cust-1" and complaint["follow_up_required"]
     assert complaint["allowed_actions"] == ["resolved", "unresolved"]
     assert complaint["events"][-1]["note"] == CALL_ENDED_NOTE
+    # The customer looked up at completion is shown by name on the queue.
+    assert complaint["customer_name"] == "Priya"
+    assert complaint["vehicle_registration"] is None  # no vehicle in the CRM
+
+    def queue(**params):
+        items = icr.get("/api/v1/complaints", params={"state": "all", **params}).json()
+        return [(item["category"], item["customer_name"]) for item in items]
+
+    assert queue() == [("Turnaround Time", "Priya")]
+    assert queue(category=["Turnaround Time", "Cost"], stage=["detected"]) == [
+        ("Turnaround Time", "Priya")
+    ]
+    assert queue(category=["Cost"]) == []
+    assert queue(stage=["outcome"]) == []
+    assert icr.get("/api/v1/complaints", params={"stage": "closed"}).status_code == 422
 
 
 def test_complaints_are_worked_through_the_api_and_show_in_customer_history():
@@ -628,7 +668,7 @@ def test_complaints_are_worked_through_the_api_and_show_in_customer_history():
     complaint_id = "first:Turnaround Time"
 
     bad = icr.post(f"/api/v1/complaints/{complaint_id}/status", json={"status": "follow_up"})
-    assert bad.status_code == 409
+    assert bad.status_code == 422  # follow-ups are not scheduled by hand
     assert icr.post(f"/api/v1/complaints/{complaint_id}/status", json={"status": "probed"}).status_code == 422
     resolved = icr.post(
         f"/api/v1/complaints/{complaint_id}/status",

@@ -56,6 +56,7 @@ def build_app():
         escalation_provider=create_escalation_provider(llm_client, settings),
         complaint_lifecycle_repository=repositories.complaint_lifecycle,
         emerging_complaint_repository=repositories.emerging_complaint,
+        call_listing_query=repositories.call_listing,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),
     )
     services = dataclasses.replace(

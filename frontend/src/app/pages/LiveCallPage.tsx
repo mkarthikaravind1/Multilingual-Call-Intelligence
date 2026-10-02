@@ -5,6 +5,7 @@ import { toUserErrorMessage } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
 import { EscalationCard } from '../features/escalation/components/EscalationCard'
 import { useAuth } from '../auth/useAuth'
+import { useKeepSessionAlive } from '../auth/useKeepSessionAlive'
 import type { EscalationViewModel } from '../features/escalation/types/view-models'
 import { callRestService } from '../features/live-call/services/callRestService'
 import { CallHeader } from '../features/live-call/components/CallHeader'
@@ -14,6 +15,7 @@ import { ServiceEstimatePanel } from '../features/live-call/components/ServiceEs
 import { ToneIndicator } from '../features/live-call/components/ToneIndicator'
 import { TranscriptPanel } from '../features/live-call/components/TranscriptPanel'
 import { useLiveCall } from '../features/live-call/hooks/useLiveCall'
+import { LIVE_SESSION_PARAM, isCallDetailsView } from '../features/live-call/liveCallMode'
 import { TestAudioPanel } from '../features/test-audio/components/TestAudioPanel'
 import { useTestAudioReplay } from '../features/test-audio/hooks/useTestAudioReplay'
 
@@ -31,6 +33,7 @@ export function LiveCallPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const callId = searchParams.get('call_id')?.trim() ?? ''
+  const isLiveSession = Boolean(callId) && !isCallDetailsView(searchParams)
   const { session } = useAuth()
   const canManageEscalations =
     session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
@@ -39,33 +42,22 @@ export function LiveCallPage() {
 
   const liveCall = useLiveCall(callId || null)
 
-  const {
-    clearCall: clearLiveCall,
-  } = liveCall
-
-  const openCall = useCallback(
-    (requestedCallId: string) => {
-      const normalizedCallId = requestedCallId.trim()
-
-      if (!normalizedCallId) {
-        return
-      }
-
-      setSearchParams({
-        call_id: normalizedCallId,
-      })
+  // Shows a call started on this page: a manual call or a test-audio call.
+  const openLiveCall = useCallback(
+    (startedCallId: string) => {
+      setSearchParams({ call_id: startedCallId, [LIVE_SESSION_PARAM]: '1' })
     },
     [setSearchParams],
   )
 
-  const testAudio = useTestAudioReplay(openCall)
-  const { reset: resetTestAudio } = testAudio
+  const testAudio = useTestAudioReplay(openLiveCall)
 
-  const clearCall = useCallback(() => {
-    setSearchParams({})
-    clearLiveCall()
-    void resetTestAudio()
-  }, [setSearchParams, clearLiveCall, resetTestAudio])
+  // A call in progress (or a test recording still playing) must never be
+  // cut off by the session timing out.
+  useKeepSessionAlive(
+    liveCall.call?.status.toLowerCase() === 'active' ||
+      ['preparing', 'streaming', 'ending'].includes(testAudio.phase),
+  )
 
   const [isStarting, setIsStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
@@ -76,13 +68,13 @@ export function LiveCallPage() {
 
     try {
       const created = await callRestService.startManualCall()
-      setSearchParams({ call_id: created.call_id })
+      openLiveCall(created.call_id)
     } catch (err) {
       setStartError(toUserErrorMessage(err, 'Unable to start a new call.'))
     } finally {
       setIsStarting(false)
     }
-  }, [setSearchParams])
+  }, [openLiveCall])
 
   return (
     <section className="page-shell live-call-page">
@@ -92,13 +84,11 @@ export function LiveCallPage() {
         connectionStatus={liveCall.connectionStatus}
         isLoading={liveCall.isLoading}
         isCompleting={liveCall.isCompleting}
-        initialCallId={callId}
         isStarting={isStarting}
+        isLiveSession={isLiveSession}
         onStartCall={() => {
           void startNewCall()
         }}
-        onOpenCall={openCall}
-        onClearCall={clearCall}
         onCompleteCall={() => {
           void liveCall.completeCall()
         }}
@@ -130,19 +120,29 @@ export function LiveCallPage() {
       {!callId && (
         <div className="live-call__setup panel">
           <div>
-            <p className="panel__label">
-              No call selected
-            </p>
-
             <h3>
-              Open or start a call
+              Before you start a call
             </h3>
 
-            <p>
-              Enter a call ID above to open an existing call, or start
-              a new manual call. Telephony calls can be opened from
-              Call History.
-            </p>
+            <ul className="live-call__tips">
+              <li>
+                Use a headset or a good-quality microphone; clear audio gives
+                a more accurate transcript.
+              </li>
+              <li>
+                Take the call somewhere quiet, and let one person speak at a
+                time.
+              </li>
+              <li>
+                Press <strong>Start new call</strong> when the conversation
+                begins. The transcript, complaints, tone and suggested
+                questions update live as you talk.
+              </li>
+              <li>
+                Press <strong>Complete call</strong> when it ends to get the
+                post-call summary.
+              </li>
+            </ul>
           </div>
         </div>
       )}

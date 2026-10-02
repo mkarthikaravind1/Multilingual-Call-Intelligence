@@ -9,6 +9,7 @@ from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.call_customer_service import CallCustomerService
+from app.services.call_listing import CallListingQuery
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
 from app.services.escalation_service import EscalationService
@@ -29,6 +30,7 @@ from starlette.requests import HTTPConnection
 class ApiServices:
     call_service: CallService
     workflow_service: CallWorkflowService
+    call_listing: CallListingQuery | None = None
 
     learning: LearningManagementService | None = None
     auth: AuthService | None = None
@@ -149,6 +151,13 @@ def get_live_chunk_processing_service(
     connection: HTTPConnection,
 ) -> LiveChunkProcessingService | None:
     return connection.app.state.services.live_chunk_processing_service
+
+
+def get_call_listing(connection: HTTPConnection) -> CallListingQuery:
+    listing = connection.app.state.services.call_listing
+    if listing is None:
+        raise HTTPException(status_code=503, detail="The call list is not configured.")
+    return listing
 
 
 def get_call_service(connection: HTTPConnection) -> CallService:

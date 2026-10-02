@@ -225,8 +225,8 @@ export function PostCallAnalysisPage() {
     <section className="page-shell">
       {callId && (
         <div className="page-shell__header page-shell__header--actions">
-          <Link className="button button--secondary" to="/call-history">
-            Back to call history
+          <Link className="button button--secondary" to="/dashboard">
+            Back to dashboard
           </Link>
         </div>
       )}
@@ -234,10 +234,10 @@ export function PostCallAnalysisPage() {
       {!callId && (
         <StatePanel
           title="No call selected"
-          description="Choose a call from Call History to review its transcript, complaints, service estimate and post-call summary."
+          description="Choose a call on the dashboard to review its transcript, complaints, service estimate and post-call summary."
           action={
-            <Link className="button" to="/call-history">
-              Browse call history
+            <Link className="button" to="/dashboard">
+              Go to dashboard
             </Link>
           }
         />

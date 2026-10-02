@@ -41,8 +41,17 @@ export class AuthService {
   async login(email: string, password: string): Promise<AuthSessionState> {
     const payload: LoginRequest = { email, password }
     const response = await apiClient.post<TokenResponse>('/api/v1/auth/login', payload)
-    const accessToken = response.access_token
+    return this.startSession(response.access_token)
+  }
 
+  // Swaps the current, still-valid token for a fresh one (used to keep a
+  // live call signed in). A 401 means the session already ended.
+  async refresh(): Promise<AuthSessionState> {
+    const response = await apiClient.post<TokenResponse>('/api/v1/auth/refresh', {})
+    return this.startSession(response.access_token)
+  }
+
+  private startSession(accessToken: string): AuthSessionState {
     const claims = decodeJwtClaims(accessToken)
     const role = this.resolveRole(claims.role)
 

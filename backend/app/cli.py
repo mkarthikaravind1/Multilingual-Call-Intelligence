@@ -4,10 +4,15 @@
     python -m app.cli reset-password --email admin@dealer.com
     python -m app.cli list-users
     python -m app.cli reset-data
+    python -m app.cli backfill-call-customers
 
 reset-data deletes every call and all AI data (transcripts, complaints,
 escalations, learning evidence and improvements) but keeps user accounts,
 so a test environment can start fresh. It refuses to run in production.
+
+backfill-call-customers looks up, in the CRM, the customer of every call
+that has a caller number but no customer name stored yet, so the call list
+can show and search names for calls made before names were stored.
 
 The password is asked for interactively, or read from the environment
 variable named by --password-env (for scripted deployments). It is never
@@ -26,7 +31,9 @@ from app.core.config import get_settings
 from app.infrastructure.database import models as _models  # noqa: F401  (registers tables)
 from app.infrastructure.database.base import Base
 from app.infrastructure.database.engine import build_engine
+from app.composition.providers import create_customer_directory
 from app.domain.user import UserRole
+from app.services.call_customer_service import CallCustomerService
 from app.services.auth_service import AuthService, EmailAlreadyRegisteredError
 from app.services.user_management_service import (
     UserManagementError,
@@ -72,6 +79,17 @@ def _reset_data(confirmed: bool) -> None:
     print(f"Cleared {len(tables)} tables. Restart the backend to clear in-memory live state.")
 
 
+def _backfill_call_customers() -> None:
+    settings = get_settings()
+    service = CallCustomerService(
+        build_production_repositories(settings).call_customer,
+        create_customer_directory(settings),
+        default_country_code=settings.phone_default_country_code,
+    )
+    named, checked = service.refresh_customer_names()
+    print(f"Checked {checked} calls without a customer name; named {named}.")
+
+
 def _service() -> UserManagementService:
     repository = build_production_repositories().user
     return UserManagementService(repository, AuthService(repository))
@@ -97,9 +115,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     reset_data.add_argument("--yes", action="store_true", help="Skip the confirmation prompt.")
 
+    commands.add_parser(
+        "backfill-call-customers",
+        help="Store CRM customer names and vehicle numbers on calls that lack them.",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "reset-data":
         _reset_data(args.yes)
+        return 0
+    if args.command == "backfill-call-customers":
+        _backfill_call_customers()
         return 0
     service = _service()
 

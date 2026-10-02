@@ -393,7 +393,15 @@
 }
 
 .table-row--calls {
-  grid-template-columns: minmax(0, 2fr) 0.9fr 0.8fr 0.8fr minmax(0, 1.8fr);
+  grid-template-columns:
+    minmax(0, 1.7fr) minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)
+    0.75fr 0.65fr minmax(0, 1.5fr);
+  min-width: 1040px;
+}
+
+/* Eight columns: scroll sideways rather than squeeze on narrower screens. */
+.call-table {
+  overflow-x: auto;
 }
 
 .table-row:not(.table-row--head):hover {
@@ -403,6 +411,11 @@
 .table-cell {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.table-cell--nowrap {
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .table-cell--primary,
@@ -1908,6 +1921,7 @@
     grid-template-columns: 1fr;
     gap: var(--space-2);
     padding: var(--space-4);
+    min-width: 0;
   }
 
   .table-row--head {
@@ -1931,10 +1945,6 @@
 /* Complaint lifecycle */
 .complaint-card {
   border-left: 4px solid var(--color-border);
-}
-
-.complaint-card--follow-up {
-  border-left-color: var(--color-warning);
 }
 
 .complaint-card--closed {
@@ -1977,9 +1987,52 @@
   margin-left: auto;
 }
 
-.complaint-card__buttons .button {
+/* Per-card decision: Resolved / Unresolved checkboxes and a Save button. */
+.complaint-card__decision {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.complaint-card__choices {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.complaint-card__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.complaint-card__choice input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.complaint-card__choice:has(input:disabled) {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.complaint-card__decision .button {
   min-height: 34px;
-  padding: 4px var(--space-3);
+  padding: 4px var(--space-4);
+}
+
+.complaint-card__customer {
+  color: var(--color-text);
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .complaint-card__progress .list-card__facts {
@@ -2070,12 +2123,30 @@
 }
 
 /* Test audio (Live call page, supervisors and admins): a row in the call box */
+/* Test audio is a temporary testing aid: a dashed, amber-tinted strip with
+   a "Testing only" tag, visibly apart from the regular call controls. */
 .test-audio {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed rgba(217, 119, 6, 0.55);
+  border-radius: var(--radius-sm);
+  background: rgba(217, 119, 6, 0.05);
+}
+
+.test-audio__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  background: rgba(217, 119, 6, 0.14);
+  color: #92400e;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .test-audio__row {
@@ -2092,22 +2163,23 @@
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
-  padding: 9px 12px;
-  font-size: 0.9rem;
+  padding: 6px 10px;
+  font-size: 0.85rem;
 }
 
 .test-audio__button {
-  border: 0;
+  border: 1px dashed rgba(217, 119, 6, 0.7);
   border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: #fff;
-  padding: 9px 15px;
-  font-weight: 700;
+  background: transparent;
+  color: #92400e;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .test-audio__button:hover:not(:disabled) {
-  background: var(--color-primary-strong);
+  background: rgba(217, 119, 6, 0.12);
 }
 
 .test-audio__button:disabled {
@@ -2240,7 +2312,8 @@
   }
 }
 
-/* Dashboard: call counts as one compact row ("Total calls: 17"). */
+/* Dashboard: call counts as one compact row ("Total calls: 17"). Each box is
+   as wide as its label and number, so it grows and shrinks with the count. */
 .dashboard-stats {
   display: flex;
   flex-wrap: wrap;
@@ -2248,7 +2321,8 @@
 }
 
 .dashboard-stat {
-  flex: 1 1 180px;
+  flex: 0 0 auto;
+  white-space: nowrap;
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
@@ -2296,4 +2370,241 @@
 
 .post-call__call-line strong {
   color: var(--color-text);
+}
+
+/* Call list: search, status checkboxes and date ranges above the table. */
+.call-browser {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.call-filters {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.call-filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-5);
+}
+
+.call-filters label > span,
+.call-filters legend {
+  display: block;
+  margin-bottom: var(--space-1);
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.call-filters fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.call-filters__search {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.call-filters input[type='search'],
+.call-filters input[type='date'] {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.call-filters input[type='search']:focus,
+.call-filters input[type='date']:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(42, 122, 226, 0.12);
+}
+
+.call-filters__checks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-4);
+}
+
+.call-filters__checks legend {
+  width: 100%;
+}
+
+.call-filters__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.call-filters__check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.call-filters__range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.call-filters__range legend {
+  float: left;
+  width: 100%;
+}
+
+.call-filters__date {
+  flex: 0 1 160px;
+  min-width: 130px;
+}
+
+.call-filters__date > span {
+  font-size: 0.66rem;
+}
+
+.call-filters__hint {
+  flex-basis: 100%;
+  color: var(--color-danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.call-filters__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.call-filters__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 760px) {
+  .call-filters__date {
+    flex: 1 1 130px;
+  }
+
+  .call-filters__actions {
+    margin-left: 0;
+  }
+}
+
+/* Live Call with no call open: tips for starting one. */
+.live-call__tips {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  text-align: left;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.live-call__tips strong {
+  color: var(--color-text);
+}
+
+/* AI Improvement Center: each component's evidence in its own colour. */
+.evidence-tone--next_question { --evidence-tone: #2a7ae2; }
+.evidence-tone--complaint_detection { --evidence-tone: #c2410c; }
+.evidence-tone--sentiment_analysis { --evidence-tone: #7c3aed; }
+.evidence-tone--estimation { --evidence-tone: #0f766e; }
+.evidence-tone--post_call_summary { --evidence-tone: #b45309; }
+.evidence-tone--general { --evidence-tone: #5b7085; }
+
+.evidence-card {
+  border-left: 4px solid var(--evidence-tone);
+  background: color-mix(in srgb, var(--evidence-tone) 6%, var(--color-bg-elevated));
+}
+
+.evidence-card__component {
+  background: color-mix(in srgb, var(--evidence-tone) 14%, transparent);
+  color: var(--evidence-tone);
+}
+
+.evidence-filter {
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.evidence-filter legend {
+  width: 100%;
+  margin-bottom: var(--space-1);
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.evidence-filter__option input {
+  accent-color: var(--evidence-tone);
+}
+
+.evidence-filter__option::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--evidence-tone);
+}
+
+/* Tags on the left, customer and recorded time at the right end. */
+.evidence-card__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.evidence-card__source {
+  margin: 0 0 0 auto;
+  justify-content: flex-end;
+}
+
+/* Escalation card: badges with Acknowledge / Resolve at the top right. */
+.escalation-card__top-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2) var(--space-3);
+  margin-left: auto;
+}
+
+.escalation-card__buttons .button {
+  min-height: 34px;
+  padding: 4px var(--space-4);
 }

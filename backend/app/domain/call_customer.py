@@ -14,13 +14,20 @@ def _optional_text(value: str | None, field_name: str) -> None:
 @dataclass(frozen=True)
 class CallCustomerLink:
     """Who a call is with: the caller's number and, once the CRM recognised
-    it, the customer and the vehicle the call is about. Keyed by call_id."""
+    it, the customer and the vehicle the call is about. Keyed by call_id.
+
+    customer_name and vehicle_registration are a snapshot of the CRM record
+    taken when the customer was resolved, so call lists can show and search
+    them without a CRM round trip per call. The CRM stays the source of truth.
+    """
 
     call_id: str
     caller_number: str | None = None
     customer_id: str | None = None
     vehicle_id: str | None = None
     updated_at: float = 0.0
+    customer_name: str | None = None
+    vehicle_registration: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.call_id, str) or not self.call_id.strip():
@@ -28,8 +35,18 @@ class CallCustomerLink:
         _optional_text(self.caller_number, "caller_number")
         _optional_text(self.customer_id, "customer_id")
         _optional_text(self.vehicle_id, "vehicle_id")
+        _optional_text(self.customer_name, "customer_name")
+        _optional_text(self.vehicle_registration, "vehicle_registration")
         if self.vehicle_id is not None and self.customer_id is None:
             raise ValueError("A vehicle can only be linked together with its customer.")
+        if self.customer_name is not None and self.customer_id is None:
+            raise ValueError("A customer name can only be stored together with its customer.")
+        # Tied to the customer, not vehicle_id: a customer's only vehicle is
+        # selected without being stored on the link.
+        if self.vehicle_registration is not None and self.customer_id is None:
+            raise ValueError(
+                "A vehicle registration can only be stored together with its customer."
+            )
         if isinstance(self.updated_at, bool) or not isinstance(self.updated_at, (int, float)):
             raise TypeError("updated_at must be a number.")
         if self.updated_at < 0:

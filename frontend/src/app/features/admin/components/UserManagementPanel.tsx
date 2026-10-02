@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../../../api/errors'
+import { RecordTime } from '../../../components/RecordTime'
 import { AUTH_ROLES, type UserRole } from '../../../api/types/auth'
 import { StatePanel } from '../../../components/StatePanel'
-import { formatRecordTimestamp } from '../../../format/time'
 import { adminRestService } from '../services/adminRestService'
 
 import type { ManagedUserDto, UpdateUserDto } from '../types/dto'
@@ -72,7 +72,7 @@ function UserCard({ user, isCurrentUser, onUpdated }: UserCardProps) {
       </div>
 
       <div className="list-card__facts">
-        <span>Created: {formatRecordTimestamp(user.created_at)}</span>
+        <span>Created: <RecordTime seconds={user.created_at} /></span>
       </div>
 
       <div className="review-form">

@@ -25,6 +25,14 @@ export interface CallSummaryDto {
   // Present on call-list items; null when the call never escalated.
   escalation_level?: EscalationLevel | null
   escalation_status?: EscalationStatus | null
+  // Present on call-list items; null until the caller / customer is known.
+  // Name and registration are the CRM's, stored when the customer was identified.
+  caller_number?: string | null
+  customer_name?: string | null
+  vehicle_registration?: string | null
+  // Epoch seconds the last complaint was resolved; null while any is open
+  // or when the call raised none.
+  complaints_resolved_at?: number | null
 }
 
 export interface CallResponseDto extends CallSummaryDto {

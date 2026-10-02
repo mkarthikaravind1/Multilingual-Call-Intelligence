@@ -133,6 +133,14 @@ class CallSummaryResponse(_Response):
     # null when the call never escalated
     escalation_level: EscalationLevel | None = None
     escalation_status: EscalationStatus | None = None
+    # Who the call was with; null until known. The name and registration
+    # are the CRM's, stored when the customer was identified.
+    caller_number: str | None = None
+    customer_name: str | None = None
+    vehicle_registration: str | None = None
+    # When the last of the call's complaints was resolved (epoch seconds);
+    # null while any is open, or when the call raised none.
+    complaints_resolved_at: float | None = None
 
 class CallListResponse(BaseModel):
     items: list[CallSummaryResponse]
@@ -236,6 +244,12 @@ class EscalationResponse(_Response):
     resolved_by: str | None
     resolved_at: float | None
     resolution_note: str | None
+
+
+class EscalationStatsResponse(_Response):
+    active: int
+    critical: int
+    unacknowledged: int
 
 
 class ResolveEscalationRequest(_Request):

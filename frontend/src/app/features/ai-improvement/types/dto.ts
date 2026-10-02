@@ -18,6 +18,16 @@ export type LearningComponent =
   | 'post_call_summary'
   | 'general'
 
+// Every component, in the order the evidence filter lists them.
+export const LEARNING_COMPONENTS: LearningComponent[] = [
+  'next_question',
+  'complaint_detection',
+  'sentiment_analysis',
+  'estimation',
+  'post_call_summary',
+  'general',
+]
+
 export type EvidenceType =
   | 'ai_prediction'
   | 'human_correction'
@@ -118,4 +128,7 @@ export interface LearningEvidenceDto {
   actual_value: string | null
   human_correction: string | null
   created_at: number
+  // The call's customer as stored when identified; null until known.
+  customer_name?: string | null
+  vehicle_registration?: string | null
 }

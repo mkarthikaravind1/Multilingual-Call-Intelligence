@@ -34,8 +34,15 @@ export function TestAudioPanel({ replay }: TestAudioPanelProps) {
 
   return (
     // A row inside the Live Call box: caller number, upload, progress.
-    <div className="test-audio" aria-label="Test audio">
+    // Styled as a temporary testing aid, not part of the regular workflow.
+    <div className="test-audio" role="group" aria-label="Test audio (testing only)">
       <div className="test-audio__row">
+        <span
+          className="test-audio__tag"
+          title="A temporary tool for testing: plays a recording as if it were a live phone call."
+        >
+          Testing only
+        </span>
         <input
           className="test-audio__number"
           value={fromNumber}
@@ -94,7 +101,7 @@ export function TestAudioPanel({ replay }: TestAudioPanelProps) {
                 className="test-audio__link"
                 to={`/post-call-analysis?call_id=${encodeURIComponent(replay.callId)}`}
               >
-                Post-call analysis →
+                Post Call analysis →
               </Link>
             )}
           </div>

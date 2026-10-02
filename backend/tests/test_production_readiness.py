@@ -1,10 +1,12 @@
 """Production readiness: shared live state, the telephony stream token,
 post-call repair, user provisioning, monitoring and configuration checks."""
 
+import dataclasses
 import logging
 import threading
 import time
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -14,7 +16,7 @@ from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider, SentimentLabel, SentimentResult
 from app.api.app_factory import create_app
 from app.api.wiring import build_api_services
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.production_checks import (
     UnsafeConfigurationError,
     check_configuration,
@@ -24,7 +26,7 @@ from app.domain.user import User, UserRole
 from app.domain.user_repository import InMemoryUserRepository
 from app.domain.utterance import SpeakerRole
 from app.observability.metrics import Counter, Gauge, Histogram, MetricsRegistry
-from app.security.jwt import create_access_token
+from app.security.jwt import create_access_token, decode_access_token
 from app.security.stream_token import create_stream_token, is_valid_stream_token
 from app.services.auth_service import AuthService, EmailAlreadyRegisteredError
 from app.services.background_jobs import BackgroundJobRunner, PeriodicJob
@@ -482,6 +484,42 @@ def test_user_admin_api():
         "/api/v1/auth/login", json={"email": "agent@example.com", "password": "new-password-1"}
     )
     assert login.status_code == 401  # still deactivated
+
+
+def test_refresh_renews_a_valid_session_with_the_current_role():
+    services = _services()
+    app = create_app(services)
+    user = _user(services, UserRole.ICR)
+    client = _client(app, user)
+
+    response = client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 200
+    renewed = decode_access_token(response.json()["access_token"])
+    assert renewed["sub"] == user.user_id and renewed["role"] == "ICR"
+
+    services.user_repository.save(dataclasses.replace(user, role=UserRole.SUPERVISOR))
+    renewed = decode_access_token(client.post("/api/v1/auth/refresh").json()["access_token"])
+    assert renewed["role"] == "SUPERVISOR"
+
+
+def test_refresh_requires_a_valid_session_of_an_active_user():
+    services = _services()
+    app = create_app(services)
+    user = _user(services, UserRole.ICR)
+
+    assert TestClient(app).post("/api/v1/auth/refresh").status_code == 401
+    expired = jwt.encode(
+        {"sub": user.user_id, "role": "ICR", "iat": 0, "exp": 1},
+        get_settings().auth_secret_key,
+        algorithm="HS256",
+    )
+    stale = TestClient(app, headers={"Authorization": f"Bearer {expired}"})
+    assert stale.post("/api/v1/auth/refresh").status_code == 401
+
+    client = _client(app, user)
+    services.user_repository.save(dataclasses.replace(user, is_active=False))
+    assert client.post("/api/v1/auth/refresh").status_code == 401
 
 
 # ---- Monitoring ----

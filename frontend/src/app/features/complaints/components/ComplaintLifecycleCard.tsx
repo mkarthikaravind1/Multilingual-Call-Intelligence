@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { RecordTime } from '../../../components/RecordTime'
 
 import { ApiError } from '../../../api/errors'
-import { formatRecordTimestamp } from '../../../format/time'
 import { complaintRestService } from '../services/complaintRestService'
 
 import type {
@@ -32,25 +32,25 @@ const STATUS_BADGES: Record<ComplaintStatus, string> = {
   follow_up: 'badge--warning',
 }
 
-const ACTIONS: Record<ComplaintAction, { label: string; prompt: string; primary: boolean }> = {
-  resolved: { label: 'Mark resolved', prompt: 'How was it resolved? (optional)', primary: true },
-  unresolved: {
-    label: 'Mark unresolved',
-    prompt: 'Why could it not be resolved? (optional)',
-    primary: false,
-  },
-  follow_up: {
-    label: 'Schedule follow-up',
-    prompt: 'What needs to happen next? (optional)',
-    primary: false,
-  },
-}
+// What a person can mark a complaint as; saved with the card's Save button.
+const DECISIONS: { value: ComplaintAction; label: string; prompt: string }[] = [
+  { value: 'resolved', label: 'Resolved', prompt: 'How was it resolved? (optional)' },
+  { value: 'unresolved', label: 'Unresolved', prompt: 'Why could it not be resolved? (optional)' },
+]
 
 // The in-call stages every complaint moves through, then its outcome.
 const IN_CALL_STAGES: ComplaintStatus[] = ['detected', 'probed', 'covered']
 
 export function ComplaintStatusBadge({ status }: { status: ComplaintStatus }) {
   return <span className={`badge ${STATUS_BADGES[status]}`}>{STATUS_LABELS[status]}</span>
+}
+
+// "Customer Name(Vehicle Number)", or as much of it as is known.
+function customerLabel(complaint: ComplaintDto): string | null {
+  if (!complaint.customer_name) return null
+  return complaint.vehicle_registration
+    ? `${complaint.customer_name}(${complaint.vehicle_registration})`
+    : complaint.customer_name
 }
 
 function actorLabel(actor: string) {
@@ -113,7 +113,7 @@ function History({ events }: { events: ComplaintEventDto[] }) {
           <div className="complaint-history__line">
             <ComplaintStatusBadge status={event.status} />
             <span>
-              {actorLabel(event.actor)} · {formatRecordTimestamp(event.at)}
+              {actorLabel(event.actor)} · <RecordTime seconds={event.at} />
             </span>
           </div>
           {event.note && <p className="complaint-history__note">{event.note}</p>}
@@ -125,6 +125,8 @@ function History({ events }: { events: ComplaintEventDto[] }) {
 
 type ComplaintLifecycleCardProps = {
   complaint: ComplaintDto
+  // Cards listed away from their call (the queue, a customer's history) link
+  // to the call's post-call analysis and name its customer.
   showCallLink?: boolean
   canAct?: boolean
   // Compact cards (e.g. a customer's older complaints) start with less detail.
@@ -139,22 +141,37 @@ export function ComplaintLifecycleCard({
   compact = false,
   onUpdated,
 }: ComplaintLifecycleCardProps) {
-  const [pendingAction, setPendingAction] = useState<ComplaintAction | null>(null)
+  const current: ComplaintAction | null =
+    complaint.status === 'resolved' || complaint.status === 'unresolved' ? complaint.status : null
+  // The ticked choice, made for the status shown at the time; a newer status
+  // (saved here, or by someone else and refreshed) starts over from it.
+  const [choice, setChoice] = useState<{ forStatus: ComplaintStatus; value: ComplaintAction | null }>(
+    { forStatus: complaint.status, value: current },
+  )
+  const selected = choice.forStatus === complaint.status ? choice.value : current
   const [note, setNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
 
-  const submit = async (action: ComplaintAction) => {
+  const isDirty = selected !== null && selected !== current
+
+  const choose = (value: ComplaintAction, checked: boolean) => {
+    setError(null)
+    // Ticking one unticks the other; unticking goes back to the saved status.
+    setChoice({ forStatus: complaint.status, value: checked ? value : current })
+  }
+
+  const save = async () => {
+    if (!isDirty || selected === null) return
     setIsSaving(true)
     setError(null)
     try {
       const updated = await complaintRestService.updateStatus(
         complaint.complaint_id,
-        action,
+        selected,
         note,
       )
-      setPendingAction(null)
       setNote('')
       onUpdated?.(updated)
     } catch (err) {
@@ -165,12 +182,13 @@ export function ComplaintLifecycleCard({
   }
 
   // Only notes people wrote: the system's own note ("the call ended before
-  // this complaint was resolved…") repeats the Needs follow-up badge, and
-  // stays visible in the history.
+  // this complaint was resolved…") stays visible in the history.
   const lastNote = [...complaint.events]
     .reverse()
     .find((event) => event.note && event.actor !== 'system')
-  const noteId = `complaint-note-${complaint.complaint_id.replace(/[^\w-]/g, '-')}`
+  const idBase = complaint.complaint_id.replace(/[^\w-]/g, '-')
+  const customer = showCallLink ? customerLabel(complaint) : null
+  const prompt = DECISIONS.find((d) => d.value === selected)?.prompt
 
   return (
     <article
@@ -178,95 +196,83 @@ export function ComplaintLifecycleCard({
         'list-card',
         'complaint-card',
         complaint.is_open ? '' : 'complaint-card--closed',
-        complaint.follow_up_required && complaint.is_open ? 'complaint-card--follow-up' : '',
       ].join(' ')}
     >
       <div className="complaint-card__top">
         <div className="complaint-card__title">
           <strong className="list-card__title">{complaint.category}</strong>
+          {customer && <span className="complaint-card__customer">{customer}</span>}
           {showCallLink && (
-            <span className="complaint-card__call">
-              Call{' '}
-              <Link
-                className="text-link"
-                to={`/post-call-analysis?call_id=${encodeURIComponent(complaint.call_id)}`}
-              >
-                {complaint.call_id}
-              </Link>
-            </span>
+            <Link
+              className="text-link complaint-card__call"
+              to={`/post-call-analysis?call_id=${encodeURIComponent(complaint.call_id)}`}
+              title={`Call ${complaint.call_id}`}
+            >
+              Post Call Analysis
+            </Link>
           )}
         </div>
 
         <div className="complaint-card__actions">
-          {canAct && complaint.allowed_actions.length > 0 && pendingAction === null && (
-            <div className="button-row complaint-card__buttons">
-              {complaint.allowed_actions.map((action) => (
-                <button
-                  key={action}
-                  type="button"
-                  className={ACTIONS[action].primary ? 'button' : 'button button--secondary'}
-                  disabled={isSaving}
-                  onClick={() => {
-                    setError(null)
-                    setPendingAction(action)
-                  }}
-                >
-                  {ACTIONS[action].label}
-                </button>
-              ))}
+          {canAct && (
+            <div className="complaint-card__decision">
+              <fieldset className="complaint-card__choices" aria-label="Mark complaint as">
+                {DECISIONS.map((decision) => (
+                  <label key={decision.value} className="complaint-card__choice">
+                    <input
+                      type="checkbox"
+                      checked={selected === decision.value}
+                      disabled={
+                        isSaving ||
+                        decision.value === current ||
+                        !complaint.allowed_actions.includes(decision.value)
+                      }
+                      onChange={(event) => choose(decision.value, event.target.checked)}
+                    />
+                    {decision.label}
+                  </label>
+                ))}
+              </fieldset>
+              <button
+                type="button"
+                className="button"
+                disabled={!isDirty || isSaving}
+                onClick={() => void save()}
+              >
+                {isSaving ? 'Saving…' : 'Save'}
+              </button>
             </div>
           )}
-          <div className="list-card__meta">
-            {complaint.follow_up_required &&
-              complaint.is_open &&
-              complaint.status !== 'follow_up' && (
-              <span className="badge badge--warning">Needs follow-up</span>
-            )}
-            <ComplaintStatusBadge status={complaint.status} />
-          </div>
+          {/* Only the outcome is badged; in-call stages show on the track. */}
+          {current && (
+            <div className="list-card__meta">
+              <ComplaintStatusBadge status={current} />
+            </div>
+          )}
         </div>
       </div>
 
       <div className="complaint-card__progress">
         {!compact && <LifecycleTrack complaint={complaint} />}
         <div className="list-card__facts">
-          <span>Detected: {formatRecordTimestamp(complaint.first_detected_at)}</span>
-          <span>Last change: {formatRecordTimestamp(complaint.last_updated_at)}</span>
-          {complaint.customer_id && <span>Customer: {complaint.customer_id}</span>}
+          <span>Detected: <RecordTime seconds={complaint.first_detected_at} /></span>
+          <span>Last change: <RecordTime seconds={complaint.last_updated_at} /></span>
         </div>
       </div>
 
       {lastNote && <p className="summary-delivery__message">{lastNote.note}</p>}
 
-      {canAct && pendingAction !== null && (
+      {canAct && isDirty && (
         <div className="escalation-card__resolve">
-          <label htmlFor={noteId}>{ACTIONS[pendingAction].prompt}</label>
+          <label htmlFor={`complaint-note-${idBase}`}>{prompt}</label>
           <textarea
-            id={noteId}
+            id={`complaint-note-${idBase}`}
             rows={2}
             maxLength={500}
             value={note}
             disabled={isSaving}
             onChange={(event) => setNote(event.target.value)}
           />
-          <div className="button-row">
-            <button
-              type="button"
-              className="button"
-              disabled={isSaving}
-              onClick={() => void submit(pendingAction)}
-            >
-              {isSaving ? 'Saving…' : ACTIONS[pendingAction].label}
-            </button>
-            <button
-              type="button"
-              className="button button--secondary"
-              disabled={isSaving}
-              onClick={() => setPendingAction(null)}
-            >
-              Cancel
-            </button>
-          </div>
         </div>
       )}
 
@@ -275,7 +281,7 @@ export function ComplaintLifecycleCard({
           type="button"
           className="text-link customer-panel__more"
           aria-expanded={showHistory}
-          onClick={() => setShowHistory((current) => !current)}
+          onClick={() => setShowHistory((shown) => !shown)}
         >
           {showHistory ? 'Hide history' : `Show history (${complaint.events.length})`}
         </button>

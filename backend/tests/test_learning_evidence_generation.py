@@ -173,11 +173,18 @@ def test_description_is_deterministic_and_free_of_ids_and_times():
     )
 
     assert first.description == second.description
-    assert first.description == (
-        "AI predicted complaint_detection 'Turnaround Time' and human "
-        "corrected it to 'Communication'."
-    )
+    assert first.description == "Corrected 'Turnaround Time' to 'Communication'."
     assert first.evidence_id != second.evidence_id
+
+
+def test_prediction_evidence_describes_just_the_prediction():
+    service, _ = build()
+
+    evidence = service.generate(observation())
+
+    # The component and evidence type are fields of their own.
+    assert evidence.description == evidence.actual_value
+    assert "AI predicted" not in evidence.description
 
 
 def test_evidence_is_persisted_through_existing_evidence_service():

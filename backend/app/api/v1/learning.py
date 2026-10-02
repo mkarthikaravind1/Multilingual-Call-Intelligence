@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends, status
 
-from app.api.dependencies import get_call_service, get_learning_service
+from app.api.dependencies import (
+    get_call_service,
+    get_learning_service,
+    get_optional_call_customer_service,
+)
 from app.api.v1.learning_schemas import (
     ActiveImprovementResponse,
     CallObservationResponse,
@@ -11,6 +15,7 @@ from app.api.v1.learning_schemas import (
     LearningPatternResponse,
 )
 from app.domain.learning_feedback import FeedbackSource
+from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
 from app.services.learning_management_service import (
     CallObservation,
@@ -68,9 +73,30 @@ def list_patterns(
 @router.get("/evidence", response_model=list[LearningEvidenceResponse])
 def list_evidence(
     service: LearningManagementService = Depends(get_learning_service),
+    call_customer_service: CallCustomerService | None = Depends(
+        get_optional_call_customer_service
+    ),
     _: User = Depends(get_current_user),
 ) -> list[LearningEvidenceResponse]:
-    return [LearningEvidenceResponse.model_validate(e) for e in service.list_evidence()]
+    """Each record carries its call's stored customer name and vehicle."""
+    evidence = service.list_evidence()
+    links = (
+        call_customer_service.stored_links({e.call_id for e in evidence})
+        if call_customer_service is not None
+        else {}
+    )
+    responses = []
+    for item in evidence:
+        link = links.get(item.call_id)
+        responses.append(
+            LearningEvidenceResponse.model_validate(item).model_copy(
+                update={
+                    "customer_name": None if link is None else link.customer_name,
+                    "vehicle_registration": None if link is None else link.vehicle_registration,
+                }
+            )
+        )
+    return responses
 
 
 # --- Human feedback on a call's AI output ---

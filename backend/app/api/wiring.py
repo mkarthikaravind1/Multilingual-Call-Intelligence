@@ -105,6 +105,7 @@ from app.domain.complaint_lifecycle_repository import (
     InMemoryComplaintLifecycleRepository,
 )
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
+from app.services.call_listing import CallListingQuery, InMemoryCallListingQuery
 from app.services.emerging_complaint_repository import (
     EmergingComplaintRepository,
     InMemoryEmergingComplaintRepository,
@@ -149,6 +150,7 @@ def build_api_services(
     emerging_complaint_repository: EmergingComplaintRepository | None = None,
     emerging_complaint_provider: EmergingComplaintDiscoveryProvider | None = None,
     live_state_store: LiveStateStore | None = None,
+    call_listing_query: CallListingQuery | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -213,8 +215,9 @@ def build_api_services(
         except Exception as exc:
             logger.error("CRM is not available; customers will not be identified: %s", exc)
             customer_directory = NoCustomerDirectory()
+    call_customer_repository = call_customer_repository or InMemoryCallCustomerRepository()
     call_customer_service = CallCustomerService(
-        call_customer_repository or InMemoryCallCustomerRepository(),
+        call_customer_repository,
         customer_directory,
         default_country_code=settings.phone_default_country_code,
     )
@@ -228,15 +231,23 @@ def build_api_services(
         except Exception as exc:
             logger.warning("Falling back to rule-based escalation detection: %s", exc)
             escalation_provider = RuleBasedEscalationProvider()
-    escalation_service = EscalationService(
-        escalation_repository or InMemoryEscalationRepository(),
-        escalation_provider,
-    )
+    escalation_repository = escalation_repository or InMemoryEscalationRepository()
+    escalation_service = EscalationService(escalation_repository, escalation_provider)
 
     # --- Complaint lifecycle and emerging complaints ---
-    complaint_lifecycle_service = ComplaintLifecycleService(
+    complaint_lifecycle_repository = (
         complaint_lifecycle_repository or InMemoryComplaintLifecycleRepository()
     )
+    complaint_lifecycle_service = ComplaintLifecycleService(complaint_lifecycle_repository)
+
+    # --- The browsable call list (a read model over the stores above) ---
+    if call_listing_query is None:
+        call_listing_query = InMemoryCallListingQuery(
+            conversation_repository,
+            call_customer_repository,
+            escalation_repository,
+            complaint_lifecycle_repository,
+        )
     if emerging_complaint_provider is None:
         try:
             emerging_complaint_provider = create_emerging_complaint_provider(settings=settings)
@@ -400,6 +411,7 @@ def build_api_services(
 
     return ApiServices(
         call_service=call_service,
+        call_listing=call_listing_query,
         workflow_service=workflow_service,
         learning=learning_service
         or build_learning_management_service(

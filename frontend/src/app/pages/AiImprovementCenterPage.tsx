@@ -1,22 +1,30 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { RecordTime } from '../components/RecordTime'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
 import { humanizeLabel } from '../format/text'
-import { formatRecordTimestamp } from '../format/time'
 
 import { learningRestService } from '../features/ai-improvement/services/learningRestService'
 import { EmergingComplaintsPanel } from '../features/complaints/components/EmergingComplaintsPanel'
 
+import { LEARNING_COMPONENTS } from '../features/ai-improvement/types/dto'
 import type {
   ActiveImprovementDto,
   LearningCandidateDto,
+  LearningComponent,
   LearningEvidenceDto,
   LearningPatternDto,
 } from '../features/ai-improvement/types/dto'
 
-const EVIDENCE_PAGE_SIZE = 25
+// "Customer Name(Vehicle Number)", or as much of it as is known.
+function evidenceCaller(item: LearningEvidenceDto): string {
+  if (!item.customer_name) return 'Unknown caller'
+  return item.vehicle_registration
+    ? `${item.customer_name}(${item.vehicle_registration})`
+    : item.customer_name
+}
 
 type ReviewNotice = {
   candidateTitle: string
@@ -39,7 +47,8 @@ export function AiImprovementCenterPage() {
   const [reviewNotice, setReviewNotice] = useState<ReviewNotice | null>(null)
   const [reviewingCandidateId, setReviewingCandidateId] =
     useState<string | null>(null)
-  const [showAllEvidence, setShowAllEvidence] = useState(false)
+  // Components the evidence list is limited to; empty shows every component.
+  const [evidenceComponents, setEvidenceComponents] = useState<LearningComponent[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -160,10 +169,15 @@ export function AiImprovementCenterPage() {
     (improvement) => improvement.status === 'active',
   )
 
-  const sortedEvidence = [...evidence].sort((a, b) => b.created_at - a.created_at)
-  const visibleEvidence = showAllEvidence
-    ? sortedEvidence
-    : sortedEvidence.slice(0, EVIDENCE_PAGE_SIZE)
+  const visibleEvidence = evidence
+    .filter(
+      (item) => evidenceComponents.length === 0 || evidenceComponents.includes(item.component),
+    )
+    .sort((a, b) => b.created_at - a.created_at)
+  // Only components that have evidence are offered as filters.
+  const presentComponents = LEARNING_COMPONENTS.filter((component) =>
+    evidence.some((item) => item.component === component),
+  )
 
   const metrics = [
     { label: 'Suggested improvements', value: pendingCandidates.length, caption: 'Pending human review' },
@@ -262,9 +276,9 @@ export function AiImprovementCenterPage() {
                           <span>Occurrences: {candidate.occurrence_count}</span>
                           <span>Confidence: {(candidate.confidence * 100).toFixed(1)}%</span>
                           <span>Evidence records: {candidate.evidence.length}</span>
-                          <span>Created: {formatRecordTimestamp(candidate.created_at)}</span>
+                          <span>Created: <RecordTime seconds={candidate.created_at} /></span>
                           {candidate.reviewed_at !== null && (
-                            <span>Reviewed: {formatRecordTimestamp(candidate.reviewed_at)}</span>
+                            <span>Reviewed: <RecordTime seconds={candidate.reviewed_at} /></span>
                           )}
                         </div>
 
@@ -368,10 +382,10 @@ export function AiImprovementCenterPage() {
                         <span>
                           Feedback on calls where it was used: {improvement.feedback_count}
                         </span>
-                        <span>Activated: {formatRecordTimestamp(improvement.activated_at)}</span>
+                        <span>Activated: <RecordTime seconds={improvement.activated_at} /></span>
                         {improvement.deactivated_at !== null && (
                           <span>
-                            Deactivated: {formatRecordTimestamp(improvement.deactivated_at)}
+                            Deactivated: <RecordTime seconds={improvement.deactivated_at} />
                           </span>
                         )}
                       </div>
@@ -400,18 +414,37 @@ export function AiImprovementCenterPage() {
           <section className="panel">
             <div className="section-heading">
               <h3 className="section-title">Learning evidence</h3>
-              {evidence.length > EVIDENCE_PAGE_SIZE && (
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  onClick={() => setShowAllEvidence((current) => !current)}
-                >
-                  {showAllEvidence
-                    ? `Show latest ${EVIDENCE_PAGE_SIZE}`
-                    : `Show all ${evidence.length}`}
-                </button>
+              {evidence.length > 0 && (
+                <span className="customer-panel__muted">
+                  {visibleEvidence.length} of {evidence.length}
+                </span>
               )}
             </div>
+
+            {presentComponents.length > 0 && (
+              <fieldset className="call-filters__checks evidence-filter">
+                <legend>Show</legend>
+                {presentComponents.map((component) => (
+                  <label
+                    key={component}
+                    className={`call-filters__check evidence-filter__option evidence-tone--${component}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={evidenceComponents.includes(component)}
+                      onChange={(event) =>
+                        setEvidenceComponents((current) =>
+                          event.target.checked
+                            ? [...current.filter((c) => c !== component), component]
+                            : current.filter((c) => c !== component),
+                        )
+                      }
+                    />
+                    {humanizeLabel(component)}
+                  </label>
+                ))}
+              </fieldset>
+            )}
 
             <div className="card-stack">
               {evidence.length === 0 ? (
@@ -422,31 +455,51 @@ export function AiImprovementCenterPage() {
                 />
               ) : (
                 visibleEvidence.map((item) => (
-                  <article key={item.evidence_id} className="list-card">
-                    <div className="list-card__meta">
-                      <span className="badge">{humanizeLabel(item.component)}</span>
-                      <span className="badge">{humanizeLabel(item.evidence_type)}</span>
+                  <article
+                    key={item.evidence_id}
+                    className={`list-card evidence-card evidence-tone--${item.component}`}
+                  >
+                    <div className="evidence-card__top">
+                      <div className="list-card__meta">
+                        <span className="badge evidence-card__component">
+                          {humanizeLabel(item.component)}
+                        </span>
+                        {/* Predictions are the default; only other kinds are tagged. */}
+                        {item.evidence_type !== 'ai_prediction' && (
+                          <span className="badge">{humanizeLabel(item.evidence_type)}</span>
+                        )}
+                      </div>
+                      <div className="list-card__facts evidence-card__source">
+                        <span>
+                          Customer:{' '}
+                          <Link
+                            className="text-link"
+                            to={`/post-call-analysis?call_id=${encodeURIComponent(item.call_id)}`}
+                            title={`Call ${item.call_id}`}
+                          >
+                            {evidenceCaller(item)}
+                          </Link>
+                        </span>
+                        <span>Recorded: <RecordTime seconds={item.created_at} /></span>
+                      </div>
                     </div>
 
                     <p>{item.description}</p>
 
-                    <div className="list-card__facts">
-                      <span>
-                        Call:{' '}
-                        <Link
-                          className="text-link"
-                          to={`/post-call-analysis?call_id=${encodeURIComponent(item.call_id)}`}
-                        >
-                          {item.call_id}
-                        </Link>
-                      </span>
-                      {item.expected_value && <span>Expected: {item.expected_value}</span>}
-                      {item.actual_value && <span>Actual: {item.actual_value}</span>}
-                      {item.human_correction && (
-                        <span>Human correction: {item.human_correction}</span>
-                      )}
-                      <span>Recorded: {formatRecordTimestamp(item.created_at)}</span>
-                    </div>
+                    {(item.expected_value ||
+                      item.human_correction ||
+                      (item.actual_value && item.actual_value !== item.description)) && (
+                      <div className="list-card__facts">
+                        {item.expected_value && <span>Expected: {item.expected_value}</span>}
+                        {/* A prediction's description already is its value. */}
+                        {item.actual_value && item.actual_value !== item.description && (
+                          <span>Actual: {item.actual_value}</span>
+                        )}
+                        {item.human_correction && (
+                          <span>Human correction: {item.human_correction}</span>
+                        )}
+                      </div>
+                    )}
                   </article>
                 ))
               )}

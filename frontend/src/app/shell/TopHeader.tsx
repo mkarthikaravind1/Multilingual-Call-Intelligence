@@ -1,9 +1,10 @@
+import { useSyncExternalStore } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import type { UserRole } from '../api/types/auth'
 import { useAuth } from '../auth/useAuth'
 import { NavIcon } from './NavIcon'
-import { SIDEBAR_ID } from './shell-layout-context'
+import { DRAWER_MEDIA_QUERY, SIDEBAR_ID } from './shell-layout-context'
 import { useShellLayout } from './useShellLayout'
 
 type TopHeaderProps = {
@@ -17,10 +18,21 @@ const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'Admin',
 }
 
+function subscribeToDrawerLayout(onChange: () => void) {
+  const query = window.matchMedia(DRAWER_MEDIA_QUERY)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+
+function isDrawerLayout() {
+  return window.matchMedia(DRAWER_MEDIA_QUERY).matches
+}
+
 export function TopHeader({ title, subtitle }: TopHeaderProps) {
   const navigate = useNavigate()
   const { logout, session } = useAuth()
   const { isSidebarCollapsed, isDrawerOpen, toggleNavigation } = useShellLayout()
+  const drawerLayout = useSyncExternalStore(subscribeToDrawerLayout, isDrawerLayout)
 
   const roleLabel = session?.role ? ROLE_LABELS[session.role] : null
 
@@ -30,12 +42,16 @@ export function TopHeader({ title, subtitle }: TopHeaderProps) {
   }
 
   // One control: collapses the sidebar on desktop, opens the drawer on
-  // tablet/mobile (see ShellLayoutProvider).
-  const menuLabel = isDrawerOpen
-    ? 'Close navigation'
+  // tablet/mobile (see ShellLayoutProvider). While the navigation is open it
+  // shows a "collapse panel" icon; once folded away, the usual hamburger.
+  const isNavigationOpen = drawerLayout ? isDrawerOpen : !isSidebarCollapsed
+  const menuLabel = drawerLayout
+    ? isDrawerOpen
+      ? 'Close navigation'
+      : 'Open navigation'
     : isSidebarCollapsed
       ? 'Expand navigation'
-      : 'Toggle navigation'
+      : 'Collapse navigation'
 
   return (
     <header className="top-header">
@@ -47,9 +63,9 @@ export function TopHeader({ title, subtitle }: TopHeaderProps) {
           aria-label={menuLabel}
           title={menuLabel}
           aria-controls={SIDEBAR_ID}
-          aria-expanded={isDrawerOpen || !isSidebarCollapsed}
+          aria-expanded={isNavigationOpen}
         >
-          <NavIcon name="menu" />
+          <NavIcon name={isNavigationOpen ? 'collapse-panel' : 'menu'} />
         </button>
 
         <div className="top-header__copy">

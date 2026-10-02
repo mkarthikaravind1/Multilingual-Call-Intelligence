@@ -1,18 +1,49 @@
 import type { ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
 import { ProtectedRoute } from '../auth/ProtectedRoute'
 import { AppShell } from '../shell/AppShell'
 import { DashboardPage } from '../pages/DashboardPage'
 import { LiveCallPage } from '../pages/LiveCallPage'
-import { CallHistoryPage } from '../pages/CallHistoryPage'
 import { PostCallAnalysisPage } from '../pages/PostCallAnalysisPage'
 import { AiImprovementCenterPage } from '../pages/AiImprovementCenterPage'
 import { LoginPage } from '../pages/LoginPage'
 import { AdministrationPage } from '../pages/AdministrationPage'
 import { EscalationsPage } from '../pages/EscalationsPage'
 import { ComplaintsPage } from '../pages/ComplaintsPage'
+import { isCallDetailsView } from '../features/live-call/liveCallMode'
+
+// "Call details" for a call opened from a list, "Live Call" otherwise.
+function LiveCallShell() {
+  const [searchParams] = useSearchParams()
+  const isDetails = isCallDetailsView(searchParams)
+  return (
+    <AppShell
+      title={isDetails ? 'Call details' : 'Live Call'}
+      subtitle={
+        isDetails ? 'Transcript and analysis of this call' : 'Real-time call intelligence workspace'
+      }
+    >
+      <LiveCallPage />
+    </AppShell>
+  )
+}
+
+// Call History was folded into the dashboard; old links still land somewhere
+// useful (a single call opens its post-call analysis).
+function CallHistoryRedirect() {
+  const [searchParams] = useSearchParams()
+  const callId = searchParams.get('call_id')?.trim()
+  return (
+    <Navigate
+      to={
+        callId ? `/post-call-analysis?call_id=${encodeURIComponent(callId)}` : '/dashboard'
+      }
+      replace
+    />
+  )
+}
 
 function RootRedirect() {
   const { isAuthenticated } = useAuth()
@@ -49,9 +80,7 @@ export function AppRoutes() {
         path="/live-call"
         element={
           <ProtectedRoute>
-            <AppShell title="Live Call" subtitle="Real-time call intelligence workspace">
-              <LiveCallPage />
-            </AppShell>
+            <LiveCallShell />
           </ProtectedRoute>
         }
       />
@@ -59,9 +88,7 @@ export function AppRoutes() {
         path="/call-history"
         element={
           <ProtectedRoute>
-            <AppShell title="Call History" subtitle="All recorded calls, newest first">
-              <CallHistoryPage />
-            </AppShell>
+            <CallHistoryRedirect />
           </ProtectedRoute>
         }
       />

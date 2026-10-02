@@ -15,6 +15,7 @@ from app.api.v1.schemas import (
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.escalation import Escalation
 from app.domain.utterance import Utterance
+from app.services.call_listing import CallListPage
 from app.services.call_workflow_service import CallAnalysisResult
 
 def to_utterance(payload: UtteranceRequest) -> Utterance:
@@ -31,33 +32,12 @@ def to_utterance(payload: UtteranceRequest) -> Utterance:
 def to_call_response(conversation: Conversation) -> CallResponse:
     return CallResponse.model_validate(conversation)
 
-def to_call_list_response(
-    conversations: tuple[Conversation, ...],
-    total: int,
-    limit: int,
-    offset: int,
-    escalations: dict[str, Escalation] | None = None,
-) -> CallListResponse:
-    escalations = escalations or {}
+def to_call_list_response(page: CallListPage, limit: int, offset: int) -> CallListResponse:
     return CallListResponse(
-        items=[_to_call_summary(c, escalations.get(c.call_id)) for c in conversations],
-        total=total,
+        items=[CallSummaryResponse.model_validate(item) for item in page.items],
+        total=page.total,
         limit=limit,
         offset=offset,
-    )
-
-
-def _to_call_summary(
-    conversation: Conversation, escalation: Escalation | None
-) -> CallSummaryResponse:
-    summary = CallSummaryResponse.model_validate(conversation)
-    if escalation is None:
-        return summary
-    return summary.model_copy(
-        update={
-            "escalation_level": escalation.level,
-            "escalation_status": escalation.status,
-        }
     )
 
 

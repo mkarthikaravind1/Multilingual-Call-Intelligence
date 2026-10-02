@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
 from app.ai.escalation.provider import EscalationContext, EscalationDetectionProvider
 from app.ai.sentiment.provider import SentimentResult
@@ -17,6 +18,35 @@ from app.services.escalation_repository import EscalationRepository
 logger = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = (EscalationStatus.OPEN, EscalationStatus.ACKNOWLEDGED)
+
+# The queue views supervisors pick from, as the statuses each one lists.
+ESCALATION_VIEWS: dict[str, tuple[EscalationStatus, ...]] = {
+    "active": ACTIVE_STATUSES,
+    "open": (EscalationStatus.OPEN,),
+    "acknowledged": (EscalationStatus.ACKNOWLEDGED,),
+    "resolved": (EscalationStatus.RESOLVED,),
+    "all": tuple(EscalationStatus),
+}
+
+
+@dataclass(frozen=True)
+class EscalationCounts:
+    """Overall numbers for the escalation queue, whatever is filtered."""
+
+    active: int
+    # Active escalations at the critical level.
+    critical: int
+    # Open: nobody has acknowledged them yet.
+    unacknowledged: int
+
+
+def _in_range(value: float | None, start: float | None, end: float | None) -> bool:
+    """From inclusive, to exclusive; with a bound set, a missing value never matches."""
+    if start is None and end is None:
+        return True
+    if value is None:
+        return False
+    return (start is None or value >= start) and (end is None or value < end)
 
 
 class EscalationNotFoundError(Exception):
@@ -88,21 +118,43 @@ class EscalationService:
         return self._repository.get_many(call_ids)
 
     def list_queue(self, active: bool = True) -> tuple[Escalation, ...]:
-        """Active escalations most severe first, then the oldest first so
-        nothing waits forever; resolved ones most recently resolved first."""
-        if active:
-            return tuple(
-                sorted(
-                    self._repository.list_by_status(ACTIVE_STATUSES),
-                    key=lambda e: (-e.level.rank, e.first_detected_at),
-                )
-            )
-        return tuple(
-            sorted(
-                self._repository.list_by_status((EscalationStatus.RESOLVED,)),
-                key=lambda e: e.resolved_at or 0.0,
-                reverse=True,
-            )
+        return self.search("active" if active else "resolved")
+
+    def search(
+        self,
+        view: str = "active",
+        detected_from: float | None = None,
+        detected_to: float | None = None,
+        acknowledged_from: float | None = None,
+        acknowledged_to: float | None = None,
+    ) -> tuple[Escalation, ...]:
+        """The escalations in a view (see ESCALATION_VIEWS) detected and
+        acknowledged within the given epoch-second ranges (from inclusive, to
+        exclusive). Active ones come first, most severe then oldest so nothing
+        waits forever; then resolved ones, most recently resolved first."""
+        matching = [
+            e
+            for e in self._repository.list_by_status(ESCALATION_VIEWS[view])
+            if _in_range(e.first_detected_at, detected_from, detected_to)
+            and _in_range(e.acknowledged_at, acknowledged_from, acknowledged_to)
+        ]
+        active = sorted(
+            (e for e in matching if e.is_active),
+            key=lambda e: (-e.level.rank, e.first_detected_at),
+        )
+        resolved = sorted(
+            (e for e in matching if not e.is_active),
+            key=lambda e: e.resolved_at or 0.0,
+            reverse=True,
+        )
+        return tuple(active + resolved)
+
+    def counts(self) -> EscalationCounts:
+        active = self._repository.list_by_status(ACTIVE_STATUSES)
+        return EscalationCounts(
+            active=len(active),
+            critical=sum(1 for e in active if e.level is EscalationLevel.CRITICAL),
+            unacknowledged=sum(1 for e in active if e.status is EscalationStatus.OPEN),
         )
 
     def acknowledge(self, call_id: str, by: str) -> Escalation:

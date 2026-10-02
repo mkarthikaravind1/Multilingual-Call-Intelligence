@@ -79,8 +79,7 @@ class LearningEvidenceGenerationService:
             observation,
             EvidenceType.HUMAN_CORRECTION,
             description=(
-                f"AI predicted {observation.component.value} "
-                f"'{observation.predicted_value}' and human corrected it to "
+                f"Corrected '{observation.predicted_value}' to "
                 f"'{feedback.corrected_value}'."
             ),
             expected_value=feedback.corrected_value,
@@ -128,7 +127,6 @@ class LearningEvidenceGenerationService:
 
     @staticmethod
     def _prediction_description(observation: LearningObservation) -> str:
-        return (
-            f"AI predicted {observation.component.value} "
-            f"'{observation.predicted_value}'."
-        )
+        # Just what the AI said; the component and evidence type are fields
+        # of their own (migration 0010 rewrote older "AI predicted ..." text).
+        return observation.predicted_value

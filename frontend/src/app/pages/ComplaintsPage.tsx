@@ -4,8 +4,13 @@ import { ApiError } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
 import { ComplaintLifecycleCard } from '../features/complaints/components/ComplaintLifecycleCard'
 import { complaintRestService } from '../features/complaints/services/complaintRestService'
+import { COMPLAINT_CATEGORIES } from '../features/complaints/types/dto'
 
-import type { ComplaintDto, ComplaintQueueState } from '../features/complaints/types/dto'
+import type {
+  ComplaintDto,
+  ComplaintQueueState,
+  ComplaintStage,
+} from '../features/complaints/types/dto'
 
 // Complaints from calls in progress appear without a manual refresh.
 const REFRESH_INTERVAL_MS = 15000
@@ -16,11 +21,20 @@ const VIEWS: { value: ComplaintQueueState; label: string }[] = [
   { value: 'all', label: 'All' },
 ]
 
+// The stages of the card's track, filtered by the complaint's current stage.
+const STAGES: { value: ComplaintStage; label: string }[] = [
+  { value: 'detected', label: 'Detected' },
+  { value: 'probed', label: 'Probed' },
+  { value: 'covered', label: 'Covered' },
+  { value: 'outcome', label: 'Outcome' },
+  { value: 'follow_up', label: 'Follow-up' },
+]
+
 const EMPTY_MESSAGES: Record<ComplaintQueueState, { title: string; description: string }> = {
   open: {
     title: 'No open complaints',
     description:
-      'Complaints appear here as soon as they are detected on a call. Those a call ended without resolving are flagged for follow-up and listed first.',
+      'Complaints appear here as soon as they are detected on a call. Those a call ended without resolving are listed first.',
   },
   resolved: {
     title: 'No resolved complaints yet',
@@ -32,28 +46,46 @@ const EMPTY_MESSAGES: Record<ComplaintQueueState, { title: string; description: 
   },
 }
 
+function toggled<T>(values: T[], value: T, checked: boolean): T[] {
+  return checked ? [...values.filter((v) => v !== value), value] : values.filter((v) => v !== value)
+}
+
 export function ComplaintsPage() {
   const [view, setView] = useState<ComplaintQueueState>('open')
+  const [categories, setCategories] = useState<string[]>([])
+  const [stages, setStages] = useState<ComplaintStage[]>([])
   const [complaints, setComplaints] = useState<ComplaintDto[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reloadCount, setReloadCount] = useState(0)
 
-  const load = useCallback(async (state: ComplaintQueueState) => {
-    try {
-      setComplaints(await complaintRestService.listQueue(state))
-      setError(null)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to load complaints.')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
+  const filterKey = `${view}|${categories.join(',')}|${stages.join(',')}`
+  const hasFilters = categories.length > 0 || stages.length > 0
+
+  const load = useCallback(
+    async (state: ComplaintQueueState, filters: { categories: string[]; stages: ComplaintStage[] }) => {
+      try {
+        setComplaints(await complaintRestService.listQueue(state, filters))
+        setError(null)
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Unable to load complaints.')
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     let cancelled = false
+    const [state, categoryList, stageList] = filterKey.split('|')
+    const filters = {
+      categories: categoryList ? categoryList.split(',') : [],
+      stages: (stageList ? stageList.split(',') : []) as ComplaintStage[],
+    }
     const refresh = () => {
       if (!cancelled) {
-        void load(view)
+        void load(state as ComplaintQueueState, filters)
       }
     }
     refresh()
@@ -62,48 +94,103 @@ export function ComplaintsPage() {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [view, load])
+  }, [filterKey, load, reloadCount])
 
-  const switchView = (next: ComplaintQueueState) => {
-    if (next !== view) {
-      setIsLoading(true)
-      setComplaints([])
-      setView(next)
-    }
+  // Every filter change shows a fresh list rather than the previous one.
+  const changeFilters = (apply: () => void) => {
+    setIsLoading(true)
+    setComplaints([])
+    apply()
   }
 
+  // A saved change may move the complaint out of the current filters, so the
+  // list is fetched again; until then the card shows the saved state.
   const handleUpdated = (updated: ComplaintDto) => {
     setComplaints((current) =>
-      (view === 'open' && !updated.is_open) || (view === 'resolved' && updated.is_open)
-        ? current.filter((item) => item.complaint_id !== updated.complaint_id)
-        : current.map((item) => (item.complaint_id === updated.complaint_id ? updated : item)),
+      current.map((item) => (item.complaint_id === updated.complaint_id ? updated : item)),
     )
+    setReloadCount((count) => count + 1)
   }
 
   const followUps = complaints.filter((c) => c.is_open && c.follow_up_required).length
 
   return (
     <section className="page-shell">
-      <div className="page-shell__header page-shell__header--actions">
-        <div className="button-row" role="tablist" aria-label="Complaint queue">
-          {VIEWS.map((item) => (
+      <div className="panel call-filters" role="search" aria-label="Filter complaints">
+        <div className="call-filters__row">
+          <fieldset className="call-filters__checks">
+            <legend>Show</legend>
+            {VIEWS.map((item) => (
+              <label key={item.value} className="call-filters__check">
+                <input
+                  type="radio"
+                  name="complaint-view"
+                  value={item.value}
+                  checked={view === item.value}
+                  onChange={() => changeFilters(() => setView(item.value))}
+                />
+                {item.label}
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset className="call-filters__checks">
+            <legend>Stage</legend>
+            {STAGES.map((stage) => (
+              <label key={stage.value} className="call-filters__check">
+                <input
+                  type="checkbox"
+                  checked={stages.includes(stage.value)}
+                  onChange={(event) =>
+                    changeFilters(() =>
+                      setStages((current) => toggled(current, stage.value, event.target.checked)),
+                    )
+                  }
+                />
+                {stage.label}
+              </label>
+            ))}
+          </fieldset>
+
+          <div className="call-filters__actions">
+            {view === 'open' && !isLoading && !error && (
+              <span className="customer-panel__muted">
+                {complaints.length} open · {followUps} flagged for follow-up
+              </span>
+            )}
             <button
-              key={item.value}
               type="button"
-              role="tab"
-              aria-selected={view === item.value}
-              className={view === item.value ? 'button' : 'button button--secondary'}
-              onClick={() => switchView(item.value)}
+              className="button button--secondary"
+              disabled={!hasFilters}
+              onClick={() =>
+                changeFilters(() => {
+                  setCategories([])
+                  setStages([])
+                })
+              }
             >
-              {item.label}
+              Clear filters
             </button>
-          ))}
+          </div>
         </div>
-        {view === 'open' && !isLoading && !error && (
-          <span className="customer-panel__muted">
-            {complaints.length} open · {followUps} need follow-up
-          </span>
-        )}
+
+        <fieldset className="call-filters__checks">
+          <legend>Category</legend>
+          {COMPLAINT_CATEGORIES.map((category) => (
+            <label key={category} className="call-filters__check">
+              <input
+                type="checkbox"
+                checked={categories.includes(category)}
+                onChange={(event) =>
+                  changeFilters(() =>
+                    setCategories((current) => toggled(current, category, event.target.checked)),
+                  )
+                }
+              />
+              {category}
+            </label>
+          ))}
+        </fieldset>
       </div>
 
       {isLoading && <StatePanel variant="loading" title="Loading complaints…" />}
@@ -114,8 +201,12 @@ export function ComplaintsPage() {
 
       {!isLoading && !error && complaints.length === 0 && (
         <StatePanel
-          title={EMPTY_MESSAGES[view].title}
-          description={EMPTY_MESSAGES[view].description}
+          title={hasFilters ? 'No complaints match these filters' : EMPTY_MESSAGES[view].title}
+          description={
+            hasFilters
+              ? 'Try other categories or stages, or clear the filters.'
+              : EMPTY_MESSAGES[view].description
+          }
         />
       )}
 

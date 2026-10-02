@@ -41,7 +41,11 @@ from app.domain.learning_evidence_repository import InMemoryLearningEvidenceRepo
 from fastapi.routing import APIRoute
 import time
 
+from app.crm.provider import NoCustomerDirectory
+from app.domain.call_customer import CallCustomerLink
 from app.domain.user import User, UserRole
+from app.services.call_customer_repository import InMemoryCallCustomerRepository
+from app.services.call_customer_service import CallCustomerService
 from app.domain.user_repository import InMemoryUserRepository
 from app.security.jwt import create_access_token
 
@@ -77,7 +81,7 @@ def make_evidence(evidence_id: str, description: str = DESC) -> LearningEvidence
     )
 
 
-def build(candidates=(), evidence=()):
+def build(candidates=(), evidence=(), call_customer_service=None):
     candidate_repository = InMemoryImprovementCandidateRepository()
     evidence_repository = InMemoryLearningEvidenceRepository()
     for candidate in candidates:
@@ -90,6 +94,7 @@ def build(candidates=(), evidence=()):
         workflow_service=None,  # type: ignore[arg-type]
         learning=learning,
         user_repository=InMemoryUserRepository(),
+        call_customer_service=call_customer_service,
     )
     app = create_app(services)
     user = User(
@@ -233,8 +238,37 @@ def test_evidence_endpoint_returns_stored_evidence():
             "actual_value": "Cost",
             "human_correction": "Other",
             "created_at": 100.0,
+            # No caller recorded for the call.
+            "customer_name": None,
+            "vehicle_registration": None,
         }
     ]
+
+
+def test_evidence_carries_the_calls_stored_customer():
+    links = InMemoryCallCustomerRepository()
+    links.save(
+        CallCustomerLink(
+            "call-1",
+            caller_number="+919845000001",
+            customer_id="C-1",
+            customer_name="Asha Raman",
+            vehicle_registration="TN09AB1234",
+        )
+    )
+    other = dataclasses.replace(make_evidence("e2"), call_id="call-2")
+    client, _, _ = build(
+        evidence=[make_evidence("e1"), other],
+        call_customer_service=CallCustomerService(links, NoCustomerDirectory()),
+    )
+
+    body = {e["evidence_id"]: e for e in client.get(f"{BASE}/evidence").json()}
+
+    assert (body["e1"]["customer_name"], body["e1"]["vehicle_registration"]) == (
+        "Asha Raman",
+        "TN09AB1234",
+    )
+    assert body["e2"]["customer_name"] is None
 
 
 def test_get_endpoints_are_read_only():

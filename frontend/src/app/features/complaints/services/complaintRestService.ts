@@ -4,6 +4,7 @@ import type {
   CallComplaintsDto,
   ComplaintAction,
   ComplaintDto,
+  ComplaintQueueFilters,
   ComplaintQueueState,
   DiscoveryRunDto,
   EmergingComplaintDto,
@@ -17,8 +18,14 @@ const emergingPath = '/api/v1/emerging-complaints'
 const cleanNote = (note: string) => note.trim() || null
 
 export const complaintRestService = {
-  listQueue(state: ComplaintQueueState = 'open'): Promise<ComplaintDto[]> {
-    return apiClient.get<ComplaintDto[]>(`${complaintsPath}?state=${state}`)
+  listQueue(
+    state: ComplaintQueueState = 'open',
+    filters: ComplaintQueueFilters = {},
+  ): Promise<ComplaintDto[]> {
+    const query = new URLSearchParams({ state })
+    filters.categories?.forEach((category) => query.append('category', category))
+    filters.stages?.forEach((stage) => query.append('stage', stage))
+    return apiClient.get<ComplaintDto[]>(`${complaintsPath}?${query.toString()}`)
   },
 
   getCallComplaints(callId: string): Promise<CallComplaintsDto> {

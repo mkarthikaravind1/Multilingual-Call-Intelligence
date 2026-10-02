@@ -790,6 +790,27 @@ def test_call_customer_link_round_trips_and_updates_in_place(session_factory):
     assert repo.get("call-1") == matched
 
 
+def test_call_customer_links_are_read_in_bulk_with_their_snapshot(session_factory):
+    repo = PostgresCallCustomerRepository(session_factory)
+    named = CallCustomerLink(
+        call_id="call-a",
+        caller_number="+919845000001",
+        customer_id="C-1",
+        customer_name="Asha Raman",
+        vehicle_registration="TN09AB1234",
+        updated_at=1.0,
+    )
+    repo.save(named)
+    repo.save(CallCustomerLink(call_id="call-b", caller_number="+919845000002"))
+
+    assert repo.get_many(["call-a", "call-b", "missing"]) == {
+        "call-a": named,
+        "call-b": repo.get("call-b"),
+    }
+    assert repo.get_many([]) == {}
+    assert [link.call_id for link in repo.list_without_customer_name()] == ["call-b"]
+
+
 def test_call_customer_link_survives_conversation_rewrites(session_factory):
     conversations = PostgresConversationRepository(session_factory)
     links = PostgresCallCustomerRepository(session_factory)

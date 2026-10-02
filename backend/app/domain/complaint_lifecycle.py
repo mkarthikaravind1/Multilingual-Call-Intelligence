@@ -55,11 +55,12 @@ _ALLOWED_TRANSITIONS: dict[ComplaintLifecycleStatus, frozenset[ComplaintLifecycl
 }
 
 # Statuses a person may set by hand; the others are driven by the call.
+# FOLLOW_UP is no longer set by hand; complaints already in it can still be
+# resolved, and the call flags unresolved ones with follow_up_required.
 MANUAL_STATUSES = frozenset(
     {
         ComplaintLifecycleStatus.RESOLVED,
         ComplaintLifecycleStatus.UNRESOLVED,
-        ComplaintLifecycleStatus.FOLLOW_UP,
     }
 )
 

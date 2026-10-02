@@ -46,6 +46,9 @@ class LearningEvidenceResponse(_Response):
     actual_value: str | None
     human_correction: str | None
     created_at: float
+    # The call's customer as stored when identified; null until known.
+    customer_name: str | None = None
+    vehicle_registration: str | None = None
 
 class LearningFeedbackRequest(BaseModel):
     observation_id: str = Field(min_length=1)

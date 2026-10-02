@@ -49,7 +49,21 @@ export function toCallMetadataViewModel(
     utteranceCount: call.utterance_count,
     escalationLevel: call.escalation_level ?? null,
     escalationStatus: call.escalation_status ?? null,
+    callerNumber: call.caller_number ?? null,
+    customerName: call.customer_name ?? null,
+    vehicleRegistration: call.vehicle_registration ?? null,
+    complaintsResolvedAt: call.complaints_resolved_at ?? null,
   }
+}
+
+// "Customer Name(Vehicle Number)", or as much of it as is known.
+export function formatCallerLabel(call: CallMetadataViewModel): string {
+  if (!call.customerName) {
+    return 'Unknown caller'
+  }
+  return call.vehicleRegistration
+    ? `${call.customerName}(${call.vehicleRegistration})`
+    : call.customerName
 }
 
 export function toComplaintViewModel(

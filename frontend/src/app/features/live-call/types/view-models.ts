@@ -39,6 +39,10 @@ export interface CallMetadataViewModel {
   utteranceCount: number
   escalationLevel: EscalationLevel | null
   escalationStatus: EscalationStatus | null
+  callerNumber: string | null
+  customerName: string | null
+  vehicleRegistration: string | null
+  complaintsResolvedAt: number | null
 }
 
 // Monetary values are kept as the backend's Decimal strings; never recalculated here.

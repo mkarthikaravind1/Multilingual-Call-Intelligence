@@ -1,21 +1,27 @@
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
+import { RecordTime } from '../../../components/RecordTime'
 import { Link } from 'react-router-dom'
 
 import { ApiError } from '../../../api/errors'
 import { StatePanel } from '../../../components/StatePanel'
-import { formatRecordTimestamp } from '../../../format/time'
 import { adminRestService } from '../services/adminRestService'
 
 import type { PostCallRepairStatusDto, RepairRunDto } from '../types/dto'
 
 const REFRESH_INTERVAL_MS = 30000
 
-function describeRun(run: RepairRunDto): string {
-  const when = formatRecordTimestamp(run.ran_at)
+function describeRun(run: RepairRunDto): ReactNode {
+  const when = <RecordTime seconds={run.ran_at} />
   if (run.skipped_reason) {
-    return `Last sweep ${when}: skipped — ${run.skipped_reason}`
+    return <>Last sweep {when}: skipped — {run.skipped_reason}</>
   }
-  return `Last sweep ${when}: ${run.pending} waiting, ${run.repaired} repaired, ${run.failed} failed, ${run.gave_up} given up.`
+  return (
+    <>
+      Last sweep {when}: {run.pending} waiting, {run.repaired} repaired, {run.failed} failed,{' '}
+      {run.gave_up} given up.
+    </>
+  )
 }
 
 // Completed calls whose post-call processing (summary, complaint close-out,
@@ -25,7 +31,7 @@ export function PostCallRepairPanel() {
   const [error, setError] = useState<string | null>(null)
   const [busyCallId, setBusyCallId] = useState<string | null>(null)
   const [isSweeping, setIsSweeping] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<ReactNode>(null)
 
   const load = useCallback(async () => {
     try {
@@ -134,9 +140,9 @@ export function PostCallRepairPanel() {
                 </div>
               </div>
               <div className="list-card__facts">
-                <span>Waiting since: {formatRecordTimestamp(item.first_seen_at)}</span>
+                <span>Waiting since: <RecordTime seconds={item.first_seen_at} /></span>
                 {item.last_attempt_at !== null && (
-                  <span>Last attempt: {formatRecordTimestamp(item.last_attempt_at)}</span>
+                  <span>Last attempt: <RecordTime seconds={item.last_attempt_at} /></span>
                 )}
               </div>
               {item.last_error && <p className="summary-delivery__message">{item.last_error}</p>}
