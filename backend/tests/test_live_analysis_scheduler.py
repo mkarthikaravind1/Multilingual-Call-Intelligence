@@ -2,6 +2,7 @@
 background, coalesced per call."""
 
 from concurrent.futures import Executor, Future
+from dataclasses import replace
 
 from app.services.live_analysis_scheduler import LiveAnalysisScheduler
 from tests.test_live_analysis_store import CALL_ID, _cluster, _SENTIMENT, _utterance
@@ -135,3 +136,23 @@ def test_background_analysis_runs_on_real_threads():
 
     assert scheduler.wait_until_idle(timeout=10)
     assert cluster.a.analyze_call(CALL_ID).sentiment == _SENTIMENT
+
+
+def test_a_growing_utterance_is_updated_in_place_before_analysis_runs():
+    cluster = _cluster(InMemoryLiveStateStore())
+    executor = QueueExecutor()
+    scheduler = LiveAnalysisScheduler(cluster.a, executor=executor)
+    first = _utterance(0, "My brake pads")
+    scheduler.process_utterance(CALL_ID, first)
+    executor.run_all()
+    before = cluster.a.live_revision(CALL_ID)
+
+    grown = replace(first, transcript="My brake pads squeal and the car is late.", end_time=7.0)
+    scheduler.process_utterance_update(CALL_ID, grown)
+
+    # Same utterance, longer text, live views told; analysis follows.
+    conversation = cluster.call_service.get_call(CALL_ID)
+    assert [u.utterance_id for u in conversation.utterances] == [first.utterance_id]
+    assert conversation.latest_utterance.transcript == grown.transcript
+    assert cluster.a.live_revision(CALL_ID) not in (None, before)
+    assert len(executor.queued) == 1

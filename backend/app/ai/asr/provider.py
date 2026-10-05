@@ -21,6 +21,11 @@ class ASRResult:
     confidence: float | None = None
     timed_text: tuple[TimedText, ...] = ()
 
+class NoSpeechDetected(Exception):
+    """The audio held no speech to transcribe (e.g. silence at the end of a
+    call). Not a failure: there is simply nothing to add."""
+
+
 class ASRProvider(ABC):
     @abstractmethod
     def transcribe(self, audio: bytes) -> ASRResult:

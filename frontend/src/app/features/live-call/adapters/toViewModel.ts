@@ -8,6 +8,7 @@ import type {
   PostCallSummaryDto,
   QuestionSuggestionDto,
   ServiceEstimateDto,
+  ServiceLineDto,
   SentimentDto,
   UtteranceDto,
 } from '../types/dto'
@@ -20,6 +21,7 @@ import type {
   PostCallSummaryViewModel,
   QuestionSuggestionViewModel,
   ServiceEstimateViewModel,
+  ServiceLineViewModel,
   SentimentViewModel,
   TranscriptTurnViewModel,
 } from '../types/view-models'
@@ -103,23 +105,34 @@ export function toServiceEstimateViewModel(
   estimate: ServiceEstimateDto,
 ): ServiceEstimateViewModel {
   return {
-    serviceName: estimate.service_name,
     currency: estimate.currency,
-    parts: estimate.parts.map((part) => ({
+    services: estimate.services.map(toServiceLineViewModel),
+    estimatedDurationHours: estimate.estimated_duration_hours,
+    partsCost: estimate.parts_cost,
+    labourCost: estimate.labour_cost,
+    estimatedCost: estimate.estimated_cost,
+  }
+}
+
+function toServiceLineViewModel(line: ServiceLineDto): ServiceLineViewModel {
+  return {
+    serviceName: line.service_name,
+    currency: line.currency,
+    parts: line.parts.map((part) => ({
       name: part.name,
       quantity: part.quantity,
       unitPrice: part.unit_price,
       totalPrice: part.total_price,
     })),
     labour: {
-      hours: estimate.labour.hours,
-      hourlyRate: estimate.labour.hourly_rate,
-      totalCost: estimate.labour.total_cost,
+      hours: line.labour.hours,
+      hourlyRate: line.labour.hourly_rate,
+      totalCost: line.labour.total_cost,
     },
-    estimatedDurationHours: estimate.estimated_duration_hours,
-    partsCost: estimate.parts_cost,
-    labourCost: estimate.labour_cost,
-    estimatedCost: estimate.estimated_cost,
+    estimatedDurationHours: line.estimated_duration_hours,
+    partsCost: line.parts_cost,
+    labourCost: line.labour_cost,
+    estimatedCost: line.estimated_cost,
   }
 }
 

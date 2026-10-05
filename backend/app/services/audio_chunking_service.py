@@ -4,6 +4,7 @@ import wave
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.domain.utterance import SpeakerRole
 from app.services.audio_ingestion_service import IngestedAudio
 
 
@@ -18,6 +19,14 @@ class AudioChunk:
     end_time: float
     audio: bytes
     is_final: bool = False
+    # Live streams only (see TelephonyAudioBuffer): the chunk ends on a
+    # pause / its speech continues the previous chunk's.
+    ends_on_pause: bool = False
+    continues_previous: bool = False
+    # Live streams that carry each side of the call separately: the track
+    # this chunk is from, and the speaker role that track belongs to.
+    track: str | None = None
+    speaker_role: SpeakerRole | None = None
 
     def __post_init__(self) -> None:
         if (

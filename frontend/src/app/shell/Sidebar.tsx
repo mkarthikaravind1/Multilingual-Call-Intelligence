@@ -41,11 +41,11 @@ export function Sidebar() {
     <aside id={SIDEBAR_ID} className={className} aria-label="Sidebar navigation">
       <div className="sidebar__brand" aria-label="Application brand">
         <div className="sidebar__brand-mark" aria-hidden="true">
-          M
+          <NavIcon name="brand" />
         </div>
         <div className="sidebar__brand-copy">
           <span className="sidebar__brand-name">Multilingual</span>
-          <span className="sidebar__brand-subtitle">Customer Intelligence</span>
+          <span className="sidebar__brand-subtitle">Call Intelligence</span>
         </div>
         <button
           type="button"

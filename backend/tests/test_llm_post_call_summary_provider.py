@@ -10,7 +10,7 @@ from app.ai.summary.provider import PostCallSummaryRequest
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import Conversation
 from app.domain.post_call_summary import PostCallSummary
-from app.domain.service_estimate import LabourEstimate, ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate, LabourEstimate, ServiceEstimate
 from app.domain.utterance import SpeakerRole, Utterance
 
 CALL_ID = "call-1"
@@ -65,13 +65,18 @@ def _sentiment() -> SentimentResult:
     return SentimentResult(SentimentLabel.NEGATIVE, 0.9, "Customer reported a delay.")
 
 
-def _service_estimate() -> ServiceEstimate:
-    return ServiceEstimate(
-        service_name="Oil Change",
+def _service_estimate() -> CallServiceEstimate:
+    return CallServiceEstimate(
         currency="INR",
-        parts=(),
-        labour=LabourEstimate(hours=1.0, hourly_rate=Decimal("500")),
-        estimated_duration_hours=1.0,
+        services=(
+            ServiceEstimate(
+                service_name="Oil Change",
+                currency="INR",
+                parts=(),
+                labour=LabourEstimate(hours=1.0, hourly_rate=Decimal("500")),
+                estimated_duration_hours=1.0,
+            ),
+        ),
     )
 
 

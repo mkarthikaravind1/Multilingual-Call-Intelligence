@@ -4,7 +4,7 @@ import httpx
 from app.ai.asr.provider import ASRProvider, ASRResult
 from app.core.config import Settings, get_settings
 from app.core.constants import SUPPORTED_LANGUAGES
-from app.ai.asr.provider import ASRProvider, ASRResult, TimedText
+from app.ai.asr.provider import ASRProvider, ASRResult, NoSpeechDetected, TimedText
 import re
 
 _ENDPOINT_PATH = "/speech-to-text"
@@ -13,6 +13,10 @@ _SENTENCE_BOUNDARY = re.compile(r"(?<=[.?!।])\s+")
 
 class SarvamASRError(Exception):
     pass
+
+
+class SarvamNoSpeechError(SarvamASRError, NoSpeechDetected):
+    """Sarvam heard no speech in the audio."""
 
 class SarvamASRProvider(ASRProvider):
     def __init__(
@@ -31,6 +35,7 @@ class SarvamASRProvider(ASRProvider):
         self._api_key = api_key
         self._url = f"{base_url}{_ENDPOINT_PATH}"
         self._model = model
+        self._mode = (settings.sarvam_stt_mode or "").strip() or None
         self._audio_codec = (settings.sarvam_input_audio_codec or "").strip() or None
         self._client = client or httpx.Client(timeout=settings.sarvam_timeout_seconds)
 
@@ -45,6 +50,8 @@ class SarvamASRProvider(ASRProvider):
             "language_code": "unknown",
             "with_timestamps": "true",
         }
+        if self._mode:
+            form["mode"] = self._mode
         if self._audio_codec:
             form["input_audio_codec"] = self._audio_codec
 
@@ -77,7 +84,7 @@ class SarvamASRProvider(ASRProvider):
 
         transcript = payload.get("transcript")
         if not isinstance(transcript, str) or not transcript.strip():
-            raise SarvamASRError("Sarvam response has no transcript.")
+            raise SarvamNoSpeechError("Sarvam response has no transcript.")
 
         timestamps = payload.get("timestamps")
         start_time, end_time = _extract_time_range(timestamps)

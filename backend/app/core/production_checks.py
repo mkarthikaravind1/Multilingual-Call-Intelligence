@@ -41,6 +41,13 @@ def configuration_problems(settings: Settings) -> list[str]:
             )
         if not settings.plivo_stream_base_url.strip().startswith("wss://"):
             problems.append("PLIVO_STREAM_BASE_URL must be a wss:// URL.")
+        if not settings.plivo_icr_dial_targets.strip():
+            problems.append(
+                "PLIVO_ICR_DIAL_TARGETS is empty: incoming calls would not be connected to an ICR."
+            )
+
+    if settings.role_provider.strip().lower() != "session":
+        problems.append("ROLE_PROVIDER must be session (static is for tests).")
 
     shared = settings.live_state_store_provider.strip().lower() == "redis"
     if shared and settings.call_mapping_store_provider.strip().lower() != "redis":

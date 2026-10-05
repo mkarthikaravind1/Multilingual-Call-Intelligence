@@ -23,6 +23,7 @@ def _settings(**overrides) -> Settings:
         "sarvam_api_key": API_KEY,
         "sarvam_base_url": "https://sarvam.test",
         "sarvam_stt_model": "saaras:v3",
+        "sarvam_stt_mode": "codemix",
         "sarvam_timeout_seconds": 5.0,
         "sarvam_input_audio_codec": None,
     }
@@ -103,8 +104,18 @@ def test_request_is_built_from_settings():
     assert b'name="model"\r\n\r\nsaaras:v3' in request.content
     assert b'name="language_code"\r\n\r\nunknown' in request.content
     assert b'name="with_timestamps"\r\n\r\ntrue' in request.content
+    assert b'name="mode"\r\n\r\ncodemix' in request.content
     assert AUDIO in request.content
     assert b"input_audio_codec" not in request.content
+
+
+@pytest.mark.parametrize("mode", [None, "", "  "])
+def test_mode_is_omitted_when_not_configured(mode):
+    captured: list[httpx.Request] = []
+
+    _provider(_capture(captured), sarvam_stt_mode=mode).transcribe(AUDIO)
+
+    assert b'name="mode"' not in captured[0].content
 
 
 def test_configured_audio_codec_is_sent():

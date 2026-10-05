@@ -126,15 +126,33 @@ English (en), Telugu (te), Kannada (kn), Malayalam (ml)**. Every utterance
 carries the languages detected in it, so code-mixed speech is represented.
 Sarvam (`saaras:v3` by default) provides transcription and language
 identification; other languages returned by the provider are rejected.
+Transcription uses Sarvam's `codemix` mode (`SARVAM_STT_MODE`), so English
+words in a Tamil sentence stay in English letters ("brake pad மாத்தணும்")
+instead of being spelled in Tamil script.
 
 ### Speaker identification
 
-Diarization (`DIARIZATION_PROVIDER=pyannote`, model
-`pyannote/speaker-diarization-community-1`) labels speakers in each chunk.
-A per-call speaker session maps diarized speakers to roles (`ROLE_PROVIDER`:
-`order_based` - the first speaker is the agent - or `static`) and keeps the
-mapping stable across chunks and across instances (stored in Redis when
-shared). Without diarization, roles come out `UNKNOWN`.
+Each call has a speaker session (`ROLE_PROVIDER=session`) that holds who is
+the ICR and who is the customer. A role, once decided, is locked for the
+rest of the call, and the session is shared between instances (Redis).
+
+- **Separate tracks (production).** With `PLIVO_ICR_DIAL_TARGETS` set, the
+  answer XML streams both sides of the call (`audioTrack="both"`) and then
+  dials the ICR. The caller's track (inbound) is the customer and the other
+  track (outbound) is the ICR, so roles are exact and no diarization runs.
+  A track that is silent while the other side speaks is not sent to ASR.
+- **Mixed audio** (test-audio upload, no ICR dialled). Diarization
+  (`DIARIZATION_PROVIDER=pyannote`, model `pyannote/speaker-diarization-community-1`)
+  labels speakers per chunk, but those labels change from chunk to chunk.
+  A voice tracker therefore matches each chunk's speakers to call-wide
+  speakers using voice embeddings (`SPEAKER_MATCH_THRESHOLD`, default
+  0.45; `SPEAKER_MAX_PER_CALL`, default 2). What each speaker says is then
+  scored for ICR evidence (greetings, offers of help, asking for details)
+  or customer evidence ("my car", "I am calling about"), in English and in
+  the four native scripts. Add the ICR's own opening lines in
+  `ROLE_ICR_PHRASES`. Set `ROLE_LLM_ENABLED=true` to also ask the LLM when
+  the phrases leave it open. Speech stays `UNKNOWN` until a role is clear;
+  nothing is guessed from who spoke first.
 
 ### Complaint detection
 
@@ -313,8 +331,9 @@ and adapters selected by configuration in `app/composition/providers.py`:
 | Speech-to-text | `ASR_PROVIDER` | `sarvam` |
 | Language ID | `LANGUAGE_PROVIDER` | `sarvam` |
 | Diarization | `DIARIZATION_PROVIDER` | `pyannote`, `scripted` |
-| Speaker roles | `ROLE_PROVIDER` | `order_based`, `static` |
+| Speaker roles | `ROLE_PROVIDER` | `session` (default), `static` (tests) |
 | Complaint, sentiment, next question | (LLM) | LLM providers using `LLM_PROVIDER` |
+| Service estimate | `ESTIMATION_PROVIDER` | `llm` (default, keyword fallback), `rule_based` |
 | Post-call summary | `SUMMARY_PROVIDER` | `rule_based`, `llm` |
 | Escalation | `ESCALATION_PROVIDER` | `rule_based`, `llm` (hybrid) |
 | Emerging complaints | `EMERGING_COMPLAINT_PROVIDER` | `rule_based`, `llm` |

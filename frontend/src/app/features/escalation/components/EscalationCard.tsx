@@ -88,8 +88,8 @@ export function EscalationCard({
       className={`panel escalation-card escalation-card--${escalation.level}${isResolved ? ' escalation-card--resolved' : ''}`}
       aria-live="polite"
     >
-      <div className="section-heading">
-        <div>
+      <div className="escalation-card__header">
+        <div className="escalation-card__title">
           {compact ? (
             <h4 className="live-call__panel-title">Escalation</h4>
           ) : (
@@ -105,37 +105,11 @@ export function EscalationCard({
             </Link>
           ) : null}
         </div>
-        <div className="escalation-card__top-right">
-          <div className="list-card__meta">
-            <EscalationLevelBadge level={escalation.level} />
-            <span className={`badge${isResolved ? ' badge--success' : ''}`}>
-              {humanizeLabel(escalation.status)}
-            </span>
-          </div>
-          {canManage && !isResolved && !isResolving && (
-            <div className="button-row escalation-card__buttons">
-              {escalation.status === 'open' && (
-                <button
-                  type="button"
-                  className="button"
-                  disabled={isSaving}
-                  onClick={() =>
-                    void act(() => escalationRestService.acknowledge(escalation.callId))
-                  }
-                >
-                  {isSaving ? 'Saving…' : 'Acknowledge'}
-                </button>
-              )}
-              <button
-                type="button"
-                className="button button--secondary"
-                disabled={isSaving}
-                onClick={() => setIsResolving(true)}
-              >
-                Resolve
-              </button>
-            </div>
-          )}
+        <div className="escalation-card__badges">
+          <EscalationLevelBadge level={escalation.level} />
+          <span className={`badge${isResolved ? ' badge--success' : ''}`}>
+            {humanizeLabel(escalation.status)}
+          </span>
         </div>
       </div>
 
@@ -199,6 +173,29 @@ export function EscalationCard({
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {canManage && !isResolved && !isResolving && (
+        <div className="escalation-card__footer">
+          {escalation.status === 'open' && (
+            <button
+              type="button"
+              className="button"
+              disabled={isSaving}
+              onClick={() => void act(() => escalationRestService.acknowledge(escalation.callId))}
+            >
+              {isSaving ? 'Saving…' : 'Acknowledge'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={isSaving}
+            onClick={() => setIsResolving(true)}
+          >
+            Resolve
+          </button>
         </div>
       )}
 

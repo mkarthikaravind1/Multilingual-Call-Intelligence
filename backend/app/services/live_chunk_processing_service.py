@@ -1,7 +1,8 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
+from app.domain.utterance import SpeakerRole
 from app.services.audio_chunking_service import AudioChunk
 from app.services.call_workflow_service import CallAnalysisResult
 
@@ -28,7 +29,15 @@ class StreamCompletedError(LiveChunkProcessingError):
 
 class ChunkAudioProcessor(Protocol):
     def process_audio(
-        self, call_id: str, audio: bytes, start_offset: float = 0.0
+        self,
+        call_id: str,
+        audio: bytes,
+        start_offset: float = 0.0,
+        *,
+        continues_previous: bool = False,
+        ends_utterance: bool = True,
+        track: str | None = None,
+        speaker_role: SpeakerRole | None = None,
     ) -> CallAnalysisResult: ...
 
 
@@ -43,12 +52,24 @@ class ChunkProcessingResult:
 
 
 @dataclass
-class _StreamState:
-    # Built lazily so a failed build is retried on the next chunk.
-    processor: ChunkAudioProcessor | None = None
+class _TrackState:
     next_sequence: int = 0
     last_end_time: float = 0.0
     completed: bool = False
+
+
+@dataclass
+class _StreamState:
+    # Built lazily so a failed build is retried on the next chunk. One per
+    # call, shared by its tracks, so their utterances join one transcript.
+    processor: ChunkAudioProcessor | None = None
+    # Sequence numbers and times run separately for each track (None: a
+    # single mixed stream).
+    tracks: dict[str | None, _TrackState] = field(default_factory=dict)
+
+    @property
+    def completed(self) -> bool:
+        return bool(self.tracks) and all(t.completed for t in self.tracks.values())
 
 
 class LiveChunkProcessingService:
@@ -69,32 +90,37 @@ class LiveChunkProcessingService:
             raise LiveChunkProcessingError("chunk must be an AudioChunk.")
 
         state = self._streams.get(call_id)
-        if state is not None and state.completed:
+        track_state = state.tracks.get(chunk.track) if state is not None else None
+        if track_state is not None and track_state.completed:
             raise StreamCompletedError(
                 f"Stream for call {call_id!r} is already complete."
             )
 
-        expected = state.next_sequence if state is not None else 0
+        label = _label(call_id, chunk.track)
+        expected = track_state.next_sequence if track_state is not None else 0
         if chunk.sequence < expected:
             raise DuplicateChunkError(
-                f"Chunk {chunk.sequence} for call {call_id!r} was already "
+                f"Chunk {chunk.sequence} for {label} was already "
                 f"processed; expected sequence {expected}."
             )
         if chunk.sequence > expected:
             raise OutOfOrderChunkError(
-                f"Chunk {chunk.sequence} for call {call_id!r} arrived out of "
+                f"Chunk {chunk.sequence} for {label} arrived out of "
                 f"order; expected sequence {expected}."
             )
-        if state is not None and chunk.start_time < state.last_end_time:
+        if track_state is not None and chunk.start_time < track_state.last_end_time:
             raise OutOfOrderChunkError(
-                f"Chunk {chunk.sequence} for call {call_id!r} starts at "
+                f"Chunk {chunk.sequence} for {label} starts at "
                 f"{chunk.start_time}, before the previous chunk ends at "
-                f"{state.last_end_time}."
+                f"{track_state.last_end_time}."
             )
 
         if state is None:
             state = _StreamState()
             self._streams[call_id] = state
+        if track_state is None:
+            track_state = _TrackState()
+            state.tracks[chunk.track] = track_state
 
         # A chunk that passed the order checks is consumed even if processing
         # fails: the stream never resends audio, so holding the sequence back
@@ -102,13 +128,21 @@ class LiveChunkProcessingService:
         try:
             if state.processor is None:
                 state.processor = self._processor_factory(call_id)
+            # Speech the time limit cut mid-sentence extends the current
+            # utterance; a pause (or the end of the stream) closes it.
             analysis = state.processor.process_audio(
-                call_id, chunk.audio, start_offset=chunk.start_time
+                call_id,
+                chunk.audio,
+                start_offset=chunk.start_time,
+                continues_previous=chunk.continues_previous,
+                ends_utterance=chunk.ends_on_pause or chunk.is_final,
+                track=chunk.track,
+                speaker_role=chunk.speaker_role,
             )
         finally:
-            state.next_sequence = chunk.sequence + 1
-            state.last_end_time = chunk.end_time
-            state.completed = chunk.is_final
+            track_state.next_sequence = chunk.sequence + 1
+            track_state.last_end_time = chunk.end_time
+            track_state.completed = chunk.is_final
 
         return ChunkProcessingResult(
             call_id=call_id,
@@ -118,3 +152,7 @@ class LiveChunkProcessingService:
             is_final=chunk.is_final,
             analysis=analysis,
         )
+
+
+def _label(call_id: str, track: str | None) -> str:
+    return f"call {call_id!r}" if track is None else f"call {call_id!r} ({track} track)"

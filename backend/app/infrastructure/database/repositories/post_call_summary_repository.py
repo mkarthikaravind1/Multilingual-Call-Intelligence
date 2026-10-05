@@ -1,52 +1,12 @@
-from decimal import Decimal
-
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.sentiment.provider import SentimentLabel, SentimentResult
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.post_call_summary import ComplaintSummary, PostCallSummary
-from app.domain.service_estimate import EstimatedPart, LabourEstimate, ServiceEstimate
+from app.domain.service_estimate import call_estimate_from_json, call_estimate_to_json
 from app.infrastructure.database.models import PostCallSummaryModel
 from app.services.post_call_summary_repository import PostCallSummaryRepository
-
-
-# Only the estimate's input fields are stored; its totals are domain
-# properties. Decimals are kept as strings so no precision is lost in JSON.
-def _estimate_to_json(estimate: ServiceEstimate) -> dict:
-    return {
-        "service_name": estimate.service_name,
-        "currency": estimate.currency,
-        "parts": [
-            {"name": part.name, "quantity": part.quantity, "unit_price": str(part.unit_price)}
-            for part in estimate.parts
-        ],
-        "labour": {
-            "hours": estimate.labour.hours,
-            "hourly_rate": str(estimate.labour.hourly_rate),
-        },
-        "estimated_duration_hours": estimate.estimated_duration_hours,
-    }
-
-
-def _estimate_from_json(data: dict) -> ServiceEstimate:
-    return ServiceEstimate(
-        service_name=data["service_name"],
-        currency=data["currency"],
-        parts=tuple(
-            EstimatedPart(
-                name=part["name"],
-                quantity=part["quantity"],
-                unit_price=Decimal(part["unit_price"]),
-            )
-            for part in data["parts"]
-        ),
-        labour=LabourEstimate(
-            hours=data["labour"]["hours"],
-            hourly_rate=Decimal(data["labour"]["hourly_rate"]),
-        ),
-        estimated_duration_hours=data["estimated_duration_hours"],
-    )
 
 
 def _to_model(summary: PostCallSummary) -> PostCallSummaryModel:
@@ -74,7 +34,7 @@ def _to_model(summary: PostCallSummary) -> PostCallSummaryModel:
         service_estimate=(
             None
             if summary.service_estimate is None
-            else _estimate_to_json(summary.service_estimate)
+            else call_estimate_to_json(summary.service_estimate)
         ),
     )
 
@@ -106,7 +66,7 @@ def _to_domain(model: PostCallSummaryModel) -> PostCallSummary:
         service_estimate=(
             None
             if model.service_estimate is None
-            else _estimate_from_json(model.service_estimate)
+            else call_estimate_from_json(model.service_estimate)
         ),
     )
 

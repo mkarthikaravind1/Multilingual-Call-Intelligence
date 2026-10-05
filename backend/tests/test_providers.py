@@ -21,8 +21,9 @@ from app.ai.llm.client import LLMClient, LLMResponse
 
 
 class FakeGroqLLMClient:
-    def __init__(self, model: str | None = None) -> None:
+    def __init__(self, model: str | None = None, max_retries: int = 4) -> None:
         self.model = model
+        self.max_retries = max_retries
 
 
 def _settings(provider: str) -> Settings:
@@ -36,6 +37,15 @@ def test_create_llm_client_builds_groq_from_settings(monkeypatch):
 
     assert isinstance(client, FakeGroqLLMClient)
     assert client.model == "test-model"
+    assert client.max_retries == 4  # the client's own default
+
+
+def test_create_llm_client_passes_max_retries(monkeypatch):
+    monkeypatch.setattr(providers, "GroqLLMClient", FakeGroqLLMClient)
+
+    client = create_llm_client(_settings("groq"), max_retries=0)
+
+    assert client.max_retries == 0
 
 
 @pytest.mark.parametrize("name", ["not_configured", "unknown"])

@@ -1,0 +1,31 @@
+# Alert e-mails. The ${...} values are filled in from deploy/.env.production
+# when the container starts (see docker-compose.prod.yml); the SMTP password
+# is read from a file, never written into this config.
+global:
+  smtp_smarthost: "${SMTP_SMARTHOST}"
+  smtp_from: "${ALERT_EMAIL_FROM}"
+  smtp_auth_username: "${SMTP_USERNAME}"
+  smtp_auth_password_file: /tmp/smtp_password
+  smtp_require_tls: true
+
+route:
+  receiver: email
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: email
+      repeat_interval: 1h
+
+receivers:
+  - name: email
+    email_configs:
+      - to: "${ALERT_EMAIL_TO}"
+        send_resolved: true
+
+inhibit_rules:
+  # When the backend is down every other alert about it is noise.
+  - source_matchers: ['alertname="BackendDown"']
+    target_matchers: ['severity="warning"']

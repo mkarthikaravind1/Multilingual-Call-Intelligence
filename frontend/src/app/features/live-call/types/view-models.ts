@@ -59,11 +59,20 @@ export interface LabourEstimateViewModel {
   totalCost: string
 }
 
-export interface ServiceEstimateViewModel {
+export interface ServiceLineViewModel {
   serviceName: string
   currency: string
   parts: EstimatedPartViewModel[]
   labour: LabourEstimateViewModel
+  estimatedDurationHours: number
+  partsCost: string
+  labourCost: string
+  estimatedCost: string
+}
+
+export interface ServiceEstimateViewModel {
+  currency: string
+  services: ServiceLineViewModel[]
   estimatedDurationHours: number
   partsCost: string
   labourCost: string

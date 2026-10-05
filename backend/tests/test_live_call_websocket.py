@@ -548,7 +548,11 @@ def test_completion_is_pushed_to_the_socket():
         assert client.post(
             f"/api/v1/calls/{CALL_ID}/complete", json={"end_time": 99.0}
         ).status_code == 200
-        event = ws.receive_json()
+        # The utterance's own analysis may still be pushed first.
+        for _ in range(5):
+            event = ws.receive_json()
+            if event.get("post_call_summary") is not None:
+                break
 
     assert event["type"] == "analysis"
     assert event["post_call_summary"] is not None

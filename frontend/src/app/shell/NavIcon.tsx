@@ -1,5 +1,6 @@
 export type NavIconName =
   | 'dashboard'
+  | 'brand'
   | 'live-call'
   | 'ai-improvement'
   | 'administration'
@@ -11,6 +12,7 @@ export type NavIconName =
 
 const PATHS: Record<NavIconName, string[]> = {
   dashboard: ['M4 4h7v7H4z', 'M13 4h7v4h-7z', 'M13 10h7v10h-7z', 'M4 13h7v7H4z'],
+  brand:['M4 14v-2a8 8 0 0 1 16 0v2', 'M4 14h3v5H5a1 1 0 0 1-1-1z', 'M20 14h-3v5h2a1 1 0 0 0 1-1z'],
   'live-call': [
     'M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z',
   ],

@@ -67,18 +67,23 @@ class UnsupportedProviderError(ValueError):
     pass
 
 
-def _build_groq(model: str | None) -> LLMClient:
-    return GroqLLMClient(model=model)
+def _build_groq(model: str | None, max_retries: int | None) -> LLMClient:
+    if max_retries is None:
+        return GroqLLMClient(model=model)
+    return GroqLLMClient(model=model, max_retries=max_retries)
 
 
-_LLM_CLIENT_BUILDERS: dict[str, Callable[[str | None], LLMClient]] = {
+_LLM_CLIENT_BUILDERS: dict[str, Callable[[str | None, int | None], LLMClient]] = {
     "groq": _build_groq,
 }
 
 
 def create_llm_client(
-    settings: Settings | None = None, model: str | None = None
+    settings: Settings | None = None,
+    model: str | None = None,
+    max_retries: int | None = None,
 ) -> LLMClient:
+    """max_retries: None keeps the provider's configured retries."""
     settings = settings or get_settings()
     name = settings.llm_provider.strip().lower()
     builder = _LLM_CLIENT_BUILDERS.get(name)
@@ -87,7 +92,7 @@ def create_llm_client(
             f"Unsupported LLM provider: {settings.llm_provider!r}. "
             f"Available: {sorted(_LLM_CLIENT_BUILDERS)}."
         )
-    return builder(model)
+    return builder(model, max_retries)
 
 
 def create_question_provider(
@@ -257,6 +262,18 @@ def _build_static_roles(
     return StaticRoleIdentificationProvider(role_by_speaker)
 
 
+def _build_session_roles(
+    role_by_speaker: Mapping[str, SpeakerRole] | None,
+    role_order: Sequence[SpeakerRole],
+) -> RoleIdentificationProvider:
+    # Live calls build one per call (see build_live_chunk_processing_service);
+    # this one serves a single recording.
+    from app.composition.speaker_sessions import build_session_role_provider
+    from app.domain.speaker_session import SpeakerSession
+
+    return build_session_role_provider(SpeakerSession("recording"))
+
+
 _ROLE_PROVIDER_BUILDERS: dict[
     str,
     Callable[
@@ -265,6 +282,7 @@ _ROLE_PROVIDER_BUILDERS: dict[
     ],
 ] = {
     "static": _build_static_roles,
+    "session": _build_session_roles,
 }
 
 

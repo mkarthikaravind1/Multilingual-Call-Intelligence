@@ -13,21 +13,50 @@ class Settings(BaseSettings):
 
     groq_api_key: str = "not_configured"
     groq_model: str = "openai/gpt-oss-20b"
+    # GPT-OSS models reason before answering, and the reasoning counts
+    # towards Groq's token limits: "low" keeps it short (also avoids empty
+    # replies). Empty: Groq's default. Ignored for other models.
+    groq_reasoning_effort: str = "low"
+    # Retries on rate limits (429) and server errors, waiting as long as
+    # Groq asks ("try again in ...") between them.
+    groq_max_retries: int = 4
     sarvam_api_key: str = "not_configured"
     sarvam_base_url: str = "https://api.sarvam.ai"
     sarvam_stt_model: str = "saaras:v3"
+    # saaras:v3 output mode. "codemix" keeps English words in Latin script
+    # inside Indic text (the default "transcribe" spells them in the native
+    # script, which hides English keywords such as "brake" from the
+    # estimator). Empty: don't send a mode (needed for models without one).
+    sarvam_stt_mode: str | None = "codemix"
     sarvam_timeout_seconds: float = 30.0
     sarvam_input_audio_codec: str | None = None
     language_provider: str = "not_configured"
     diarization_enabled: bool = True
     diarization_provider: str = "not_configured"
-    role_provider: str = "not_configured"
+    # Speaker roles (ICR / customer): "session" learns them per call (the
+    # call's tracks when both sides are streamed separately, otherwise voice
+    # tracking plus what each speaker says); "static" is for tests.
+    role_provider: str = "session"
+    # Also ask the LLM (LLM_PROVIDER) when the phrases leave roles unclear.
+    role_llm_enabled: bool = False
+    # Comma-separated phrases only the ICR says (the call-opening script,
+    # e.g. "welcome to ABC Motors"); each one heard is strong evidence.
+    role_icr_phrases: str = ""
+    # Voice tracking on mixed audio: how alike (cosine, -1..1) a voice must
+    # be to an earlier speaker's to be that speaker, and how many speakers
+    # a call has at most.
+    speaker_match_threshold: float = 0.45
+    speaker_max_per_call: int = 2
     pyannote_model: str = "pyannote/speaker-diarization-community-1"
     huggingface_token: str = ""
     # CPU threads for diarization (torch). Torch defaults to every core, which
     # oversubscribes the CPU and can make pyannote 20x+ slower; 0 keeps that default.
     diarization_cpu_threads: int = 4
     summary_provider: str = "rule_based"
+    # Which price-list services a call needs: "llm" (reads the whole call,
+    # any supported language, understands "the battery is fine"; falls back
+    # to the keywords when the LLM fails) or "rule_based" (English keywords).
+    estimation_provider: str = "llm"
     # "rule_based", or "llm" (the rules plus an LLM detector that can only add).
     escalation_provider: str = "rule_based"
     # Emerging-complaint discovery: "rule_based" (same wording across calls)
@@ -58,9 +87,17 @@ class Settings(BaseSettings):
     # PLIVO_STREAM_MIN_SPEECH_SECONDS of speech, then PLIVO_STREAM_PAUSE_SECONDS
     # quieter than PLIVO_STREAM_SILENCE_RMS (16-bit PCM level).
     # PLIVO_STREAM_FLUSH_SECONDS stays the upper limit; pause 0 = fixed chunks.
-    plivo_stream_pause_seconds: float = 0.6
+    plivo_stream_pause_seconds: float = 0.5
     plivo_stream_min_speech_seconds: float = 1.5
     plivo_stream_silence_rms: int = 350
+    # Who an incoming call is connected to: comma-separated phone numbers
+    # (E.164) and/or SIP endpoints (sip:icr@example.com), rung together.
+    # When set, both sides are streamed as separate tracks: the caller
+    # (inbound) is the customer and the dialled party (outbound) the ICR,
+    # so speaker roles need no guessing. Empty: the caller is only streamed.
+    plivo_icr_dial_targets: str = ""
+    plivo_icr_caller_id: str = ""
+    plivo_icr_dial_timeout_seconds: int = 30
     call_mapping_store_provider: str = "in_memory"
     call_mapping_key_prefix: str = "telephony_call_mapping"
     # CRM boundary: "none" (no CRM connected) or "json_file" (crm_json_path).
@@ -104,6 +141,10 @@ class Settings(BaseSettings):
     # How long an active call's live analysis (sentiment, next question,
     # estimate) is kept without new speech.
     live_analysis_ttl_seconds: float = 14400.0
+    # A call's live AI analysis (complaints, sentiment, next question,
+    # escalation, estimate) starts at most this often; speech in between is
+    # covered by the next run. Each run makes several LLM calls. 0 = no limit.
+    live_analysis_min_interval_seconds: float = 5.0
     # Browser live-call WebSockets authenticate with a single-use ticket
     # (POST /api/v1/calls/{call_id}/live-token), never the access token.
     live_call_ws_token_ttl_seconds: int = 60

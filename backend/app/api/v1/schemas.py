@@ -185,11 +185,21 @@ class LabourEstimateResponse(_Response):
     hourly_rate: Decimal
     total_cost: Decimal
 
-class ServiceEstimateResponse(_Response):
+class ServiceLineResponse(_Response):
+    """One service of the estimate, priced from the price list."""
     service_name: str
     currency: str
     parts: list[EstimatedPartResponse]
     labour: LabourEstimateResponse
+    estimated_duration_hours: float
+    parts_cost: Decimal
+    labour_cost: Decimal
+    estimated_cost: Decimal
+
+class ServiceEstimateResponse(_Response):
+    """Every service that came up in the call, and their totals."""
+    currency: str
+    services: list[ServiceLineResponse]
     estimated_duration_hours: float
     parts_cost: Decimal
     labour_cost: Decimal

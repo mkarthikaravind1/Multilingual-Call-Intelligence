@@ -68,6 +68,12 @@ class MediaStreamEvent:
     sequence: int | None = None
     audio: bytes | None = None
     sample_rate: int | None = None
+    # Which side of the call the audio is from, when the provider streams
+    # the two sides separately: "inbound" (the caller) or "outbound" (what
+    # the caller hears, i.e. the ICR the call was dialled to). None for a
+    # single mixed stream. On "start", tracks lists the tracks to expect.
+    track: str | None = None
+    tracks: tuple[str, ...] = ()
 
 
 class TelephonyWebhookError(Exception):

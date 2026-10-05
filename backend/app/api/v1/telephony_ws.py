@@ -18,9 +18,11 @@ from app.api.dependencies import (
     get_telephony_stream_flush_seconds,
     get_workflow_service,
 )
+from app.ai.asr.provider import NoSpeechDetected
 from app.api.v1.live import AUTH_FAILED_CLOSE_CODE, CALL_NOT_FOUND_CLOSE_CODE
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.conversation import ConversationAlreadyCompletedError, ConversationStatus
+from app.domain.utterance import SpeakerRole
 from app.services.audio_chunking_service import AudioChunk
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
@@ -35,7 +37,11 @@ from app.services.telephony_audio_buffer import (
 )
 from app.services.telephony_call_service import TelephonyCallService
 from app.core.config import get_settings
-from app.observability.metrics import TELEPHONY_STREAMS_OPEN
+from app.observability.metrics import (
+    LIVE_CHUNK_DURATION,
+    LIVE_CHUNKS,
+    TELEPHONY_STREAMS_OPEN,
+)
 from app.security.stream_token import is_valid_stream_token
 from app.telephony.plivo.provider import parse_plivo_media_stream_event
 from app.telephony.provider import MediaStreamEvent, TelephonyStreamError, TelephonyProvider
@@ -52,6 +58,14 @@ STREAM_CALL_COMPLETED_CLOSE_CODE = 1000  # normal closure: the call ended elsewh
 # than treated as fatal — the underlying phone call must stay up
 # (keepCallAlive="true") even when we can't process its audio.
 _MIN_FLUSH_AUDIO_SECONDS = 0.25
+
+# A call streamed as two tracks (Plivo dials the ICR, see
+# PlivoTelephonyProvider.build_stream_response): the caller is the customer,
+# and what the caller hears is the ICR.
+TRACK_ROLES: dict[str, SpeakerRole] = {
+    "inbound": SpeakerRole.CUSTOMER,
+    "outbound": SpeakerRole.ICR,
+}
 
 
 @router.websocket("/{call_id}/telephony-stream")
@@ -138,7 +152,9 @@ async def _serve_stream(
         await websocket.close(code=STREAM_INTERNAL_ERROR_CLOSE_CODE)
         return
 
-    buffer: TelephonyAudioBuffer | None = None
+    # One buffer per track when the two sides of the call arrive
+    # separately, else one (key None) for the mixed audio.
+    buffers: dict[str | None, TelephonyAudioBuffer] = {}
     # Chunks are processed in order on a worker, off this receive loop: one
     # chunk can take longer to process than the websocket keepalive allows,
     # and a socket that stops reading gets dropped mid-call.
@@ -175,30 +191,38 @@ async def _serve_stream(
             if stream_event.event_type == "start":
                 if telephony_call_service is not None:
                     telephony_call_service.stream_opened(call_id)
-                if buffer is not None:
-                    # A second "start" on the same connection (e.g. a
-                    # provider-side stream restart) without a "stop" first
-                    # must not silently discard whatever was already buffered.
-                    _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=False)
+                # A second "start" on the same connection (e.g. a
+                # provider-side stream restart) without a "stop" first
+                # must not silently discard whatever was already buffered.
+                _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=False)
                 settings = get_settings()
-                buffer = TelephonyAudioBuffer(
-                    sample_rate=stream_event.sample_rate or 8000,
-                    flush_after_seconds=flush_after_seconds,
-                    pause_seconds=settings.plivo_stream_pause_seconds,
-                    min_speech_seconds=settings.plivo_stream_min_speech_seconds,
-                    silence_rms=settings.plivo_stream_silence_rms,
-                )
+                split = set(TRACK_ROLES) <= set(stream_event.tracks)
+                buffers = {
+                    track: TelephonyAudioBuffer(
+                        sample_rate=stream_event.sample_rate or 8000,
+                        flush_after_seconds=flush_after_seconds,
+                        pause_seconds=settings.plivo_stream_pause_seconds,
+                        min_speech_seconds=settings.plivo_stream_min_speech_seconds,
+                        silence_rms=settings.plivo_stream_silence_rms,
+                    )
+                    for track in (tuple(TRACK_ROLES) if split else (None,))
+                }
+                if split:
+                    logger.info(
+                        "Call %r streams the customer and the ICR as separate tracks", call_id
+                    )
 
             elif stream_event.event_type == "media":
+                track = stream_event.track if None not in buffers else None
+                buffer = buffers.get(track)
                 if buffer is not None:
                     accepted = buffer.accept(stream_event.sequence, stream_event.audio or b"")
                     if accepted:
-                        _flush(buffer, worker, force=False, min_duration=0.0, is_final=False)
+                        _flush(buffer, worker, track, force=False, min_duration=0.0, is_final=False)
 
             elif stream_event.event_type == "stop":
-                if buffer is not None:
-                    _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
-                    buffer = None
+                _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
+                buffers = {}
                 await worker.drain()
                 # All of this stream's audio has been processed.
                 if telephony_call_service is not None:
@@ -209,9 +233,8 @@ async def _serve_stream(
             # open. Waiting indefinitely for a "stop" that may never
             # arrive would otherwise strand any further buffered audio.
             if await _call_is_completed(call_id, call_service):
-                if buffer is not None:
-                    _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
-                    buffer = None
+                _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
+                buffers = {}
                 await websocket.close(code=STREAM_CALL_COMPLETED_CLOSE_CODE)
                 return
     except WebSocketDisconnect:
@@ -226,8 +249,7 @@ async def _serve_stream(
         # A disconnect without "stop" must not discard the call's final
         # audio. _process_chunk drops it if the call already completed.
         try:
-            if buffer is not None:
-                _flush(buffer, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
+            _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
             await worker.close()
         finally:
             if telephony_call_service is not None:
@@ -255,13 +277,17 @@ class _ChunkWorker:
         self.call_id = call_id
         self._call_service = call_service
         self._live_chunk_processing_service = live_chunk_processing_service
-        self._queue: asyncio.Queue[tuple[BufferedAudioChunk, int, bool] | None] = asyncio.Queue()
-        self._next_sequence = 0
+        self._queue: asyncio.Queue[
+            tuple[BufferedAudioChunk, int, bool, str | None] | None
+        ] = asyncio.Queue()
+        # Each track numbers its chunks from 0.
+        self._next_sequence: dict[str | None, int] = {}
         self._task = asyncio.create_task(self._run())
 
-    def submit(self, chunk: BufferedAudioChunk, is_final: bool) -> None:
-        self._queue.put_nowait((chunk, self._next_sequence, is_final))
-        self._next_sequence += 1
+    def submit(self, chunk: BufferedAudioChunk, is_final: bool, track: str | None = None) -> None:
+        sequence = self._next_sequence.get(track, 0)
+        self._queue.put_nowait((chunk, sequence, is_final, track))
+        self._next_sequence[track] = sequence + 1
 
     async def drain(self) -> None:
         """Wait until every chunk submitted so far has been processed."""
@@ -278,7 +304,7 @@ class _ChunkWorker:
             try:
                 if item is None:
                     return
-                chunk, sequence, is_final = item
+                chunk, sequence, is_final, track = item
                 await _process_chunk(
                     self.call_id,
                     chunk,
@@ -286,6 +312,7 @@ class _ChunkWorker:
                     self._call_service,
                     self._live_chunk_processing_service,
                     is_final,
+                    track,
                 )
             except Exception:
                 logger.exception("Live pipeline processing failed for call %r", self.call_id)
@@ -293,9 +320,22 @@ class _ChunkWorker:
                 self._queue.task_done()
 
 
+def _flush_all(
+    buffers: dict[str | None, TelephonyAudioBuffer],
+    worker: _ChunkWorker,
+    *,
+    force: bool,
+    min_duration: float,
+    is_final: bool,
+) -> None:
+    for track, buffer in buffers.items():
+        _flush(buffer, worker, track, force=force, min_duration=min_duration, is_final=is_final)
+
+
 def _flush(
     buffer: TelephonyAudioBuffer,
     worker: _ChunkWorker,
+    track: str | None = None,
     *,
     force: bool,
     min_duration: float,
@@ -313,7 +353,11 @@ def _flush(
         return
     if min_duration and chunk.duration < min_duration:
         return
-    worker.submit(chunk, is_final)
+    if track is not None and not chunk.has_speech:
+        # One side of the call, silent while the other speaks: nothing to
+        # transcribe.
+        return
+    worker.submit(chunk, is_final, track)
 
 
 async def _process_chunk(
@@ -323,6 +367,7 @@ async def _process_chunk(
     call_service: CallService,
     live_chunk_processing_service: LiveChunkProcessingService | None,
     is_final: bool,
+    track: str | None = None,
 ) -> None:
     if live_chunk_processing_service is None:
         logger.error(
@@ -336,10 +381,12 @@ async def _process_chunk(
     except ConversationNotFoundError:
         return  # call record vanished mid-stream; nothing to attach audio to
 
+    stream = "mixed" if track is None else "tracks"
     if conversation.status == ConversationStatus.COMPLETED:
         # Call ended (via the status webhook) while audio was still
         # buffered — drop it rather than reopening a finished conversation.
         logger.info("Dropping buffered telephony audio for completed call %r", call_id)
+        LIVE_CHUNKS.inc(stream, "dropped")
         return
 
     started = time.monotonic()
@@ -353,6 +400,10 @@ async def _process_chunk(
                 end_time=chunk.end_time,
                 audio=chunk.audio,
                 is_final=is_final,
+                ends_on_pause=chunk.ends_on_pause,
+                continues_previous=chunk.continues_previous,
+                track=track,
+                speaker_role=TRACK_ROLES.get(track) if track is not None else None,
             ),
         )
     except ConversationNotFoundError:
@@ -362,15 +413,31 @@ async def _process_chunk(
             "Dropping telephony chunk for call %r: call completed mid-processing",
             call_id,
         )
+        LIVE_CHUNKS.inc(stream, "dropped")
+        return
+    except NoSpeechDetected:
+        logger.info(
+            "No speech in %.1fs of audio (call time %.1f-%.1fs) for call %r",
+            chunk.duration,
+            chunk.start_time,
+            chunk.end_time,
+            call_id,
+        )
+        LIVE_CHUNKS.inc(stream, "silent")
         return
     except Exception:
         logger.exception("Live pipeline processing failed for call %r", call_id)
+        LIVE_CHUNKS.inc(stream, "failed")
         return
+    LIVE_CHUNKS.inc(stream, "transcribed")
+    LIVE_CHUNK_DURATION.observe(time.monotonic() - started, stream)
     logger.info(
-        "Transcribed %.1fs of audio (call time %.1f-%.1fs) for call %r in %.1fs",
+        "Transcribed %.1fs of %saudio (call time %.1f-%.1fs, %s) for call %r in %.1fs",
         chunk.duration,
+        f"{track} " if track else "",
         chunk.start_time,
         chunk.end_time,
+        "ends on a pause" if chunk.ends_on_pause else "no pause at the end",
         call_id,
         time.monotonic() - started,
     )

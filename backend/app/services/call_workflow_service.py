@@ -10,7 +10,7 @@ from app.domain.customer_contact import CustomerContact
 from app.domain.escalation import Escalation
 from app.domain.post_call_summary import PostCallSummary
 from app.domain.question_suggestion import QuestionSuggestion
-from app.domain.service_estimate import ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate
 from app.domain.utterance import Utterance
 from app.services.call_service import CallService
 from app.services.conversation_analysis_service import (
@@ -47,7 +47,7 @@ class CallAnalysisResult:
     # None only for a completed call whose post-call summary was never stored.
     sentiment: SentimentResult | None
     question_suggestion: QuestionSuggestion | None
-    service_estimate: ServiceEstimate | None
+    service_estimate: CallServiceEstimate | None
     post_call_summary: PostCallSummary | None = None
     # None when the call has never escalated (or escalation is not wired).
     escalation: Escalation | None = None
@@ -128,10 +128,28 @@ class CallWorkflowService:
         self._record_learning(call_id, result)
         return result
 
+    def process_utterance_update(
+        self,
+        call_id: str,
+        utterance: Utterance,
+    ) -> CallAnalysisResult:
+        """Update the latest utterance and analyse the call, in one step."""
+        self.record_utterance_update(call_id, utterance)
+        conversation = self._call_service.get_call(call_id)
+        result = self._analyze_and_store(conversation)
+        self._record_learning(call_id, result)
+        return result
+
     def record_utterance(self, call_id: str, utterance: Utterance) -> None:
         """Store the utterance and let open live views show it at once,
         before (and independently of) the slower AI analysis."""
         self._call_service.add_utterance(call_id, utterance)
+        self._live_analysis.touch(call_id)
+
+    def record_utterance_update(self, call_id: str, utterance: Utterance) -> None:
+        """Like record_utterance, for the call's latest utterance growing
+        (same utterance_id) as live speech continues it."""
+        self._call_service.update_latest_utterance(call_id, utterance)
         self._live_analysis.touch(call_id)
 
     def analyze_latest_speech(self, call_id: str) -> CallAnalysisResult | None:
@@ -148,8 +166,27 @@ class CallWorkflowService:
         except _CallCompletedDuringAnalysis:
             logger.info("Discarding live analysis of call %r: it completed meanwhile", call_id)
             return None
+        except Exception:
+            # e.g. the LLM is rate limited: the estimate does not depend on
+            # the rest of the analysis, so it is still brought up to date.
+            self._refresh_live_estimate(conversation)
+            raise
         self._record_learning(call_id, result)
         return result
+
+    def _refresh_live_estimate(self, conversation: Conversation) -> None:
+        estimate = self._estimate_call(conversation)
+        previous = self._live_analysis.load(conversation.call_id)
+        if estimate is None or (previous is not None and previous.service_estimate == estimate):
+            return
+        self._live_analysis.save(
+            conversation.call_id,
+            LiveAnalysisSnapshot(
+                sentiment=None if previous is None else previous.sentiment,
+                question_suggestion=None if previous is None else previous.question_suggestion,
+                service_estimate=estimate,
+            ),
+        )
 
     def _is_active(self, call_id: str) -> bool:
         return self._call_service.get_call(call_id).status != ConversationStatus.COMPLETED
@@ -235,9 +272,7 @@ class CallWorkflowService:
             coverage=analysis.coverage,
             sentiment=analysis.sentiment,
             question_suggestion=suggestion,
-            service_estimate=self._estimate_from_latest_utterance(
-                conversation.latest_utterance
-            ),
+            service_estimate=self._estimate_call(conversation),
         )
 
     def _stored_escalation(self, call_id: str) -> Escalation | None:
@@ -295,9 +330,7 @@ class CallWorkflowService:
                     conversation=conversation,
                     complaint_coverages=analysis.coverage.complaints,
                     sentiment=analysis.sentiment,
-                    service_estimate=self._estimate_from_latest_utterance(
-                        conversation.latest_utterance
-                    ),
+                    service_estimate=self._estimate_call(conversation),
                 )
             )
         except Exception:
@@ -405,13 +438,11 @@ class CallWorkflowService:
                 summary.call_id,
             )
 
-    def _estimate_from_latest_utterance(
-        self,
-        utterance: Utterance | None,
-    ) -> ServiceEstimate | None:
-        if utterance is None:
+    def _estimate_call(self, conversation: Conversation) -> CallServiceEstimate | None:
+        """Every service the call has needed so far, added up. A failure
+        here never stops the rest of the analysis."""
+        try:
+            return self._estimation_service.estimate_call(conversation.utterances)
+        except Exception:
+            logger.exception("Service estimate failed for call %r", conversation.call_id)
             return None
-
-        return self._estimation_service.estimate(
-            utterance.transcript
-        )

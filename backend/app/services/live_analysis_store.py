@@ -17,12 +17,15 @@ nothing was stored, so callers fall back to what the database holds.
 import logging
 import time
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 from app.ai.sentiment.provider import SentimentLabel, SentimentResult
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
-from app.domain.service_estimate import EstimatedPart, LabourEstimate, ServiceEstimate
+from app.domain.service_estimate import (
+    CallServiceEstimate,
+    call_estimate_from_json,
+    call_estimate_to_json,
+)
 from app.services.live_state_store import LiveStateStore
 
 logger = logging.getLogger(__name__)
@@ -36,7 +39,7 @@ DEFAULT_LIVE_ANALYSIS_TTL_SECONDS = 4 * 3600.0
 class LiveAnalysisSnapshot:
     sentiment: SentimentResult | None
     question_suggestion: QuestionSuggestion | None
-    service_estimate: ServiceEstimate | None
+    service_estimate: CallServiceEstimate | None
 
 
 class LiveAnalysisStore:
@@ -127,25 +130,7 @@ def _serialize(snapshot: LiveAnalysisSnapshot) -> dict[str, Any]:
             "source": suggestion.source.value,
             "confidence": suggestion.confidence,
         },
-        "service_estimate": None
-        if estimate is None
-        else {
-            "service_name": estimate.service_name,
-            "currency": estimate.currency,
-            "parts": [
-                {
-                    "name": part.name,
-                    "quantity": part.quantity,
-                    "unit_price": str(part.unit_price),
-                }
-                for part in estimate.parts
-            ],
-            "labour": {
-                "hours": estimate.labour.hours,
-                "hourly_rate": str(estimate.labour.hourly_rate),
-            },
-            "estimated_duration_hours": estimate.estimated_duration_hours,
-        },
+        "service_estimate": None if estimate is None else call_estimate_to_json(estimate),
     }
 
 
@@ -173,23 +158,5 @@ def _deserialize(data: dict[str, Any]) -> LiveAnalysisSnapshot:
             source=SuggestionSource(suggestion["source"]),
             confidence=suggestion["confidence"],
         ),
-        service_estimate=None
-        if estimate is None
-        else ServiceEstimate(
-            service_name=estimate["service_name"],
-            currency=estimate["currency"],
-            parts=tuple(
-                EstimatedPart(
-                    name=part["name"],
-                    quantity=part["quantity"],
-                    unit_price=Decimal(part["unit_price"]),
-                )
-                for part in estimate["parts"]
-            ),
-            labour=LabourEstimate(
-                hours=estimate["labour"]["hours"],
-                hourly_rate=Decimal(estimate["labour"]["hourly_rate"]),
-            ),
-            estimated_duration_hours=estimate["estimated_duration_hours"],
-        ),
+        service_estimate=None if estimate is None else call_estimate_from_json(estimate),
     )

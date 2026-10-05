@@ -7,7 +7,7 @@ from app.ai.summary.provider import PostCallSummaryRequest, SummaryGenerationPro
 from app.domain.complaint_coverage import ComplaintCoverage, ComplaintCoverageStatus
 from app.domain.conversation import Conversation
 from app.domain.post_call_summary import ComplaintSummary, PostCallSummary
-from app.domain.service_estimate import EstimatedPart, LabourEstimate, ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate, EstimatedPart, LabourEstimate, ServiceEstimate
 from typing import Any
 
 
@@ -27,13 +27,18 @@ def make_complaint_summary(**overrides) -> ComplaintSummary:
     return ComplaintSummary(**fields)
 
 
-def make_service_estimate() -> ServiceEstimate:
-    return ServiceEstimate(
-        service_name="Brake Pad Replacement",
+def make_service_estimate() -> CallServiceEstimate:
+    return CallServiceEstimate(
         currency="INR",
-        parts=(EstimatedPart("Brake Pad", 2, Decimal("500")),),
-        labour=LabourEstimate(1.5, Decimal("400")),
-        estimated_duration_hours=2.0,
+        services=(
+            ServiceEstimate(
+                service_name="Brake Pad Replacement",
+                currency="INR",
+                parts=(EstimatedPart("Brake Pad", 2, Decimal("500")),),
+                labour=LabourEstimate(1.5, Decimal("400")),
+                estimated_duration_hours=2.0,
+            ),
+        ),
     )
 
 

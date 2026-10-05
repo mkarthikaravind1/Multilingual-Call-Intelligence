@@ -13,6 +13,7 @@ from app.composition.providers import (
     create_complaint_provider,
     create_diarization_provider,
     create_language_provider,
+    UnsupportedProviderError,
     create_llm_client,
     create_question_provider,
     create_role_provider,
@@ -41,6 +42,11 @@ from app.services.sentiment_analysis_service import SentimentAnalysisService
 from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
 from app.estimation.provider import ServiceEstimationProvider
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
+from app.estimation.detection import (
+    KeywordServiceDetector,
+    LLMServiceDetector,
+    ServiceDetectionProvider,
+)
 from app.services.estimation_service import EstimationService
 from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
 from app.domain.customer_contact import CustomerContact, MessagingChannel
@@ -145,12 +151,21 @@ def build_coverage_repository(
 
 def build_estimation_service(
     provider: ServiceEstimationProvider | None = None,
+    *,
+    settings: Settings | None = None,
+    llm_client: LLMClient | None = None,
 ) -> EstimationService:
-    provider = provider or RuleBasedEstimationProvider(
-        DEFAULT_PRICING_CONFIG
-    )
-
-    return EstimationService(provider)
+    pricing = DEFAULT_PRICING_CONFIG
+    provider = provider or RuleBasedEstimationProvider(pricing)
+    detector: ServiceDetectionProvider = KeywordServiceDetector(pricing)
+    name = (settings.estimation_provider if settings is not None else "rule_based").strip().lower()
+    if name == "llm" and llm_client is not None:
+        detector = LLMServiceDetector(llm_client, pricing, fallback=detector)
+    elif name not in ("llm", "rule_based"):
+        raise UnsupportedProviderError(
+            f"Unsupported estimation provider: {name!r}. Available: ['llm', 'rule_based']."
+        )
+    return EstimationService(provider, pricing, detector)
 
 def build_call_service(repository: ConversationRepository | None = None) -> CallService:
     return CallService(ConversationService(repository or build_conversation_repository()))
@@ -221,7 +236,8 @@ def build_call_workflow_service(
             runtime_improvement_service=runtime_improvement_service,
             improvement_usage_recorder=improvement_usage_recorder,
         ),
-        estimation_service=estimation_service or build_estimation_service(),
+        estimation_service=estimation_service
+        or build_estimation_service(settings=settings, llm_client=llm_client),
         post_call_summary_service=post_call_summary_service
         or build_post_call_summary_service(settings=settings, llm_client=llm_client),
         customer_summary_delivery_service=customer_summary_delivery_service,

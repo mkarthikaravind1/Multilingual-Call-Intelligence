@@ -34,6 +34,12 @@ _STATUS_MAP: dict[str, CallProviderStatus] = {
 }
 
 _DEFAULT_SAMPLE_RATE = 8000
+# Only mu-law is decoded (see app.telephony.plivo.audio); Plivo's default is
+# linear PCM, so the codec is always asked for explicitly.
+_STREAM_CONTENT_TYPE = "audio/x-mulaw;rate=8000"
+_STREAM_TIMEOUT_SECONDS = 86400
+_ATTRIBUTE_ENTITIES = {'"': "&quot;"}
+_TRACKS = frozenset({"inbound", "outbound"})
 
 
 class PlivoConfigurationError(Exception):
@@ -48,6 +54,13 @@ class PlivoTelephonyProvider(TelephonyProvider):
             raise PlivoConfigurationError("Plivo auth token is not configured.")
         self._auth_token = auth_token
         self._validate_signatures = settings.plivo_validate_signatures
+        self._icr_dial_targets = tuple(
+            target.strip()
+            for target in settings.plivo_icr_dial_targets.split(",")
+            if target.strip()
+        )
+        self._icr_caller_id = settings.plivo_icr_caller_id.strip()
+        self._icr_dial_timeout = settings.plivo_icr_dial_timeout_seconds
 
     def validate_signature(
         self, headers: Mapping[str, str], url: str, params: Mapping[str, str]
@@ -87,13 +100,32 @@ class PlivoTelephonyProvider(TelephonyProvider):
         )
 
     def build_stream_response(self, stream_url: str) -> TelephonyResponse:
-        xml = (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            "<Response>"
-            f'<Stream bidirectional="false" keepCallAlive="true">{escape(stream_url)}</Stream>'
-            "</Response>"
+        if not self._icr_dial_targets:
+            # No ICR to dial: stream the caller only, and hold the call open
+            # for as long as the stream runs.
+            stream = (
+                f'<Stream bidirectional="false" keepCallAlive="true" '
+                f'contentType="{_STREAM_CONTENT_TYPE}">{escape(stream_url)}</Stream>'
+            )
+            return _xml_response(stream)
+
+        # Stream both sides as separate tracks (inbound = the customer,
+        # outbound = the ICR), in the background (keepCallAlive="false"), so
+        # Plivo goes straight on to dial the ICR.
+        stream = (
+            f'<Stream bidirectional="false" keepCallAlive="false" audioTrack="both" '
+            f'streamTimeout="{_STREAM_TIMEOUT_SECONDS}" '
+            f'contentType="{_STREAM_CONTENT_TYPE}">{escape(stream_url)}</Stream>'
         )
-        return TelephonyResponse(content=xml, content_type="application/xml")
+        caller_id = (
+            f' callerId="{escape(self._icr_caller_id, _ATTRIBUTE_ENTITIES)}"'
+            if self._icr_caller_id
+            else ""
+        )
+        targets = "".join(_dial_target(target) for target in self._icr_dial_targets)
+        return _xml_response(
+            f"{stream}<Dial{caller_id} timeout=\"{self._icr_dial_timeout}\">{targets}</Dial>"
+        )
 
     def parse_media_stream_event(self, raw_event: Mapping[str, Any]) -> MediaStreamEvent:
         return parse_plivo_media_stream_event(raw_event)
@@ -114,7 +146,13 @@ class PlivoTelephonyProvider(TelephonyProvider):
         except (TypeError, ValueError):
             sample_rate = _DEFAULT_SAMPLE_RATE
 
-        return MediaStreamEvent(event_type="start", sample_rate=sample_rate)
+        raw_tracks = start.get("tracks")
+        tracks = (
+            tuple(str(t).strip().lower() for t in raw_tracks if str(t).strip().lower() in _TRACKS)
+            if isinstance(raw_tracks, list)
+            else ()
+        )
+        return MediaStreamEvent(event_type="start", sample_rate=sample_rate, tracks=tracks)
 
     @staticmethod
     def _parse_media(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
@@ -134,7 +172,14 @@ class PlivoTelephonyProvider(TelephonyProvider):
         except PlivoAudioDecodingError as exc:
             raise TelephonyStreamError(str(exc)) from exc
 
-        return MediaStreamEvent(event_type="media", sequence=sequence, audio=audio)
+        raw_track = media.get("track")
+        track = raw_track.strip().lower() if isinstance(raw_track, str) else None
+        return MediaStreamEvent(
+            event_type="media",
+            sequence=sequence,
+            audio=audio,
+            track=track if track in _TRACKS else None,
+        )
 
 
 def parse_plivo_media_stream_event(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
@@ -150,3 +195,15 @@ def parse_plivo_media_stream_event(raw_event: Mapping[str, Any]) -> MediaStreamE
         return MediaStreamEvent(event_type="stop")
 
     raise TelephonyStreamError(f"Unknown Plivo stream event: {event_type!r}.")
+
+
+def _xml_response(body: str) -> TelephonyResponse:
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><Response>{body}</Response>'
+    return TelephonyResponse(content=xml, content_type="application/xml")
+
+
+def _dial_target(target: str) -> str:
+    """A phone number, or a SIP endpoint (sip:icr@example.com)."""
+    if target.lower().startswith("sip:"):
+        return f"<User>{escape(target)}</User>"
+    return f"<Number>{escape(target)}</Number>"

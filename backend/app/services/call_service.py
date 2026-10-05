@@ -39,6 +39,16 @@ class CallService:
             utterance=utterance,
         )
 
+    def update_latest_utterance(
+        self,
+        call_id: str,
+        utterance: Utterance,
+    ) -> Conversation:
+        return self._conversation_service.update_latest_utterance(
+            call_id=call_id,
+            utterance=utterance,
+        )
+
     def end_call(
         self,
         call_id: str,

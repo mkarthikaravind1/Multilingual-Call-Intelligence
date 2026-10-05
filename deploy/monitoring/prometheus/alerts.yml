@@ -1,0 +1,139 @@
+# Alert rules for the call-intelligence backend. Every alert names what to
+# check first in its description; thresholds are starting points to tune
+# once real call volumes are known.
+groups:
+  - name: availability
+    rules:
+      - alert: BackendDown
+        expr: up{job="call-intelligence-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The backend is not answering /metrics"
+          description: "Prometheus could not scrape {{ $labels.instance }} for 2 minutes. Check `docker compose ps` and the backend logs; live calls are not being transcribed."
+
+      - alert: DependencyDown
+        expr: dependency_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.dependency }} is unavailable"
+          description: "The backend cannot reach {{ $labels.dependency }} (the same check as /health/ready). Live state and call mapping depend on it."
+
+      - alert: HighServerErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5% of API requests fail"
+          description: "{{ $value | humanizePercentage }} of requests returned 5xx over the last 5 minutes. Search the logs by request_id for the errors."
+
+      - alert: SlowApi
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{route!~".*telephony-stream.*|.*/live.*"}[5m]))) > 2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency above 2 s"
+          description: "95th percentile request time is {{ $value | humanizeDuration }}."
+
+  - name: live-calls
+    rules:
+      - alert: AsrFailing
+        expr: |
+          sum(rate(ai_provider_errors_total{provider="asr"}[10m]))
+            / clamp_min(sum(rate(ai_provider_request_duration_seconds_count{provider="asr"}[10m])), 0.001) > 0.2
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Speech-to-text (Sarvam) fails for more than 20% of chunks"
+          description: "Live transcripts are missing speech. Check the Sarvam API key, quota and status."
+
+      - alert: AsrSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(ai_provider_request_duration_seconds_bucket{provider="asr"}[10m]))) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Speech-to-text p95 above 5 s"
+          description: "The live transcript lags the call. p95 = {{ $value | humanizeDuration }}."
+
+      - alert: DiarizationSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(ai_provider_request_duration_seconds_bucket{provider="diarization"}[10m]))) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Diarization p95 above 3 s"
+          description: "Mixed-audio calls lag. Check DIARIZATION_CPU_THREADS and CPU load. (Calls with separate tracks do not diarize.)"
+
+      - alert: LlmFailing
+        expr: |
+          sum(rate(ai_provider_errors_total{provider="llm"}[10m]))
+            / clamp_min(sum(rate(ai_provider_request_duration_seconds_count{provider="llm"}[10m])), 0.001) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM (Groq) calls fail for more than 20% of requests"
+          description: "Sentiment, next-question, escalation and summaries degrade. Usually rate limits (HTTP 429): check the Groq plan."
+
+      - alert: LiveChunksFailing
+        expr: |
+          sum(rate(live_audio_chunks_total{outcome="failed"}[10m]))
+            / clamp_min(sum(rate(live_audio_chunks_total[10m])), 0.001) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20% of live audio chunks fail"
+          description: "Search the backend logs for 'Live pipeline processing failed'."
+
+      - alert: LiveTranscriptLagging
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(live_audio_chunk_processing_seconds_bucket[10m]))) > 8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Live chunks take more than 8 s to reach the transcript (p95)"
+          description: "Look at the ASR and diarization latency panels to see which step is slow."
+
+  - name: post-call
+    rules:
+      - alert: PostCallProcessingStuck
+        expr: post_call_unprocessed_calls > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} completed calls have no post-call summary"
+          description: "The repair sweep keeps retrying them. See Administration → Post-call processing."
+
+      - alert: PostCallRepairGaveUp
+        expr: increase(post_call_repairs_total{outcome="gave_up"}[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Post-call processing gave up on a call"
+          description: "A call reached POST_CALL_REPAIR_MAX_ATTEMPTS. Retry it by hand under Administration → Post-call processing."
+
+  - name: business
+    rules:
+      - alert: CriticalEscalationOpen
+        expr: escalations_open{level="critical"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A critical escalation has been open for 15 minutes"
+          description: "A customer mentioned legal action or the police and nobody has acknowledged it in the app yet."

@@ -16,7 +16,7 @@ from app.ai.sentiment.provider import SentimentAnalysisProvider, SentimentLabel,
 from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
 from app.domain.conversation import Conversation
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
-from app.domain.service_estimate import EstimatedPart, LabourEstimate, ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate, EstimatedPart, LabourEstimate, ServiceEstimate
 from app.domain.utterance import SpeakerRole, Utterance
 from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
@@ -176,7 +176,7 @@ def test_live_analysis_written_by_one_instance_is_read_by_another(shared_store):
     assert read.question_suggestion == written.question_suggestion
     assert read.question_suggestion.source is SuggestionSource.LLM
     assert read.service_estimate == written.service_estimate
-    assert read.service_estimate.service_name == "Brake Pad Replacement"
+    assert read.service_estimate.service_names == ("Brake Pad Replacement",)
     assert read.service_estimate.estimated_cost == written.service_estimate.estimated_cost
     assert [c.category for c in read.coverage.complaints] == ["Turnaround Time"]
 
@@ -281,12 +281,17 @@ def test_snapshot_round_trips_every_field(shared_store):
             source=SuggestionSource.RULE_BASED,
             confidence=None,
         ),
-        service_estimate=ServiceEstimate(
-            service_name="Custom",
+        service_estimate=CallServiceEstimate(
             currency="INR",
-            parts=(EstimatedPart("Part", 2, Decimal("10.55")),),
-            labour=LabourEstimate(1.25, Decimal("600")),
-            estimated_duration_hours=2.0,
+            services=(
+                ServiceEstimate(
+                    service_name="Custom",
+                    currency="INR",
+                    parts=(EstimatedPart("Part", 2, Decimal("10.55")),),
+                    labour=LabourEstimate(1.25, Decimal("600")),
+                    estimated_duration_hours=2.0,
+                ),
+            ),
         ),
     )
     store = LiveAnalysisStore(shared_store)

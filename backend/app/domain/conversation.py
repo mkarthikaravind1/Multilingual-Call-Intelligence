@@ -27,6 +27,11 @@ class ConversationAlreadyExistsError(Exception):
         super().__init__(f"A call already exists with id: {call_id!r}")
 
 
+class UtteranceNotLatestError(ValueError):
+    """Raised when an utterance to be updated is no longer the call's
+    latest one (another utterance was added after it)."""
+
+
 @dataclass
 class Conversation:
     """Represents one complete call, holding its utterances in chronological order."""
@@ -54,6 +59,22 @@ class Conversation:
                 f"{utterance.start_time}, last one starts at {self._utterances[-1].start_time}."
             )
         self._utterances.append(utterance)
+
+    def replace_latest_utterance(self, utterance: Utterance) -> None:
+        """Update the latest utterance in place (same utterance_id), e.g.
+        when live speech continues it. Earlier utterances never change."""
+        if self.status == ConversationStatus.COMPLETED:
+            raise ConversationAlreadyCompletedError(self.call_id)
+        if not self._utterances or self._utterances[-1].utterance_id != utterance.utterance_id:
+            raise UtteranceNotLatestError(
+                f"Utterance {utterance.utterance_id!r} is not the latest utterance of call {self.call_id!r}."
+            )
+        if len(self._utterances) > 1 and utterance.start_time < self._utterances[-2].start_time:
+            raise ValueError(
+                f"Utterances must be chronological: updated utterance starts at "
+                f"{utterance.start_time}, the one before starts at {self._utterances[-2].start_time}."
+            )
+        self._utterances[-1] = utterance
 
     @property
     def utterances(self) -> tuple[Utterance, ...]:

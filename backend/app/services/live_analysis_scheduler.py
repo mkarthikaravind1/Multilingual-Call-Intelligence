@@ -15,6 +15,7 @@ analysis runs here, per call, in the background:
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from concurrent.futures import Executor, ThreadPoolExecutor
 from typing import Protocol
@@ -27,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 class DeferredAnalysisWorkflow(Protocol):
     def record_utterance(self, call_id: str, utterance: Utterance) -> None: ...
+
+    def record_utterance_update(self, call_id: str, utterance: Utterance) -> None: ...
 
     def analyze_latest_speech(self, call_id: str) -> CallAnalysisResult | None: ...
 
@@ -42,8 +45,16 @@ class LiveAnalysisScheduler:
         workflow: DeferredAnalysisWorkflow,
         executor: Executor | None = None,
         max_workers: int = 4,
+        min_interval_seconds: float = 0.0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._workflow = workflow
+        # A follow-up analysis starts no sooner than this after the previous
+        # one started: each run makes several (rate-limited) LLM calls.
+        self._min_interval = max(0.0, min_interval_seconds)
+        self._sleep = sleep
+        # call_id -> when its latest analysis started.
+        self._last_start: dict[str, float] = {}
         self._executor = executor
         self._max_workers = max_workers
         self._lock = threading.Lock()
@@ -55,6 +66,13 @@ class LiveAnalysisScheduler:
         self._workflow.record_utterance(call_id, utterance)
         self.request_analysis(call_id)
         # What is known right now; the new analysis follows in the background.
+        return self._workflow.analyze_call(call_id)
+
+    def process_utterance_update(self, call_id: str, utterance: Utterance) -> CallAnalysisResult:
+        """The latest utterance grew (same utterance_id): store it at once
+        and re-analyse in the background, as for a new utterance."""
+        self._workflow.record_utterance_update(call_id, utterance)
+        self.request_analysis(call_id)
         return self._workflow.analyze_call(call_id)
 
     def request_analysis(self, call_id: str) -> None:
@@ -72,6 +90,10 @@ class LiveAnalysisScheduler:
 
     def _run(self, call_id: str) -> None:
         while True:
+            wait = self._min_interval - (time.monotonic() - self._last_start.get(call_id, -1e9))
+            if wait > 0:
+                self._sleep(wait)
+            self._last_start[call_id] = time.monotonic()
             try:
                 self._workflow.analyze_latest_speech(call_id)
             except Exception:

@@ -15,6 +15,7 @@ from app.composition.providers import (
     create_asr_provider,
     create_call_mapping_repository,
     create_language_provider,
+    create_llm_client,
     create_telephony_provider,
     warm_up_diarization,
 )
@@ -300,7 +301,7 @@ def build_api_services(
             runtime_improvement_service=runtime_improvement_service,
             improvement_usage_recorder=improvement_effectiveness_service,
         ),
-        build_estimation_service(),
+        _build_estimation_service(settings),
         build_post_call_summary_service(),
         customer_summary_delivery_service=customer_summary_delivery_service,
         customer_contact_resolver=customer_contact_resolver,
@@ -386,7 +387,10 @@ def build_api_services(
                 # Speech is stored and shown as soon as it is transcribed;
                 # the AI analysis follows in the background (see
                 # LiveAnalysisScheduler), so it never delays the next chunk.
-                workflow_service=LiveAnalysisScheduler(workflow_service),
+                workflow_service=LiveAnalysisScheduler(
+                    workflow_service,
+                    min_interval_seconds=settings.live_analysis_min_interval_seconds,
+                ),
                 diarization_segments=(),
                 settings=settings,
                 asr_provider=asr_provider,
@@ -409,7 +413,7 @@ def build_api_services(
         call_service, escalation_service, complaint_lifecycle_service, post_call_repair_service
     )
 
-    return ApiServices(
+    services = ApiServices(
         call_service=call_service,
         call_listing=call_listing_query,
         workflow_service=workflow_service,
@@ -443,6 +447,36 @@ def build_api_services(
         warm_up=warm_up_live_models if live_chunk_processing_service is not None else None,
         health_checks={"live_state": live_state_store.ping} if shared_live_state else {},
     )
+    REGISTRY.register(
+        Gauge(
+            "dependency_up",
+            "1 when a dependency this instance needs answers (see /health/ready), else 0.",
+            ("dependency",),
+            lambda: _dependency_status(services.health_checks),
+        )
+    )
+    return services
+
+
+def _build_estimation_service(settings: Settings):
+    llm_client = None
+    if settings.estimation_provider.strip().lower() == "llm":
+        try:
+            llm_client = create_llm_client(settings)
+        except Exception as exc:
+            logger.warning("Service estimates will use the price-list keywords only: %s", exc)
+    return build_estimation_service(settings=settings, llm_client=llm_client)
+
+
+def _dependency_status(checks) -> dict[tuple[str, ...], float]:
+    status: dict[tuple[str, ...], float] = {}
+    for name, check in (checks or {}).items():
+        try:
+            check()
+            status[(name,)] = 1.0
+        except Exception:
+            status[(name,)] = 0.0
+    return status
 
 
 def _register_domain_gauges(

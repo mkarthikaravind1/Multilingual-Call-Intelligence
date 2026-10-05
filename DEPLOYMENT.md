@@ -65,6 +65,14 @@ In the Plivo application, set:
 `PLIVO_PUBLIC_BASE_URL=https://<host>` must match exactly, because webhook
 signatures are computed over that URL. `PLIVO_STREAM_BASE_URL=wss://<host>`.
 
+Set `PLIVO_ICR_DIAL_TARGETS` to the ICR's phone number (E.164) or SIP
+endpoint (`sip:icr@...`). Several, comma-separated, ring together. The answer
+XML then starts a background stream of both sides of the call
+(`audioTrack="both"`, mu-law 8 kHz) and dials the ICR. The customer and the
+ICR arrive as separate tracks, which makes speaker roles exact.
+`PLIVO_ICR_CALLER_ID` sets the number the ICR sees (by default, the
+caller's). Production refuses to start with telephony on and no dial target.
+
 Every media stream URL carries a signed token for that one call
 (`TELEPHONY_STREAM_TOKEN_TTL_SECONDS`, default one hour to connect); the
 stream endpoint refuses connections without it.
@@ -143,9 +151,49 @@ your monitoring network. It includes:
 - `calls{status}`, `escalations_open{level}`, `complaints_open{kind}`;
 - `telephony_streams_open`, `post_call_unprocessed_calls`, `post_call_repairs_total{outcome}`.
 
-Suggested alerts: `/health/ready` failing, `post_call_unprocessed_calls > 0`
-for more than 30 minutes, `post_call_repairs_total{outcome="gave_up"}`
-increasing, and a rising rate of `http_requests_total{status=~"5.."}`.
+- `dependency_up{dependency}` (the `/health/ready` checks);
+- live calls: `live_audio_chunks_total{stream,outcome}`,
+  `live_audio_chunk_processing_seconds`,
+  `ai_provider_request_duration_seconds{provider}` and
+  `ai_provider_errors_total{provider}` (asr, language, diarization, llm), and
+  `speaker_roles_decided_total{method}` (track, content, llm, other_speaker).
+
+### Prometheus, Grafana and e-mail alerts
+
+`deploy/docker-compose.prod.yml` also runs the monitoring stack, configured
+in `deploy/monitoring/`:
+
+| Service      | What it does                                                     |
+|--------------|------------------------------------------------------------------|
+| prometheus   | Scrapes the backend every 15 s (sends `METRICS_TOKEN`); keeps 30 days (`PROMETHEUS_RETENTION`). |
+| alertmanager | E-mails alerts to `ALERT_EMAIL_TO` through `SMTP_SMARTHOST` (STARTTLS), critical ones repeated hourly, others every 4 h, plus a "resolved" mail. |
+| grafana      | Published on `GRAFANA_PORT` (3000). Sign in with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`. Opens on the **Multilingual Call Intelligence** dashboard. |
+
+Set the monitoring values in `deploy/.env.production` (see the example
+file). Keep Grafana behind your TLS proxy or on an internal network.
+
+Alert rules (`deploy/monitoring/prometheus/alerts.yml`):
+
+| Alert | Fires when |
+|---|---|
+| BackendDown (critical) | `/metrics` cannot be scraped for 2 min |
+| DependencyDown (critical) | a `/health/ready` dependency fails for 2 min |
+| AsrFailing (critical) | more than 20% of speech-to-text calls fail for 10 min |
+| HighServerErrorRate | more than 5% of requests return 5xx for 10 min |
+| SlowApi | API p95 above 2 s for 15 min |
+| AsrSlow / DiarizationSlow | ASR p95 above 5 s / diarization p95 above 3 s |
+| LlmFailing | more than 20% of LLM calls fail (usually Groq 429s) |
+| LiveChunksFailing / LiveTranscriptLagging | more than 20% of chunks fail / chunk-to-transcript p95 above 8 s |
+| PostCallProcessingStuck | calls without a post-call summary for 30 min |
+| PostCallRepairGaveUp | the repair sweep gave up on a call |
+| CriticalEscalationOpen | a critical escalation is unacknowledged for 15 min |
+
+The thresholds are starting points. Tune them once you know real call
+volumes. To check the configuration after editing it:
+
+```bash
+docker run --rm --entrypoint /bin/promtool -v "$PWD/deploy/monitoring/prometheus:/cfg" prom/prometheus:v2.53.2 check rules /cfg/alerts.yml
+```
 
 Logs go to stdout. `LOG_FORMAT=json` writes one JSON object per line. Each
 request logs method, path, status and duration, and every log line carries

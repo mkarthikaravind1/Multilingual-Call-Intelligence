@@ -27,7 +27,7 @@ from app.domain.conversation import (
 from app.domain.customer_contact import MessagingChannel
 from app.domain.customer_summary_delivery import CustomerSummaryDelivery, DeliveryStatus
 from app.domain.post_call_summary import ComplaintSummary, PostCallSummary
-from app.domain.service_estimate import EstimatedPart, LabourEstimate, ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate, EstimatedPart, LabourEstimate, ServiceEstimate
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.improvement_candidate import (
     ImprovementCandidate,
@@ -698,12 +698,17 @@ def _post_call_summary(call_id="call-summary", overall_summary="First summary.")
         actions_promised=("Call the customer tomorrow.",),
         follow_up_required=True,
         customer_summary="We will call you tomorrow.",
-        service_estimate=ServiceEstimate(
-            service_name="Brake Pad Replacement",
+        service_estimate=CallServiceEstimate(
             currency="INR",
-            parts=(EstimatedPart("Brake pad set", 2, Decimal("1400.55")),),
-            labour=LabourEstimate(hours=1.5, hourly_rate=Decimal("600.10")),
-            estimated_duration_hours=3.0,
+            services=(
+                ServiceEstimate(
+                    service_name="Brake Pad Replacement",
+                    currency="INR",
+                    parts=(EstimatedPart("Brake pad set", 2, Decimal("1400.55")),),
+                    labour=LabourEstimate(hours=1.5, hourly_rate=Decimal("600.10")),
+                    estimated_duration_hours=3.0,
+                ),
+            ),
         ),
     )
 
@@ -716,8 +721,8 @@ def test_post_call_summary_round_trips_with_nested_data_and_decimals(session_fac
     loaded = repo.get("call-summary")
 
     assert loaded == summary
-    assert loaded.service_estimate.parts[0].unit_price == Decimal("1400.55")
-    assert loaded.service_estimate.labour.hourly_rate == Decimal("600.10")
+    assert loaded.service_estimate.services[0].parts[0].unit_price == Decimal("1400.55")
+    assert loaded.service_estimate.services[0].labour.hourly_rate == Decimal("600.10")
     assert loaded.service_estimate.estimated_cost == summary.service_estimate.estimated_cost
     assert loaded.complaints[1].confidence is None
     assert repo.get("missing") is None

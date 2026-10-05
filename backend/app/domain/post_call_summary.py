@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from app.ai.sentiment.provider import SentimentResult
 from app.core.constants import COMPLAINT_CATEGORIES, SUPPORTED_LANGUAGES
 from app.domain.complaint_coverage import ComplaintCoverageStatus
-from app.domain.service_estimate import ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate
 
 
 def _require_str_tuple(value: tuple, field_name: str) -> None:
@@ -57,7 +57,7 @@ class PostCallSummary:
     follow_up_required: bool
     customer_summary: str
     # Optional: not every call yields a cost/service estimate.
-    service_estimate: ServiceEstimate | None = None
+    service_estimate: CallServiceEstimate | None = None
 
     def __post_init__(self) -> None:
         if not self.call_id.strip():
@@ -96,9 +96,9 @@ class PostCallSummary:
             raise ValueError("customer_summary must not be empty.")
 
         if self.service_estimate is not None and not isinstance(
-            self.service_estimate, ServiceEstimate
+            self.service_estimate, CallServiceEstimate
         ):
             raise TypeError(
-                f"service_estimate must be a ServiceEstimate or None, "
+                f"service_estimate must be a CallServiceEstimate or None, "
                 f"got {type(self.service_estimate).__name__}."
             )

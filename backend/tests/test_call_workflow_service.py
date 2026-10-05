@@ -37,11 +37,11 @@ from app.services.in_memory_conversation_repository import (
 )
 from app.services.next_question_service import NextQuestionService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
-from app.domain.service_estimate import ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate
 from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
+from app.estimation.detection import KeywordServiceDetector
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
 from app.services.estimation_service import EstimationService
-from app.domain.service_estimate import ServiceEstimate
 from app.ai.sentiment.provider import (
     SentimentAnalysisProvider,
     SentimentLabel,
@@ -381,8 +381,8 @@ def test_process_utterance_returns_service_estimate_for_known_issue():
     )
 
     assert result.service_estimate is not None
-    assert isinstance(result.service_estimate, ServiceEstimate)
-    assert result.service_estimate.service_name == "Oil Change"
+    assert isinstance(result.service_estimate, CallServiceEstimate)
+    assert result.service_estimate.service_names == ("Oil Change",)
 
 
 def test_process_utterance_returns_no_estimate_for_unknown_issue():
@@ -403,46 +403,64 @@ def test_process_utterance_returns_no_estimate_for_unknown_issue():
     assert result.service_estimate is None
 
 
-def test_estimation_provider_exception_propagates():
-    class FailingEstimationProvider(RuleBasedEstimationProvider):
-        def estimate(self, issue: str):
+def test_estimate_failure_does_not_stop_the_analysis():
+    class FailingDetector(KeywordServiceDetector):
+        def detect(self, utterances):
             raise RuntimeError("estimation failed")
 
-    call_service = CallService(
-        ConversationService(InMemoryConversationRepository())
-    )
-    call_service.start_call(CALL_ID)
-
-    estimation_service = EstimationService(
-        FailingEstimationProvider(DEFAULT_PRICING_CONFIG)
-    )
-
     harness = _build()
-
     workflow = CallWorkflowService(
-        call_service,
+        harness.call_service,
         harness.coverage_repository,
         ConversationAnalysisService(
             ComplaintAnalysisService(harness.complaint_provider),
             SentimentAnalysisService(harness.sentiment_provider),
         ),
         NextQuestionService(harness.question_provider),
-        estimation_service,
-        harness.post_call_summary_service
+        EstimationService(
+            RuleBasedEstimationProvider(DEFAULT_PRICING_CONFIG),
+            DEFAULT_PRICING_CONFIG,
+            FailingDetector(DEFAULT_PRICING_CONFIG),
+        ),
+        harness.post_call_summary_service,
     )
 
-    with pytest.raises(RuntimeError, match="estimation failed"):
-        workflow.process_utterance(
-            CALL_ID,
-            Utterance(
-                utterance_id="1",
-                transcript="I need an oil change.",
-                speaker_role=SpeakerRole.CUSTOMER,
-                languages=("en",),
-                start_time=0.0,
-                end_time=4.0,
-            ),
-        )
+    result = workflow.process_utterance(
+        CALL_ID,
+        Utterance(
+            utterance_id="1",
+            transcript="I need an oil change.",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=4.0,
+        ),
+    )
+
+    assert result.service_estimate is None
+    assert result.coverage is not None
+
+
+def test_estimate_still_updates_when_the_llm_analysis_fails():
+    harness = _build(complaint_provider=FakeComplaintProvider(error=RuntimeError("429")))
+    harness.workflow.record_utterance(
+        CALL_ID,
+        Utterance(
+            utterance_id="1",
+            transcript="My brakes squeak when I stop.",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=4.0,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="429"):
+        harness.workflow.analyze_latest_speech(CALL_ID)
+
+    estimate = harness.workflow.analyze_call(CALL_ID).service_estimate
+    assert estimate is not None
+    assert estimate.service_names == ("Brake Pad Replacement",)
 
 
 # ---- Post-call completion workflow (Phase D) ----

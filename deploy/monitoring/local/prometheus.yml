@@ -1,0 +1,20 @@
+# Local development only: scrapes the backend running on this machine
+# (python main.py in WSL, port 8000). No METRICS_TOKEN locally, so no auth.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+# The production alert rules, so Prometheus' Alerts page shows them.
+# Nothing sends emails locally (no Alertmanager).
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: call-intelligence-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

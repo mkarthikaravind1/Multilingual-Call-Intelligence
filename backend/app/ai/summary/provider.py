@@ -5,7 +5,7 @@ from app.ai.sentiment.provider import SentimentResult
 from app.domain.complaint_coverage import ComplaintCoverage
 from app.domain.conversation import Conversation
 from app.domain.post_call_summary import PostCallSummary
-from app.domain.service_estimate import ServiceEstimate
+from app.domain.service_estimate import CallServiceEstimate
 
 
 @dataclass(frozen=True)
@@ -16,7 +16,7 @@ class PostCallSummaryRequest:
     conversation: Conversation
     complaint_coverages: tuple[ComplaintCoverage, ...]
     sentiment: SentimentResult
-    service_estimate: ServiceEstimate | None = None
+    service_estimate: CallServiceEstimate | None = None
 
     def __post_init__(self) -> None:
         if not self.call_id.strip():

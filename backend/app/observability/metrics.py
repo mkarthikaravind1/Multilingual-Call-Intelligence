@@ -184,6 +184,44 @@ HTTP_REQUEST_DURATION = REGISTRY.register(
 TELEPHONY_STREAMS_OPEN = REGISTRY.register(
     Gauge("telephony_streams_open", "Telephony media streams open on this instance.")
 )
+# Live calls. Provider calls are slow and rate limited (Sarvam, Groq) and
+# are the first thing to check when the live transcript lags.
+PROVIDER_REQUEST_DURATION = REGISTRY.register(
+    Histogram(
+        "ai_provider_request_duration_seconds",
+        "Time taken by AI provider calls (asr, language, diarization, llm).",
+        ("provider",),
+    )
+)
+PROVIDER_ERRORS = REGISTRY.register(
+    Counter(
+        "ai_provider_errors_total",
+        "AI provider calls that failed (asr, language, diarization, llm).",
+        ("provider",),
+    )
+)
+LIVE_CHUNKS = REGISTRY.register(
+    Counter(
+        "live_audio_chunks_total",
+        "Live audio chunks, by stream kind (mixed, tracks) and outcome "
+        "(transcribed, failed, dropped).",
+        ("stream", "outcome"),
+    )
+)
+LIVE_CHUNK_DURATION = REGISTRY.register(
+    Histogram(
+        "live_audio_chunk_processing_seconds",
+        "Time from a live audio chunk being cut to its speech being stored.",
+        ("stream",),
+    )
+)
+SPEAKER_ROLES_DECIDED = REGISTRY.register(
+    Counter(
+        "speaker_roles_decided_total",
+        "Speakers given a role in live calls, by how (track, content, llm).",
+        ("method",),
+    )
+)
 POST_CALL_REPAIRS = REGISTRY.register(
     Counter(
         "post_call_repairs_total",

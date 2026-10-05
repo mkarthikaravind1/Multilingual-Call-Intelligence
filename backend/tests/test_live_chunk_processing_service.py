@@ -19,13 +19,24 @@ class FakeProcessor:
         self.calls: list[tuple[str, bytes, float]] = []
         self.results: list[CallAnalysisResult] = []
         self.error: Exception | None = None
+        # (continues_previous, ends_utterance) per processed chunk.
+        self.continuity: list[tuple[bool, bool]] = []
 
     def process_audio(
-        self, call_id: str, audio: bytes, start_offset: float = 0.0
+        self,
+        call_id: str,
+        audio: bytes,
+        start_offset: float = 0.0,
+        *,
+        continues_previous: bool = False,
+        ends_utterance: bool = True,
+        track: str | None = None,
+        speaker_role=None,
     ) -> CallAnalysisResult:
         if self.error is not None:
             raise self.error
         self.calls.append((call_id, audio, start_offset))
+        self.continuity.append((continues_previous, ends_utterance))
         result = cast(CallAnalysisResult, object())
         self.results.append(result)
         return result
@@ -210,13 +221,13 @@ class ScriptedProcessor(FakeProcessor):
         self.attempts = 0
 
     def process_audio(
-        self, call_id: str, audio: bytes, start_offset: float = 0.0
+        self, call_id: str, audio: bytes, start_offset: float = 0.0, **continuity
     ) -> CallAnalysisResult:
         attempt = self.attempts
         self.attempts += 1
         if attempt in self._fail_on:
             raise AudioPipelineError(f"chunk attempt {attempt} failed")
-        return super().process_audio(call_id, audio, start_offset)
+        return super().process_audio(call_id, audio, start_offset, **continuity)
 
 
 def _scripted_service(*fail_on: int) -> tuple[LiveChunkProcessingService, ScriptedProcessor]:
@@ -343,3 +354,31 @@ def test_empty_call_id_is_rejected(service, call_id):
 def test_non_chunk_input_is_rejected(service):
     with pytest.raises(LiveChunkProcessingError, match="AudioChunk"):
         service.process_chunk("call-1", b"audio")  # type: ignore[arg-type]
+
+def test_chunk_continuity_reaches_the_processor(service, factory):
+    service.process_chunk(
+        "call-1",
+        AudioChunk(sequence=0, start_time=0.0, end_time=3.0, audio=b"a"),
+    )
+    service.process_chunk(
+        "call-1",
+        AudioChunk(
+            sequence=1, start_time=3.0, end_time=5.0, audio=b"b",
+            continues_previous=True, ends_on_pause=True,
+        ),
+    )
+    service.process_chunk(
+        "call-1",
+        AudioChunk(
+            sequence=2, start_time=5.0, end_time=6.0, audio=b"c",
+            continues_previous=True, is_final=True,
+        ),
+    )
+
+    # A time-limit cut keeps the utterance open; a pause or the end of the
+    # stream closes it.
+    assert factory.processors["call-1"].continuity == [
+        (False, False),
+        (True, True),
+        (True, True),
+    ]

@@ -13,6 +13,10 @@ class DiarizedSegment:
     start_time: float
     end_time: float
     confidence: float | None = None
+    # The speaker's voice embedding (the same for all of a speaker's
+    # segments in one diarization), when the provider computes one. Lets a
+    # speaker be recognised again in later audio of the same call.
+    embedding: tuple[float, ...] | None = None
 
 
 @dataclass
@@ -51,3 +55,12 @@ class RoleIdentificationProvider(ABC):
     ) -> list[SpeakerRoleAssignment]:
 
         raise NotImplementedError
+
+    def observe_speech(
+        self, speaker_id: str, transcript: str, *, role: SpeakerRole | None = None
+    ) -> SpeakerRole | None:
+        """Called with what a speaker (as named in the latest identify_roles
+        segments, or a call's track) said. role is given when it is already
+        known. Returns the speaker's role if it is now known, else None.
+        Providers that do not learn from speech ignore it."""
+        return None

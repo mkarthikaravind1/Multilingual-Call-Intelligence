@@ -17,6 +17,7 @@ DEFAULT_PRICING_CONFIG = PricingConfig(
             ),
             labour_hours=3.0,
             duration_hours=6.0,
+            covers=("Oil Change",),
         ),
         ServiceRule(
             service_name="Oil Change",

@@ -13,6 +13,15 @@ class BufferedAudioChunk:
     audio: bytes  # WAV bytes, ready for the existing ASR pipeline
     start_time: float
     end_time: float
+    # The chunk ends in a pause (pause_seconds of silence), whether that
+    # pause triggered the flush or the time limit was reached during it.
+    ends_on_pause: bool = False
+    # The chunk's speech carries straight on from the previous chunk's
+    # speech: no pause in between, so the time limit cut a sentence.
+    continues_previous: bool = False
+    # Any audio above the silence level. Always True with pause detection
+    # off (nothing is measured then).
+    has_speech: bool = True
 
     @property
     def duration(self) -> float:
@@ -32,6 +41,11 @@ class TelephonyAudioBuffer:
     flush_after_seconds is the upper limit. pause_seconds=0 turns pause
     detection off (fixed-length chunks). Audio is never dropped: if no
     pause is recognised, chunks simply reach the upper limit.
+
+    Each chunk records whether it ends on a pause and whether its speech
+    continues the previous chunk's (a pause can straddle a time-limit cut),
+    so speech cut by the time limit can be joined back into one utterance.
+    With pause detection off, chunks never continue one another.
     """
 
     def __init__(
@@ -64,6 +78,11 @@ class TelephonyAudioBuffer:
         self._silence_rms = silence_rms
         self._speech_bytes = 0
         self._trailing_silence_bytes = 0
+        # Silence since the last speech, across flushes; the stream starts
+        # as if after a pause.
+        self._silence_run_bytes = self._pause_bytes
+        self._chunk_has_speech = False
+        self._continues_previous = False
 
     def accept(self, sequence: int | None, audio: bytes) -> bool:
         """Append a frame's audio unless it's a duplicate or out-of-order
@@ -82,6 +101,7 @@ class TelephonyAudioBuffer:
             return True
         return (
             self._pause_bytes > 0
+            and self._chunk_has_speech
             and self._speech_bytes >= self._min_speech_bytes
             and self._trailing_silence_bytes >= self._pause_bytes
         )
@@ -94,10 +114,15 @@ class TelephonyAudioBuffer:
         except audioop.error:
             return  # odd-sized frame: leave the counters as they are
         if loud:
+            if not self._chunk_has_speech:
+                self._chunk_has_speech = True
+                self._continues_previous = self._silence_run_bytes < self._pause_bytes
             self._speech_bytes += len(audio)
             self._trailing_silence_bytes = 0
+            self._silence_run_bytes = 0
         else:
             self._trailing_silence_bytes += len(audio)
+            self._silence_run_bytes += len(audio)
 
     def flush(self, *, force: bool = False) -> BufferedAudioChunk | None:
         if not self._pending:
@@ -106,16 +131,32 @@ class TelephonyAudioBuffer:
             return None
 
         data = bytes(self._pending)
+        ends_on_pause = self._pause_bytes > 0 and self._trailing_silence_bytes >= self._pause_bytes
+        continues_previous = self._continues_previous
+        has_speech = self._chunk_has_speech or not self._pause_bytes
         self._pending.clear()
-        self._speech_bytes = 0
+        if ends_on_pause or not self._pause_bytes:
+            self._speech_bytes = 0
+        # else: the time limit cut a sentence, so its speech so far still
+        # counts and the pause that ends it flushes at once (min_speech
+        # counts the sentence, not just the part after the cut).
         self._trailing_silence_bytes = 0
+        self._chunk_has_speech = False
+        self._continues_previous = False
 
         start_time = self._elapsed_seconds
         duration = len(data) / self._bytes_per_second
         end_time = start_time + duration
         self._elapsed_seconds = end_time
 
-        return BufferedAudioChunk(audio=self._encode_wav(data), start_time=start_time, end_time=end_time)
+        return BufferedAudioChunk(
+            audio=self._encode_wav(data),
+            start_time=start_time,
+            end_time=end_time,
+            ends_on_pause=ends_on_pause,
+            continues_previous=continues_previous,
+            has_speech=has_speech,
+        )
 
     def _encode_wav(self, pcm: bytes) -> bytes:
         buffer = io.BytesIO()

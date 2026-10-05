@@ -602,7 +602,8 @@ def test_unsafe_production_configuration_is_refused():
         cors_allowed_origins="*",
     )
     problems = configuration_problems(unsafe)
-    assert len(problems) == 6
+    assert len(problems) == 7
+    assert any("PLIVO_ICR_DIAL_TARGETS" in problem for problem in problems)
     with pytest.raises(UnsafeConfigurationError):
         check_configuration(unsafe, logging.getLogger("test"))
 

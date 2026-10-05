@@ -91,11 +91,21 @@ export interface LabourEstimateDto {
   total_cost: string
 }
 
-export interface ServiceEstimateDto {
+export interface ServiceLineDto {
   service_name: string
   currency: string
   parts: EstimatedPartDto[]
   labour: LabourEstimateDto
+  estimated_duration_hours: number
+  parts_cost: string
+  labour_cost: string
+  estimated_cost: string
+}
+
+// Every service that came up in the call, and their totals.
+export interface ServiceEstimateDto {
+  currency: string
+  services: ServiceLineDto[]
   estimated_duration_hours: number
   parts_cost: string
   labour_cost: string
