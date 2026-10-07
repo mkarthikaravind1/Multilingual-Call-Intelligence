@@ -29,6 +29,8 @@ export interface QuestionSuggestionViewModel {
   reason: string
   source: string
   confidence: number | null
+  language: string
+  questionEnglish: string | null
 }
 
 export interface CallMetadataViewModel {

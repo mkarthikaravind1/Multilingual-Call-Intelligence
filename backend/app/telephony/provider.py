@@ -74,6 +74,9 @@ class MediaStreamEvent:
     # single mixed stream. On "start", tracks lists the tracks to expect.
     track: str | None = None
     tracks: tuple[str, ...] = ()
+    # On "start": the provider's audio encoding for this stream, which the
+    # stream's media frames are parsed with.
+    encoding: str | None = None
 
 
 class TelephonyWebhookError(Exception):
@@ -108,9 +111,12 @@ class TelephonyProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def parse_media_stream_event(self, raw_event: Mapping[str, Any]) -> MediaStreamEvent:
+    def parse_media_stream_event(
+        self, raw_event: Mapping[str, Any], encoding: str | None = None
+    ) -> MediaStreamEvent:
         """Parse one JSON message from the provider's live media-stream
-        WebSocket into a provider-agnostic MediaStreamEvent.
+        WebSocket into a provider-agnostic MediaStreamEvent. encoding is
+        the stream's, from its "start" event (None: the provider default).
 
         Raises TelephonyStreamError for anything malformed, unrecognized,
         or using an unsupported audio codec.

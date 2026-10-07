@@ -71,6 +71,15 @@ class ConversationService:
             self._repository.save(conversation)
             return conversation
 
+    def replace_transcript(
+        self, call_id: str, utterances: tuple[Utterance, ...]
+    ) -> Conversation:
+        with self._lock_for(call_id):
+            conversation = self.get_conversation(call_id)
+            conversation.replace_transcript(utterances)
+            self._repository.save(conversation)
+            return conversation
+
     def complete_conversation(self, call_id: str, end_time: float) -> ConversationCompletion:
         # ACTIVE -> COMPLETED happens once; repeats return the call unchanged,
         # keeping the original end_time.

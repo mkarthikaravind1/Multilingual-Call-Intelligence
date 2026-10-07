@@ -85,7 +85,12 @@ class CallWorkflowService:
         emerging_complaint_auto_discovery: bool = False,
         live_state_store: LiveStateStore | None = None,
         live_analysis_ttl_seconds: float = DEFAULT_LIVE_ANALYSIS_TTL_SECONDS,
+        transcript_reviser: Callable[[Conversation], tuple[Utterance, ...] | None]
+        | None = None,
     ) -> None:
+        # After the call: a better transcript of the whole call (e.g. from
+        # its recording, see PostCallRetranscriptionService), or None.
+        self._transcript_reviser = transcript_reviser
         self._escalation_service = escalation_service
         self._complaint_lifecycle_service = complaint_lifecycle_service
         self._customer_id_resolver = customer_id_resolver
@@ -310,6 +315,8 @@ class CallWorkflowService:
         if existing is not None:
             return existing
 
+        conversation = self._revise_transcript(conversation)
+
         if conversation.utterance_count == 0:
             # e.g. busy / no-answer: nothing was said, so there is nothing to summarise.
             logger.info("Skipping post-call summary for call %r without utterances", call_id)
@@ -351,6 +358,26 @@ class CallWorkflowService:
         # Lets open live views pick up the summary.
         self._live_analysis.touch(call_id)
         return stored
+
+    def _revise_transcript(self, conversation: Conversation) -> Conversation:
+        """The completed call with its revised transcript, when there is
+        one; on any failure the live transcript stays."""
+        if self._transcript_reviser is None:
+            return conversation
+        try:
+            utterances = self._transcript_reviser(conversation)
+            if not utterances:
+                return conversation
+            revised = self._call_service.replace_transcript(conversation.call_id, utterances)
+        except Exception:
+            logger.exception(
+                "Revising the transcript of call %r failed; keeping the live one",
+                conversation.call_id,
+            )
+            return conversation
+        # Open views pick up the new transcript.
+        self._live_analysis.touch(conversation.call_id)
+        return revised
 
     def _track_complaints(self, coverage: ConversationCoverage) -> None:
         if self._complaint_lifecycle_service is None:

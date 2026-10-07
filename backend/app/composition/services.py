@@ -26,6 +26,7 @@ from app.services.audio_processing_pipeline import (
     UtteranceProcessor,
 )
 from app.services.call_service import CallService
+from app.services.language_lock import LanguageLock
 from app.services.complaint_analysis_service import ComplaintAnalysisService
 from app.services.conversation_analysis_service import ConversationAnalysisService
 from app.services.conversation_coverage_repository import (
@@ -263,4 +264,8 @@ def build_audio_processing_pipeline(
         ),
         role_provider=role_provider or create_role_provider(settings),
         workflow_service=workflow_service,
+        language_lock=LanguageLock(
+            lock_after=(settings or Settings()).asr_language_lock_after,
+            unlock_after=(settings or Settings()).asr_language_unlock_after,
+        ),
     )

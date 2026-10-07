@@ -19,6 +19,8 @@ class SarvamNoSpeechError(SarvamASRError, NoSpeechDetected):
     """Sarvam heard no speech in the audio."""
 
 class SarvamASRProvider(ASRProvider):
+    supports_language_hint = True
+
     def __init__(
         self, settings: Settings | None = None, client: httpx.Client | None = None
     ) -> None:
@@ -39,15 +41,19 @@ class SarvamASRProvider(ASRProvider):
         self._audio_codec = (settings.sarvam_input_audio_codec or "").strip() or None
         self._client = client or httpx.Client(timeout=settings.sarvam_timeout_seconds)
 
-    def transcribe(self, audio: bytes) -> ASRResult:
+    def transcribe(self, audio: bytes, language_hint: str | None = None) -> ASRResult:
         if not audio:
             raise SarvamASRError("audio must not be empty.")
-        return self._to_result(self._post(audio))
+        if language_hint is not None and language_hint not in SUPPORTED_LANGUAGES:
+            raise SarvamASRError(f"Unsupported language hint {language_hint!r}.")
+        return self._to_result(self._post(audio, language_hint), language_hint)
 
-    def _post(self, audio: bytes) -> Any:
+    def _post(self, audio: bytes, language_hint: str | None = None) -> Any:
         form = {
             "model": self._model,
-            "language_code": "unknown",
+            # A known language spares Sarvam guessing it from a few seconds
+            # of audio; codemix mode still keeps the English words.
+            "language_code": f"{language_hint}-IN" if language_hint else "unknown",
             "with_timestamps": "true",
         }
         if self._mode:
@@ -78,7 +84,7 @@ class SarvamASRProvider(ASRProvider):
             raise SarvamASRError("Sarvam returned a non-JSON response.") from exc
 
     @staticmethod
-    def _to_result(payload: Any) -> ASRResult:
+    def _to_result(payload: Any, language_hint: str | None = None) -> ASRResult:
         if not isinstance(payload, dict):
             raise SarvamASRError("Sarvam response is not a JSON object.")
 
@@ -90,7 +96,7 @@ class SarvamASRProvider(ASRProvider):
         start_time, end_time = _extract_time_range(timestamps)
         return ASRResult(
             transcript=transcript,
-            detected_language=_map_language(payload.get("language_code")),
+            detected_language=_map_language(payload.get("language_code"), language_hint),
             start_time=start_time,
             end_time=end_time,
             confidence=None,
@@ -98,8 +104,11 @@ class SarvamASRProvider(ASRProvider):
         )
 
 
-def _map_language(code: Any) -> str:
+def _map_language(code: Any, language_hint: str | None = None) -> str:
     if not isinstance(code, str) or not code.strip():
+        # Sarvam may leave it out when it was told the language.
+        if language_hint is not None:
+            return language_hint
         raise SarvamASRError("Sarvam response has no language_code.")
     language = code.strip().split("-")[0].lower()
     if language not in SUPPORTED_LANGUAGES:

@@ -11,6 +11,7 @@ from app.domain.complaint_coverage import (
     ComplaintCoverageStatus,
 )
 from app.domain.conversation_coverage import ConversationCoverage
+from app.domain.customer_language import customer_language
 from app.domain.learning_evidence import LearningComponent
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.runtime_improvement_context import (
@@ -73,6 +74,7 @@ class NextQuestionService:
             status=complaint.status,
             utterances=utterances,
             learning_context=learning_context,
+            language=customer_language(utterances),
         )
 
         suggestion = self._provider.generate(context)

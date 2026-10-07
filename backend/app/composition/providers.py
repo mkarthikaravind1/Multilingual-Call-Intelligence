@@ -5,6 +5,7 @@ from app.ai.llm.client import LLMClient
 from app.ai.llm.groq_client import GroqLLMClient
 from app.ai.question.llm_provider import LLMQuestionProvider
 from app.ai.question.provider import QuestionSuggestionProvider
+from app.ai.question.rule_based_provider import RuleBasedQuestionProvider
 from app.core.config import Settings, get_settings
 from app.ai.asr.provider import ASRProvider
 from app.ai.asr.sarvam_provider import SarvamASRProvider
@@ -100,7 +101,8 @@ def create_question_provider(
 ) -> QuestionSuggestionProvider:
     if llm_client is None:
         llm_client = create_llm_client(settings)
-    return LLMQuestionProvider(llm_client)
+    # The fixed questions (translated) stand in when the LLM fails.
+    return LLMQuestionProvider(llm_client, fallback=RuleBasedQuestionProvider())
 
 def _build_sarvam_asr(settings: Settings) -> ASRProvider:
     return SarvamASRProvider(settings)

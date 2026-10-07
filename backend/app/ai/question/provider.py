@@ -10,7 +10,9 @@ class QuestionGenerationContext:
     category: str
     status: ComplaintCoverageStatus
     utterances: tuple[Utterance, ...]
-    learning_context: tuple[RuntimeImprovementContext, ...] = ()  
+    learning_context: tuple[RuntimeImprovementContext, ...] = ()
+    # The customer's language: the question is written in it.
+    language: str = "en"
 
 class QuestionSuggestionProvider(ABC):
     @abstractmethod

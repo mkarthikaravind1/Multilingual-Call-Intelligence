@@ -4,6 +4,7 @@ import { toUserErrorMessage } from '../../../api/errors'
 import { toWebSocketBaseUrl } from '../../live-call/services/liveCallSocket'
 import {
   FRAME_SAMPLES,
+  TELEPHONY_ENCODING,
   TELEPHONY_SAMPLE_RATE,
   decodeRecording,
   encodeFrameBase64,
@@ -160,7 +161,7 @@ export function useTestAudioReplay(onCallStarted: (callId: string) => void): Tes
                 callId: started.provider_call_id,
                 streamId: started.provider_call_id,
                 tracks: ['inbound'],
-                mediaFormat: { encoding: 'audio/x-mulaw', sampleRate: TELEPHONY_SAMPLE_RATE },
+                mediaFormat: { encoding: TELEPHONY_ENCODING, sampleRate: TELEPHONY_SAMPLE_RATE },
               },
             }),
           )

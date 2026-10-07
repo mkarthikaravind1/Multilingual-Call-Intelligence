@@ -464,7 +464,7 @@ def test_stream_response_dials_the_icr_and_streams_both_tracks():
 
     assert 'audioTrack="both"' in xml
     assert 'keepCallAlive="false"' in xml
-    assert 'contentType="audio/x-mulaw;rate=8000"' in xml
+    assert 'contentType="audio/x-l16;rate=16000"' in xml
     assert "wss://x/stream?token=a&amp;b=c</Stream>" in xml
     assert '<Dial callerId="+914400000000" timeout="30">' in xml
     assert "<Number>+919800000001</Number>" in xml
@@ -476,7 +476,7 @@ def test_stream_response_without_an_icr_streams_the_caller_and_holds_the_call():
     xml = _plivo().build_stream_response("wss://x/stream").content
 
     assert 'keepCallAlive="true"' in xml
-    assert 'contentType="audio/x-mulaw;rate=8000"' in xml
+    assert 'contentType="audio/x-l16;rate=16000"' in xml
     assert "<Dial" not in xml
 
 

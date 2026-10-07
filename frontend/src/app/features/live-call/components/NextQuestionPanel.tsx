@@ -25,9 +25,23 @@ export function NextQuestionPanel({
 
       {suggestion ? (
         <>
-          <p className="live-call__question">
-            “{suggestion.question}”
-          </p>
+          <div className="live-call__question">
+            <p
+              className="live-call__question-text"
+              lang={suggestion.language}
+            >
+              “{suggestion.question}”
+            </p>
+
+            {suggestion.questionEnglish && (
+              <p
+                className="live-call__question-english"
+                lang="en"
+              >
+                {suggestion.questionEnglish}
+              </p>
+            )}
+          </div>
 
           <div className="live-call__detail-grid">
             <span>

@@ -98,6 +98,8 @@ export function toQuestionSuggestionViewModel(
     reason: suggestion.reason,
     source: suggestion.source,
     confidence: suggestion.confidence ?? null,
+    language: suggestion.language ?? 'en',
+    questionEnglish: suggestion.question_en ?? null,
   }
 }
 

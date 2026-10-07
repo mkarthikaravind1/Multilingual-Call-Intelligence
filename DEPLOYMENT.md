@@ -68,10 +68,21 @@ signatures are computed over that URL. `PLIVO_STREAM_BASE_URL=wss://<host>`.
 Set `PLIVO_ICR_DIAL_TARGETS` to the ICR's phone number (E.164) or SIP
 endpoint (`sip:icr@...`). Several, comma-separated, ring together. The answer
 XML then starts a background stream of both sides of the call
-(`audioTrack="both"`, mu-law 8 kHz) and dials the ICR. The customer and the
+(`audioTrack="both"`, 16 kHz linear PCM by default, see `PLIVO_STREAM_AUDIO`)
+and dials the ICR. The customer and the
 ICR arrive as separate tracks, which makes speaker roles exact.
 `PLIVO_ICR_CALLER_ID` sets the number the ICR sees (by default, the
 caller's). Production refuses to start with telephony on and no dial target.
+
+Plivo's docs do not state the byte order of 16 kHz linear PCM (`l16_16k`);
+the backend reads it as little-endian. Check the first real call's transcript:
+if it is empty or nonsense, set `PLIVO_STREAM_AUDIO=mulaw_8k` and report it.
+
+With `POST_CALL_RETRANSCRIPTION_ENABLED=true`, the call's audio is kept in
+memory until post-call processing transcribes it again in long windows and
+replaces the live transcript (about double the ASR cost). The recording lives
+on the API instance that served the media stream; if post-call processing runs
+on another instance, the live transcript is kept.
 
 Every media stream URL carries a signed token for that one call
 (`TELEPHONY_STREAM_TOKEN_TTL_SECONDS`, default one hour to connect); the

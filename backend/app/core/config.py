@@ -29,6 +29,25 @@ class Settings(BaseSettings):
     # estimator). Empty: don't send a mode (needed for models without one).
     sarvam_stt_mode: str | None = "codemix"
     sarvam_timeout_seconds: float = 30.0
+    # Live audio: once ASR_LANGUAGE_LOCK_AFTER chunks in a row of a speaker
+    # are heard in the same Indian language, the ASR is told that language
+    # instead of guessing it from each few-second chunk. Released after
+    # ASR_LANGUAGE_UNLOCK_AFTER empty or other-language chunks in a row.
+    # 0 turns it off.
+    asr_language_lock_after: int = 2
+    asr_language_unlock_after: int = 2
+    # After the call, transcribe its recorded audio again in windows of up
+    # to POST_CALL_RETRANSCRIPTION_WINDOW_SECONDS (Sarvam's limit is 30 s),
+    # in each speaker's language, and keep that transcript instead of the
+    # live one (which was heard a few seconds at a time). About doubles the
+    # ASR cost of a call. Recordings stay in memory (on the instance that
+    # streamed the call) until then: at most CALL_RECORDING_MAX_CALLS calls,
+    # each cut at CALL_RECORDING_MAX_SECONDS.
+    post_call_retranscription_enabled: bool = False
+    post_call_retranscription_window_seconds: float = 25.0
+    post_call_retranscription_workers: int = 4
+    call_recording_max_seconds: float = 3600.0
+    call_recording_max_calls: int = 20
     sarvam_input_audio_codec: str | None = None
     language_provider: str = "not_configured"
     diarization_enabled: bool = True
@@ -83,12 +102,17 @@ class Settings(BaseSettings):
     plivo_stream_base_url: str = "not_configured"
     plivo_public_base_url: str = ""
     plivo_stream_flush_seconds: float = 4.0
+    # Live audio format asked of Plivo: "l16_16k" (16 kHz linear PCM, best
+    # for transcription), "l16_8k" or "mulaw_8k" (phone quality).
+    plivo_stream_audio: str = "l16_16k"
     # Live audio is sent for transcription when the speaker pauses: at least
     # PLIVO_STREAM_MIN_SPEECH_SECONDS of speech, then PLIVO_STREAM_PAUSE_SECONDS
     # quieter than PLIVO_STREAM_SILENCE_RMS (16-bit PCM level).
     # PLIVO_STREAM_FLUSH_SECONDS stays the upper limit; pause 0 = fixed chunks.
     plivo_stream_pause_seconds: float = 0.5
-    plivo_stream_min_speech_seconds: float = 1.5
+    # 2.5 s rather than shorter: a few seconds of speech is where the ASR
+    # mishears words and the language most.
+    plivo_stream_min_speech_seconds: float = 2.5
     plivo_stream_silence_rms: int = 350
     # Who an incoming call is connected to: comma-separated phone numbers
     # (E.164) and/or SIP endpoints (sip:icr@example.com), rung together.

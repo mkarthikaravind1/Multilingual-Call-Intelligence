@@ -4,9 +4,10 @@ from typing import Any
 
 from app.core.config import Settings, get_settings
 from app.telephony.plivo.audio import (
+    MULAW,
     PlivoAudioDecodingError,
     decode_media_payload,
-    is_supported_encoding,
+    normalize_encoding,
 )
 from app.telephony.plivo.signature import validate_signature as _validate_plivo_signature
 from app.telephony.provider import (
@@ -34,9 +35,14 @@ _STATUS_MAP: dict[str, CallProviderStatus] = {
 }
 
 _DEFAULT_SAMPLE_RATE = 8000
-# Only mu-law is decoded (see app.telephony.plivo.audio); Plivo's default is
-# linear PCM, so the codec is always asked for explicitly.
-_STREAM_CONTENT_TYPE = "audio/x-mulaw;rate=8000"
+# PLIVO_STREAM_AUDIO -> the <Stream> contentType. 16 kHz linear PCM keeps
+# more of the speech than 8 kHz mu-law (better transcription, notably of
+# Tamil consonants); the codec is always asked for explicitly.
+_STREAM_CONTENT_TYPES = {
+    "mulaw_8k": "audio/x-mulaw;rate=8000",
+    "l16_8k": "audio/x-l16;rate=8000",
+    "l16_16k": "audio/x-l16;rate=16000",
+}
 _STREAM_TIMEOUT_SECONDS = 86400
 _ATTRIBUTE_ENTITIES = {'"': "&quot;"}
 _TRACKS = frozenset({"inbound", "outbound"})
@@ -61,6 +67,13 @@ class PlivoTelephonyProvider(TelephonyProvider):
         )
         self._icr_caller_id = settings.plivo_icr_caller_id.strip()
         self._icr_dial_timeout = settings.plivo_icr_dial_timeout_seconds
+        audio = settings.plivo_stream_audio.strip().lower()
+        if audio not in _STREAM_CONTENT_TYPES:
+            raise PlivoConfigurationError(
+                f"Unsupported PLIVO_STREAM_AUDIO {settings.plivo_stream_audio!r}. "
+                f"Available: {sorted(_STREAM_CONTENT_TYPES)}."
+            )
+        self._content_type = _STREAM_CONTENT_TYPES[audio]
 
     def validate_signature(
         self, headers: Mapping[str, str], url: str, params: Mapping[str, str]
@@ -105,7 +118,7 @@ class PlivoTelephonyProvider(TelephonyProvider):
             # for as long as the stream runs.
             stream = (
                 f'<Stream bidirectional="false" keepCallAlive="true" '
-                f'contentType="{_STREAM_CONTENT_TYPE}">{escape(stream_url)}</Stream>'
+                f'contentType="{self._content_type}">{escape(stream_url)}</Stream>'
             )
             return _xml_response(stream)
 
@@ -115,7 +128,7 @@ class PlivoTelephonyProvider(TelephonyProvider):
         stream = (
             f'<Stream bidirectional="false" keepCallAlive="false" audioTrack="both" '
             f'streamTimeout="{_STREAM_TIMEOUT_SECONDS}" '
-            f'contentType="{_STREAM_CONTENT_TYPE}">{escape(stream_url)}</Stream>'
+            f'contentType="{self._content_type}">{escape(stream_url)}</Stream>'
         )
         caller_id = (
             f' callerId="{escape(self._icr_caller_id, _ATTRIBUTE_ENTITIES)}"'
@@ -127,18 +140,22 @@ class PlivoTelephonyProvider(TelephonyProvider):
             f"{stream}<Dial{caller_id} timeout=\"{self._icr_dial_timeout}\">{targets}</Dial>"
         )
 
-    def parse_media_stream_event(self, raw_event: Mapping[str, Any]) -> MediaStreamEvent:
-        return parse_plivo_media_stream_event(raw_event)
+    def parse_media_stream_event(
+        self, raw_event: Mapping[str, Any], encoding: str | None = None
+    ) -> MediaStreamEvent:
+        return parse_plivo_media_stream_event(raw_event, encoding)
 
     @staticmethod
     def _parse_start(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
         start = raw_event.get("start") or {}
         media_format = start.get("mediaFormat") or {}
-        encoding = media_format.get("encoding")
+        raw_encoding = media_format.get("encoding")
+        encoding = normalize_encoding(raw_encoding)
 
-        if not is_supported_encoding(encoding):
+        if encoding is None:
             raise TelephonyStreamError(
-                f"Unsupported Plivo media encoding: {encoding!r}. Only mu-law is supported."
+                f"Unsupported Plivo media encoding: {raw_encoding!r}. "
+                "Only mu-law and L16 are supported."
             )
 
         try:
@@ -152,10 +169,12 @@ class PlivoTelephonyProvider(TelephonyProvider):
             if isinstance(raw_tracks, list)
             else ()
         )
-        return MediaStreamEvent(event_type="start", sample_rate=sample_rate, tracks=tracks)
+        return MediaStreamEvent(
+            event_type="start", sample_rate=sample_rate, tracks=tracks, encoding=encoding
+        )
 
     @staticmethod
-    def _parse_media(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
+    def _parse_media(raw_event: Mapping[str, Any], encoding: str = MULAW) -> MediaStreamEvent:
         media = raw_event.get("media") or {}
         payload = media.get("payload")
         if not isinstance(payload, str) or not payload:
@@ -168,7 +187,7 @@ class PlivoTelephonyProvider(TelephonyProvider):
             sequence = None
 
         try:
-            audio = decode_media_payload(payload)
+            audio = decode_media_payload(payload, encoding)
         except PlivoAudioDecodingError as exc:
             raise TelephonyStreamError(str(exc)) from exc
 
@@ -182,15 +201,18 @@ class PlivoTelephonyProvider(TelephonyProvider):
         )
 
 
-def parse_plivo_media_stream_event(raw_event: Mapping[str, Any]) -> MediaStreamEvent:
+def parse_plivo_media_stream_event(
+    raw_event: Mapping[str, Any], encoding: str | None = None
+) -> MediaStreamEvent:
     """Parse one Plivo media-stream frame. Needs no Plivo credentials, so test
-    calls can stream Plivo-format audio without a Plivo account."""
+    calls can stream Plivo-format audio without a Plivo account. encoding:
+    the stream's, from its "start" event (default mu-law)."""
     event_type = str(raw_event.get("event", "")).strip().lower()
 
     if event_type == "start":
         return PlivoTelephonyProvider._parse_start(raw_event)
     if event_type == "media":
-        return PlivoTelephonyProvider._parse_media(raw_event)
+        return PlivoTelephonyProvider._parse_media(raw_event, encoding or MULAW)
     if event_type == "stop":
         return MediaStreamEvent(event_type="stop")
 

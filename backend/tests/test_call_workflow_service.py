@@ -545,6 +545,7 @@ def _build_post_call(
     delivery_provider: RecordingDeliveryProvider | None = None,
     contact: CustomerContact | None = _CONTACT,
     customer_summary_enabled: bool = True,
+    transcript_reviser=None,
 ) -> _PostCallHarness:
     call_service = CallService(ConversationService(InMemoryConversationRepository()))
     call_service.start_call(CALL_ID)
@@ -572,6 +573,7 @@ def _build_post_call(
         customer_contact_resolver=lambda call_id: contact,
         post_call_summary_repository=summary_repository,
         customer_summary_enabled=customer_summary_enabled,
+        transcript_reviser=transcript_reviser,
     )
     return _PostCallHarness(
         workflow,
@@ -791,3 +793,33 @@ def test_delivery_failure_is_recorded_and_call_stays_completed():
     (delivery,) = harness.delivery_repository.get_by_call_id(CALL_ID)
     assert delivery.status == DeliveryStatus.FAILED
     assert delivery.failure_reason == "provider_delivery_failed"
+
+
+def test_revised_transcript_replaces_the_live_one_before_the_summary():
+    revised = (_utterance(0), _utterance(1))
+    seen = []
+
+    def reviser(conversation):
+        seen.append(conversation.utterance_count)
+        return revised
+
+    harness = _build_post_call(transcript_reviser=reviser)
+    _complete_with_speech(harness)
+
+    assert seen == [1]
+    assert harness.call_service.get_call(CALL_ID).utterances == revised
+    assert harness.summary_repository.get(CALL_ID) is not None
+
+
+@pytest.mark.parametrize("outcome", [None, RuntimeError("ASR down")])
+def test_live_transcript_stays_when_there_is_no_revision(outcome):
+    def reviser(conversation):
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    harness = _build_post_call(transcript_reviser=reviser)
+    _complete_with_speech(harness)
+
+    assert harness.call_service.get_call(CALL_ID).utterances == (_utterance(0),)
+    assert harness.summary_repository.get(CALL_ID) is not None

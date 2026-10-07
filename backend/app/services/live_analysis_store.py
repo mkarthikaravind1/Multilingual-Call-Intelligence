@@ -129,6 +129,8 @@ def _serialize(snapshot: LiveAnalysisSnapshot) -> dict[str, Any]:
             "reason": suggestion.reason,
             "source": suggestion.source.value,
             "confidence": suggestion.confidence,
+            "language": suggestion.language,
+            "question_en": suggestion.question_en,
         },
         "service_estimate": None if estimate is None else call_estimate_to_json(estimate),
     }
@@ -157,6 +159,8 @@ def _deserialize(data: dict[str, Any]) -> LiveAnalysisSnapshot:
             reason=suggestion["reason"],
             source=SuggestionSource(suggestion["source"]),
             confidence=suggestion["confidence"],
+            language=suggestion.get("language", "en"),
+            question_en=suggestion.get("question_en"),
         ),
         service_estimate=None if estimate is None else call_estimate_from_json(estimate),
     )

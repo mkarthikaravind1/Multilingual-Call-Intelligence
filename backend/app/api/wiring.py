@@ -6,6 +6,8 @@ from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider
 from app.api.dependencies import ApiServices
 from app.composition.live_processing import build_live_chunk_processing_service
+from app.services.call_recording_store import CallRecordingStore
+from app.services.post_call_retranscription import PostCallRetranscriptionService
 from app.composition.services import (
     build_customer_summary_delivery_service,
     build_estimation_service,
@@ -275,6 +277,39 @@ def build_api_services(
         logger.warning("Customer summary delivery is not available: %s", exc)
         customer_summary_delivery_service = None
 
+    try:
+        asr_provider = create_asr_provider(settings)
+    except Exception as exc:
+        logger.warning("ASR provider is not available: %s", exc)
+        asr_provider = None
+
+    try:
+        language_provider = create_language_provider(settings)
+    except Exception as exc:
+        logger.warning("Language provider is not available: %s", exc)
+        language_provider = None
+
+    # --- Post-call re-transcription (from the call's recorded audio) ---
+    call_recording_store = None
+    transcript_reviser = None
+    if (
+        settings.post_call_retranscription_enabled
+        and asr_provider is not None
+        and language_provider is not None
+    ):
+        call_recording_store = CallRecordingStore(
+            max_calls=settings.call_recording_max_calls,
+            ttl_seconds=settings.post_call_repair_min_age_seconds + 3600.0,
+        )
+        transcript_reviser = PostCallRetranscriptionService(
+            asr_provider,
+            language_provider,
+            call_recording_store,
+            window_seconds=settings.post_call_retranscription_window_seconds,
+            workers=settings.post_call_retranscription_workers,
+            silence_rms=settings.plivo_stream_silence_rms,
+        ).retranscribe
+
     workflow_service = CallWorkflowService(
         call_service,
         coverage_repository,
@@ -318,6 +353,7 @@ def build_api_services(
         emerging_complaint_auto_discovery=settings.emerging_complaint_auto_discovery,
         live_state_store=live_state_store,
         live_analysis_ttl_seconds=settings.live_analysis_ttl_seconds,
+        transcript_reviser=transcript_reviser,
     )
 
     # --- Post-call repair ---
@@ -367,18 +403,6 @@ def build_api_services(
     except Exception as exc:
         logger.warning("Telephony provider is not available: %s", exc)
         telephony_provider = None
-
-    try:
-        asr_provider = create_asr_provider(settings)
-    except Exception as exc:
-        logger.warning("ASR provider is not available: %s", exc)
-        asr_provider = None
-
-    try:
-        language_provider = create_language_provider(settings)
-    except Exception as exc:
-        logger.warning("Language provider is not available: %s", exc)
-        language_provider = None
 
     live_chunk_processing_service = None
     if asr_provider is not None and language_provider is not None:
@@ -434,6 +458,7 @@ def build_api_services(
         customer_summary_delivery_service=customer_summary_delivery_service,
         asr_provider=asr_provider,
         telephony_stream_flush_seconds=settings.plivo_stream_flush_seconds,
+        call_recording_store=call_recording_store,
         call_customer_service=call_customer_service,
         customer_summary_enabled=settings.customer_summary_enabled,
         escalation_service=escalation_service,

@@ -49,6 +49,13 @@ class CallService:
             utterance=utterance,
         )
 
+    def replace_transcript(
+        self,
+        call_id: str,
+        utterances: tuple[Utterance, ...],
+    ) -> Conversation:
+        return self._conversation_service.replace_transcript(call_id, utterances)
+
     def end_call(
         self,
         call_id: str,

@@ -27,6 +27,12 @@ class NoSpeechDetected(Exception):
 
 
 class ASRProvider(ABC):
+    # Whether transcribe() takes a language_hint. Providers without one are
+    # only ever called with the audio.
+    supports_language_hint: bool = False
+
     @abstractmethod
-    def transcribe(self, audio: bytes) -> ASRResult:
+    def transcribe(self, audio: bytes, language_hint: str | None = None) -> ASRResult:
+        """language_hint: the language the speech is known to be in (a
+        SUPPORTED_LANGUAGES code), instead of detecting it from the audio."""
         raise NotImplementedError

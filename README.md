@@ -74,7 +74,7 @@ Implemented:
 
 ```mermaid
 flowchart LR
-    P[Plivo media stream<br/>8 kHz mu-law] --> B[Audio buffer<br/>flush every ~4 s]
+    P[Plivo media stream<br/>16 kHz linear PCM] --> B[Audio buffer<br/>flush at pauses, up to ~6 s]
     B --> ASR[Sarvam ASR<br/>+ language ID]
     ASR --> D[Diarization<br/>pyannote, optional]
     D --> R[Speaker roles<br/>per-call session]

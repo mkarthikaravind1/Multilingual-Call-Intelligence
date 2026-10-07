@@ -1,8 +1,10 @@
 // Turns any recording the browser can decode (MP3, WAV, M4A, OGG…) into the
-// audio a phone line carries: 8 kHz mono, 8-bit mu-law, 20 ms frames.
+// audio Plivo streams live calls in (PLIVO_STREAM_AUDIO=l16_16k): 16 kHz
+// mono, 16-bit little-endian linear PCM, 20 ms frames.
 
-export const TELEPHONY_SAMPLE_RATE = 8000
-export const FRAME_SAMPLES = 160 // 20 ms at 8 kHz
+export const TELEPHONY_SAMPLE_RATE = 16000
+export const TELEPHONY_ENCODING = 'audio/x-l16'
+export const FRAME_SAMPLES = 320 // 20 ms at 16 kHz
 
 export async function decodeRecording(
   file: File,
@@ -28,29 +30,13 @@ export async function toTelephonyPcm(recording: AudioBuffer): Promise<Float32Arr
   return rendered.getChannelData(0)
 }
 
-const SEGMENT_ENDS = [0x3f, 0x7f, 0xff, 0x1ff, 0x3ff, 0x7ff, 0xfff, 0x1fff]
-
-// G.711 mu-law, a port of CPython's audioop.lin2ulaw (the backend decodes
-// with audioop.ulaw2lin).
-function encodeMuLawSample(sample: number): number {
-  let value = Math.round(Math.max(-1, Math.min(1, sample)) * 32767) >> 2
-  let mask = 0xff
-  if (value < 0) {
-    value = -value
-    mask = 0x7f
-  }
-  value = Math.min(value, 8159) + 33
-  const segment = SEGMENT_ENDS.findIndex((end) => value <= end)
-  if (segment < 0) return 0x7f ^ mask
-  return ((segment << 4) | ((value >> (segment + 1)) & 0x0f)) ^ mask
-}
-
 export function encodeFrameBase64(pcm: Float32Array, frameIndex: number): string {
   const start = frameIndex * FRAME_SAMPLES
   const end = Math.min(start + FRAME_SAMPLES, pcm.length)
   let binary = ''
   for (let i = start; i < end; i += 1) {
-    binary += String.fromCharCode(encodeMuLawSample(pcm[i]))
+    const sample = Math.round(Math.max(-1, Math.min(1, pcm[i])) * 32767) & 0xffff
+    binary += String.fromCharCode(sample & 0xff, sample >> 8)
   }
   return btoa(binary)
 }

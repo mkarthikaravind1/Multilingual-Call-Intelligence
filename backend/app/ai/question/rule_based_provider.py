@@ -1,4 +1,5 @@
 from app.ai.question.provider import QuestionGenerationContext, QuestionSuggestionProvider
+from app.ai.question.translations import DETECTED_QUESTIONS, PROBED_QUESTIONS
 from app.core.constants import COMPLAINT_CATEGORIES
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
@@ -37,15 +38,22 @@ class RuleBasedQuestionProvider(QuestionSuggestionProvider):
 
         if context.status == ComplaintCoverageStatus.DETECTED:
             question = _DETECTED_QUESTIONS[context.category]
+            translations = DETECTED_QUESTIONS
             priority, confidence = 2, 0.6
         elif context.status == ComplaintCoverageStatus.PROBED:
             question = _PROBED_QUESTIONS[context.category]
+            translations = PROBED_QUESTIONS
             priority, confidence = 1, 0.75
         else:
             return None
 
+        # In the customer's language when there is a translation, with the
+        # English for the ICR; otherwise English.
+        translated = translations.get(context.language, {}).get(context.category)
         return QuestionSuggestion(
-            question=question,
+            question=translated or question,
+            language=context.language if translated else "en",
+            question_en=question if translated else None,
             target_category=context.category,
             priority=priority,
             reason=f"'{context.category}' is {context.status.value} and needs follow-up.",

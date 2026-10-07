@@ -9,6 +9,7 @@ from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.call_customer_service import CallCustomerService
+from app.services.call_recording_store import CallRecordingStore
 from app.services.call_listing import CallListingQuery
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
@@ -42,6 +43,8 @@ class ApiServices:
     customer_summary_delivery_service: CustomerSummaryDeliveryService | None = None
     asr_provider: ASRProvider | None = None
     telephony_stream_flush_seconds: float = 4.0
+    # Live call audio kept for post-call re-transcription (None: not kept).
+    call_recording_store: CallRecordingStore | None = None
     call_customer_service: CallCustomerService | None = None
     customer_summary_enabled: bool = False
     escalation_service: EscalationService | None = None
@@ -115,6 +118,10 @@ def get_call_customer_service(connection: HTTPConnection) -> CallCustomerService
 
 def get_telephony_stream_flush_seconds(connection: HTTPConnection) -> float:
     return connection.app.state.services.telephony_stream_flush_seconds
+
+
+def get_call_recording_store(connection: HTTPConnection) -> CallRecordingStore | None:
+    return connection.app.state.services.call_recording_store
 
 def get_learning_service(request: Request) -> LearningManagementService:
     return request.app.state.services.learning

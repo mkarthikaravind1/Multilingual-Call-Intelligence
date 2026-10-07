@@ -76,6 +76,15 @@ class Conversation:
             )
         self._utterances[-1] = utterance
 
+    def replace_transcript(self, utterances: tuple[Utterance, ...]) -> None:
+        """Replace every utterance, e.g. with the call transcribed again
+        from its recording after it completed (so allowed in any status)."""
+        if not utterances:
+            raise ValueError("A transcript needs at least one utterance.")
+        if any(b.start_time < a.start_time for a, b in zip(utterances, utterances[1:])):
+            raise ValueError("Utterances must be chronological.")
+        self._utterances = list(utterances)
+
     @property
     def utterances(self) -> tuple[Utterance, ...]:
         return tuple(self._utterances)

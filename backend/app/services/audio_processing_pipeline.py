@@ -22,9 +22,11 @@ from app.ai.speaker.provider import (
     SpeakerRoleAssignment,
 )
 from app.domain.conversation import UtteranceNotLatestError
+from app.core.languages import INDIC_LANGUAGES
 from app.domain.utterance import SpeakerRole, Utterance
 from app.observability.metrics import PROVIDER_ERRORS, PROVIDER_REQUEST_DURATION
 from app.services.call_workflow_service import CallAnalysisResult
+from app.services.language_lock import LanguageLock
 from app.services.speaker_alignment import align_timed_text_to_speakers
 
 logger = logging.getLogger(__name__)
@@ -64,8 +66,14 @@ class AudioProcessingPipeline:
         role_provider: RoleIdentificationProvider,
         workflow_service: UtteranceProcessor,
         id_factory: Callable[[], str] = lambda: str(uuid4()),
+        language_lock: LanguageLock | None = None,
     ) -> None:
         self._asr_provider = asr_provider
+        # Live audio: tells the ASR each speaker's language once it is
+        # known (only for ASR providers that take a language hint).
+        self._language_lock = (
+            language_lock if getattr(asr_provider, "supports_language_hint", False) else None
+        )
         self._language_provider = language_provider
         self._diarization_provider = diarization_provider
         self._role_provider = role_provider
@@ -139,16 +147,35 @@ class AudioProcessingPipeline:
         track: str | None,
         speaker_role: SpeakerRole | None,
     ) -> Utterance:
-        if speaker_role is None:
-            return self.build_utterance(audio, start_offset)
-
         self._validate_input(audio, start_offset)
-        asr_result = self._transcribe(audio)
-        languages = self._identify_languages(asr_result)
-        if track is not None:
-            # Keeps the call's speaker session in step with its tracks.
-            self._observe_speech(track, asr_result.transcript, speaker_role)
-        return self._create_utterance(asr_result, speaker_role, languages, start_offset)
+        asr_result = self._transcribe_live(audio, track)
+        if speaker_role is None:
+            utterance = self._build_single_utterance(
+                audio, asr_result, start_offset, learn_roles=True
+            )
+        else:
+            languages = self._identify_languages(asr_result)
+            if track is not None:
+                # Keeps the call's speaker session in step with its tracks.
+                self._observe_speech(track, asr_result.transcript, speaker_role)
+            utterance = self._create_utterance(
+                asr_result, speaker_role, languages, start_offset
+            )
+        if self._language_lock is not None:
+            self._language_lock.observe(
+                track, _heard_language(utterance.languages, asr_result.detected_language)
+            )
+        return utterance
+
+    def _transcribe_live(self, audio: bytes, track: str | None) -> ASRResult:
+        lock = self._language_lock
+        hint = None if lock is None else lock.hint(track)
+        try:
+            return self._transcribe(audio, hint)
+        except NoSpeechDetected:
+            if lock is not None:
+                lock.observe_no_speech(track)
+            raise
 
     def _in_call_order(self, utterance: Utterance) -> Utterance:
         """The two tracks of a call are cut into chunks independently, so
@@ -299,9 +326,12 @@ class AudioProcessingPipeline:
                 f"Provider results do not form a valid utterance: {exc}"
             ) from exc
 
-    def _transcribe(self, audio: bytes) -> ASRResult:
+    def _transcribe(self, audio: bytes, language_hint: str | None = None) -> ASRResult:
         with _measured("asr"):
-            result = self._asr_provider.transcribe(audio)
+            if language_hint is None:
+                result = self._asr_provider.transcribe(audio)
+            else:
+                result = self._asr_provider.transcribe(audio, language_hint=language_hint)
         if not isinstance(result, ASRResult):
             raise AudioPipelineError("ASR provider returned an invalid result.")
         if not isinstance(result.transcript, str) or not result.transcript.strip():
@@ -423,6 +453,16 @@ _MAX_CONTINUED_UTTERANCE_SECONDS = 30.0
 # this many repeated words are dropped where two chunks meet.
 _MAX_BOUNDARY_OVERLAP_WORDS = 3
 _BOUNDARY_PUNCTUATION = string.punctuation + "।॥…“”‘’"
+
+
+def _heard_language(languages: tuple[str, ...], detected_language: str) -> str:
+    """The Indian language the text was identified as, if any, else the
+    language the ASR reported. The text's identification is independent of
+    the ASR's language hint, so it shows when a locked language is wrong."""
+    for language in languages:
+        if language in INDIC_LANGUAGES:
+            return language
+    return detected_language
 
 
 def _can_continue(open_utterance: Utterance, utterance: Utterance) -> bool:

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from app.core.constants import COMPLAINT_CATEGORIES
+from app.core.constants import COMPLAINT_CATEGORIES, SUPPORTED_LANGUAGES
 
 
 class SuggestionSource(str, Enum):
@@ -19,10 +19,20 @@ class QuestionSuggestion:
     reason: str
     source: SuggestionSource
     confidence: float | None = None
+    # The language the question is written in (the customer's), and its
+    # English version for the ICR when that is another language.
+    language: str = "en"
+    question_en: str | None = None
 
     def __post_init__(self) -> None:
         if not self.question.strip():
             raise ValueError("question must not be empty.")
+
+        if self.language not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported question language: {self.language!r}.")
+
+        if self.question_en is not None and not self.question_en.strip():
+            raise ValueError("question_en must not be empty when given.")
 
         if not self.reason.strip():
             raise ValueError("reason must not be empty.")

@@ -75,6 +75,10 @@ export interface QuestionSuggestionDto {
   reason: string
   source: string
   confidence: number | null
+  // The question is in the customer's language; question_en is its
+  // English version (null when the question is already English).
+  language?: string
+  question_en?: string | null
 }
 
 // Monetary fields are backend Decimals, serialized as JSON strings.

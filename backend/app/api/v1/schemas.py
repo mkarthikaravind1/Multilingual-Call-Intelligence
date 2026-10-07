@@ -173,6 +173,10 @@ class QuestionSuggestionResponse(_Response):
     reason: str
     source: SuggestionSource
     confidence: float | None
+    # The question is in the customer's language; question_en is its
+    # English version (None when the question is already in English).
+    language: str = "en"
+    question_en: str | None = None
 
 class EstimatedPartResponse(_Response):
     name: str
