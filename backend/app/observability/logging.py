@@ -4,6 +4,7 @@ logs can be written as JSON lines for a log collector."""
 import contextvars
 import json
 import logging
+import re
 import sys
 import time
 
@@ -14,6 +15,20 @@ request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id
 class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_var.get()
+        return True
+
+
+# Credentials that travel in URLs (the telephony stream token, live-call
+# tickets); uvicorn logs each WebSocket's full path when it connects.
+_URL_SECRET = re.compile(r"([?&](?:token|ticket|access_token)=)[^&\s\"']+", re.IGNORECASE)
+
+
+class RedactUrlSecretsFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = _URL_SECRET.sub(r"\1REDACTED", message)
+        if redacted != message:
+            record.msg, record.args = redacted, None
         return True
 
 
@@ -41,6 +56,7 @@ _TEXT_FORMAT = "%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s
 def configure_logging(level: str = "INFO", fmt: str = "text") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(RequestIdFilter())
+    handler.addFilter(RedactUrlSecretsFilter())
     handler.setFormatter(
         JsonFormatter() if fmt.strip().lower() == "json" else logging.Formatter(_TEXT_FORMAT)
     )
