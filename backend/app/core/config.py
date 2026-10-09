@@ -1,7 +1,20 @@
+import os
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
-ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+
+
+def _env_file() -> Path | None:
+    """The repository's .env, unless APP_ENV_FILE names another file, or is
+    set empty to read none (the tests do, so they never use local secrets
+    or services)."""
+    override = os.environ.get("APP_ENV_FILE")
+    if override is None:
+        return Path(__file__).resolve().parents[3] / ".env"
+    return Path(override) if override.strip() else None
+
+
+ENV_FILE = _env_file()
 
 class Settings(BaseSettings):
     app_env: str = "development"
