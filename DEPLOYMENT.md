@@ -193,7 +193,7 @@ Alert rules (`deploy/monitoring/prometheus/alerts.yml`):
 | HighServerErrorRate | more than 5% of requests return 5xx for 10 min |
 | SlowApi | API p95 above 2 s for 15 min |
 | AsrSlow / DiarizationSlow | ASR p95 above 5 s / diarization p95 above 3 s |
-| LlmFailing | more than 20% of LLM calls fail (usually Groq 429s) |
+| LlmFailing | more than 20% of LLM calls fail (usually Groq 429s: a call uses about 13,000 tokens; see "LLM usage and Groq limits" in the README) |
 | LiveChunksFailing / LiveTranscriptLagging | more than 20% of chunks fail / chunk-to-transcript p95 above 8 s |
 | PostCallProcessingStuck | calls without a post-call summary for 30 min |
 | PostCallRepairGaveUp | the repair sweep gave up on a call |

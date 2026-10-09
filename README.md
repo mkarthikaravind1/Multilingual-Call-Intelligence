@@ -405,6 +405,9 @@ Fill in at least `GROQ_API_KEY` and `SARVAM_API_KEY`. The backend reads
 | Variables | Purpose |
 |---|---|
 | `LLM_PROVIDER`, `GROQ_API_KEY`, `GROQ_MODEL` | LLM for complaints, sentiment, questions |
+| `LIVE_ANALYSIS_MODE`, `LIVE_ANALYSIS_MIN_INTERVAL_SECONDS` | live AI analysis: one combined LLM request (default) at most every 30 s |
+| `QUESTION_ANSWERED_CHECK`, `QUESTION_CHECK_MODEL` | check each suggested question against what the customer already said |
+| `SUMMARY_PROVIDER` | post-call summary: `llm` (written by the LLM) or `rule_based` (template) |
 | `ASR_PROVIDER`, `LANGUAGE_PROVIDER`, `SARVAM_API_KEY` | speech and language |
 | `DIARIZATION_PROVIDER`, `HUGGINGFACE_TOKEN`, `ROLE_PROVIDER` | speakers |
 | `DATABASE_URL` | PostgreSQL connection |
@@ -415,6 +418,28 @@ Fill in at least `GROQ_API_KEY` and `SARVAM_API_KEY`. The backend reads
 | `EMERGING_COMPLAINT_*`, `POST_CALL_REPAIR_*` | background work |
 
 Never commit `.env`; only `.env.example` (placeholders) is tracked.
+
+### LLM usage and Groq limits
+
+Measured on a 2-minute test call: about **13,000 LLM tokens**.
+
+- During the call the AI analysis runs at most every
+  `LIVE_ANALYSIS_MIN_INTERVAL_SECONDS` (30), and only when the customer has
+  said something new. With `LIVE_ANALYSIS_MODE=combined` complaints,
+  sentiment and escalation come from one request (the transcript is sent
+  once); `separate` makes one request each. Each suggested question is a
+  further request, plus a short check (`QUESTION_CHECK_MODEL`).
+- Urgent escalations (manager, refund, legal, public complaint) come from
+  keyword rules on every utterance and never wait for the LLM. The live
+  service estimate uses the price-list keywords.
+- After the call, the final analysis, estimate and summary use separate
+  requests. A short rate limit is waited out; anything longer (the daily
+  limit) is left to the post-call repair job.
+
+Groq's limits are per model and per organisation. Its free tier (about
+200,000 tokens a day per model) covers roughly 15 such calls a day, and its
+per-minute limit is easily reached when calls overlap, so production needs
+a paid Groq tier. Watch the `LlmFailing` alert (usually 429s).
 
 ### Database setup
 
@@ -532,12 +557,10 @@ With the backend running, interactive OpenAPI docs are at
   (Sarvam), one telephony provider (Plivo), and only a JSON-file CRM
   adapter (no real CRM integration yet).
 - Complaint detection, sentiment and next-question generation depend on
-  the LLM being configured and available (rate limits on free tiers are
-  the usual bottleneck).
+  the LLM being configured and available; Groq's free tier covers only
+  about 15 calls a day (see "LLM usage and Groq limits").
 - Local diarization on CPU is slow; the first call after a restart waits
   for the model to load.
-- Accepted emerging-complaint themes are not yet turned into detectable
-  categories automatically.
 - WhatsApp delivery falls back to SMS; there is no WhatsApp provider.
 - The frontend has no automated unit tests yet.
 
