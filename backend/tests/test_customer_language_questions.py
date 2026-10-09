@@ -20,10 +20,12 @@ from app.services.next_question_service import NextQuestionService
 TAMIL_QUESTION = "சொன்ன நேரத்தை விட வேலை எவ்வளவு தாமதமாக முடிந்தது?"
 
 
-def _utterance(role: SpeakerRole, *languages: str, start: float = 0.0) -> Utterance:
+def _utterance(
+    role: SpeakerRole, *languages: str, start: float = 0.0, transcript: str = "text"
+) -> Utterance:
     return Utterance(
         utterance_id=f"u-{start}",
-        transcript="text",
+        transcript=transcript,
         speaker_role=role,
         languages=languages,
         start_time=start,
@@ -88,22 +90,41 @@ def test_customer_speaking_only_english_gets_english_even_if_the_icr_does_not():
 
 
 def test_one_line_mislabelled_tamil_does_not_make_an_english_call_tamil():
-    # Seen in a test call: "Hi Arjun, my name is Rohit Kulkarni…" came back
-    # [en, ta]; every suggested question was then in Tamil.
+    # Seen in a test call: the second line came back [en, ta]; every
+    # suggested question was then in Tamil.
     utterances = (
-        _utterance(SpeakerRole.CUSTOMER, "en", "ta", start=0),
-        *(_utterance(SpeakerRole.CUSTOMER, "en", start=t) for t in range(1, 5)),
+        _utterance(
+            SpeakerRole.CUSTOMER, "en", "ta", start=0,
+            transcript="Hi Arjun, my name is Rohit Kulkarni. I'm calling about my Hyundai Creta.",
+        ),
+        _utterance(
+            SpeakerRole.CUSTOMER, "en", start=1,
+            transcript="The AC is not cooling again. I brought it in on the 1st of September "
+            "for the same AC problem and it stopped cooling within 2 weeks.",
+        ),
+        _utterance(
+            SpeakerRole.CUSTOMER, "en", start=2,
+            transcript="Yes, and the car was supposed to be ready yesterday evening.",
+        ),
     )
     assert customer_language(utterances) == "en"
     assert main_indic_language(utterances) is None
+    # Even when it is one line each, early in the call.
+    assert customer_language(utterances[:2]) == "en"
 
 
-def test_a_tamil_speaker_mixing_in_english_stays_tamil():
+def test_a_tamil_speaker_saying_okay_in_english_stays_tamil():
     utterances = (
-        _utterance(SpeakerRole.CUSTOMER, "ta", "en", start=0),
-        _utterance(SpeakerRole.CUSTOMER, "ta", start=1),
-        _utterance(SpeakerRole.CUSTOMER, "en", start=2),
-        _utterance(SpeakerRole.CUSTOMER, "en", start=3),
+        _utterance(
+            SpeakerRole.CUSTOMER, "ta", "en", start=0,
+            transcript="சார் ஏசி சரியா கூல் ஆகல, போன வாரம் தான் சர்வீஸ் பண்ணினேன்",
+        ),
+        _utterance(SpeakerRole.CUSTOMER, "en", start=1, transcript="Okay sir."),
+        _utterance(
+            SpeakerRole.CUSTOMER, "ta", start=2,
+            transcript="பில் ரொம்ப அதிகமா வந்திருக்கு, யாரும் சொல்லவே இல்ல",
+        ),
+        _utterance(SpeakerRole.CUSTOMER, "en", start=3, transcript="Yes, thank you."),
     )
     assert customer_language(utterances) == "ta"
 

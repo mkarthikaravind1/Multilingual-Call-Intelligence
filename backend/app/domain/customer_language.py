@@ -8,21 +8,24 @@ from app.domain.utterance import SpeakerRole, Utterance
 def main_indic_language(utterances: Iterable[Utterance]) -> str | None:
     """The Indian language heard in most of these utterances, or None when
     the speech is English. A line mixing English into Tamil counts for
-    Tamil, so English words do not outvote the Tamil; but English-only
-    lines that outnumber the Tamil ones make it English, so that one line
-    mislabelled Tamil does not turn an English call into a Tamil one."""
-    counts: Counter[str] = Counter()
-    english_only = 0
+    Tamil, so English words do not outvote the Tamil. English-only lines
+    count too, by their words: an English call with one line mislabelled
+    Tamil stays English, while a Tamil speaker's short "okay, thank you"
+    lines do not outweigh their Tamil."""
+    words: Counter[str] = Counter()
+    english_words = 0
     for utterance in utterances:
+        length = len(utterance.transcript.split())
         indic = {language for language in utterance.languages if language in INDIC_LANGUAGES}
         if indic:
-            counts.update(indic)
+            for language in indic:
+                words[language] += length
         elif ENGLISH in utterance.languages:
-            english_only += 1
-    if not counts:
+            english_words += length
+    if not words:
         return None
-    language, lines = counts.most_common(1)[0]
-    return language if lines >= english_only else None
+    language, count = words.most_common(1)[0]
+    return language if count > english_words else None
 
 
 def customer_language(utterances: tuple[Utterance, ...]) -> str:
