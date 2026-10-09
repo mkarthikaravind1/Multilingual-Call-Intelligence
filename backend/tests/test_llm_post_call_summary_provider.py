@@ -208,3 +208,46 @@ def test_prompt_includes_call_id_and_transcript():
     prompt = fake_client.requests[0].prompt
     assert request.call_id in prompt
     assert "not ready on time" in prompt.lower()
+
+# ---- The customer_summary is texted to the customer ----
+
+
+def test_prompt_says_the_customer_summary_is_a_message_to_the_customer():
+    client = FakeLLMClient(json.dumps(VALID_PAYLOAD))
+    LLMPostCallSummaryProvider(client).generate_summary(_request())
+
+    prompt = client.requests[0].prompt
+    assert "sent to the customer as an SMS or WhatsApp message" in prompt
+    assert "Never describe the customer" in prompt
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "Rohit Kulkarni is dissatisfied due to repeat AC failure and threatens to post negative reviews.",
+        "The customer is satisfied with the resolution.",
+        "He wants a refund for the last repair.",
+        "   ",
+    ],
+)
+def test_a_note_about_the_customer_is_replaced_by_the_standard_message(note):
+    from app.ai.summary.llm_provider import SAFE_CUSTOMER_MESSAGE
+
+    payload = {**VALID_PAYLOAD, "customer_summary": note}
+    summary = LLMPostCallSummaryProvider(FakeLLMClient(json.dumps(payload))).generate_summary(
+        _request()
+    )
+
+    assert summary is not None
+    assert summary.customer_summary == SAFE_CUSTOMER_MESSAGE
+
+
+def test_a_message_to_the_customer_is_kept():
+    message = "Your brake pad replacement is booked for tomorrow at 10 AM. We will call you before any extra work."
+    payload = {**VALID_PAYLOAD, "customer_summary": f"  {message} "}
+    summary = LLMPostCallSummaryProvider(FakeLLMClient(json.dumps(payload))).generate_summary(
+        _request()
+    )
+
+    assert summary is not None
+    assert summary.customer_summary == message

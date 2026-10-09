@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from app.ai.llm.client import LLMClient, LLMRequest
 from app.ai.summary.language_utils import extract_languages
@@ -100,7 +101,13 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
             '- "unresolved_issues": array of strings\n'
             '- "actions_promised": array of strings\n'
             '- "follow_up_required": boolean\n'
-            '- "customer_summary": string\n'
+            '- "customer_summary": string. It is sent to the customer as an SMS or '
+            'WhatsApp message, word for word. Write it to the customer ("you", "we"), '
+            "politely, in at most 3 short sentences, in the language the customer "
+            "mostly spoke on the call. Say what was agreed and what happens next "
+            "(bookings, call-backs, rechecks). Never describe the customer, their mood, "
+            "threats or demands, or staff behaviour; never include internal notes or "
+            'the words "the customer".\n'
         )
 
     def _parse_json(self, text: str, call_id: str) -> dict | None:
@@ -216,7 +223,7 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
                 unresolved_issues=tuple(unresolved_issues),
                 actions_promised=tuple(actions_promised),
                 follow_up_required=payload["follow_up_required"],
-                customer_summary=payload["customer_summary"],
+                customer_summary=_customer_message(payload["customer_summary"], request.call_id),
                 service_estimate=request.service_estimate,
             )
         except (TypeError, ValueError):
@@ -225,6 +232,31 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
                 request.call_id,
             )
             return None
+
+
+# Sent instead when the model's customer_summary reads like a note about the
+# customer rather than a message to them.
+SAFE_CUSTOMER_MESSAGE = (
+    "Thank you for calling us. We have noted your concerns and will follow up with you."
+)
+_NOT_FOR_THE_CUSTOMER = re.compile(
+    r"\b(the customer|customer is|customer was|customer's|he|she|his|her|"
+    r"threaten\w*|dissatisfied|frustrat\w*|angry|rude)\b",
+    re.IGNORECASE,
+)
+
+
+def _customer_message(text: str, call_id: str) -> str:
+    """What is texted to the customer: the model's text, unless it talks
+    about the customer instead of to them."""
+    if not text.strip() or _NOT_FOR_THE_CUSTOMER.search(text):
+        logger.warning(
+            "LLM customer_summary for call %s is not addressed to the customer; "
+            "sending the standard message",
+            call_id,
+        )
+        return SAFE_CUSTOMER_MESSAGE
+    return text.strip()
 
 
 def _allowed_categories(request: PostCallSummaryRequest) -> frozenset[str]:
