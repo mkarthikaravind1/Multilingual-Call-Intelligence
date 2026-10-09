@@ -44,6 +44,10 @@ class ComplaintCategoryCatalog:
     accepted category within that time (invalidate() refreshes this
     instance at once). Without a repository it holds the built-ins only.
     If the repository cannot be read, the last categories read are kept.
+
+    Only one caller re-reads at a time, and other callers do not wait for
+    it: they get the last categories read. Live detection never queues
+    behind a slow database, except for the very first read.
     """
 
     def __init__(
@@ -55,25 +59,26 @@ class ComplaintCategoryCatalog:
         self._repository = repository
         self._cache_seconds = max(0.0, cache_seconds)
         self._clock = clock
-        self._lock = threading.Lock()
+        # Held only by the caller re-reading the repository.
+        self._refresh_lock = threading.Lock()
         self._categories: tuple[ComplaintCategory, ...] = _ordered(())
         self._loaded_at: float | None = None
+        self._has_read = False
 
     def categories(self) -> tuple[ComplaintCategory, ...]:
         """Built-ins, then custom categories by name, then "Other"."""
-        if self._repository is None:
+        if self._repository is None or not self._is_stale():
             return self._categories
-        with self._lock:
-            now = self._clock()
-            if self._loaded_at is None or now - self._loaded_at >= self._cache_seconds:
-                self._loaded_at = now
-                try:
-                    self._categories = _ordered(self._read_custom())
-                except Exception:
-                    logger.exception(
-                        "Could not read accepted complaint themes; keeping the last categories"
-                    )
+        # Until the first read succeeds the cached list has no custom
+        # categories, so wait for it; afterwards serve the last list.
+        if not self._refresh_lock.acquire(blocking=not self._has_read):
             return self._categories
+        try:
+            if self._is_stale():
+                self._refresh()
+        finally:
+            self._refresh_lock.release()
+        return self._categories
 
     def names(self) -> tuple[str, ...]:
         return tuple(category.name for category in self.categories())
@@ -85,8 +90,9 @@ class ComplaintCategoryCatalog:
         return name in self.names()
 
     def invalidate(self) -> None:
-        with self._lock:
-            self._loaded_at = None
+        # A re-read already under way stamped its start time before this,
+        # so the next call reads again and sees the change.
+        self._loaded_at = None
 
     def conflicting_name(self, name: str, candidate_id: str | None = None) -> str | None:
         """The existing category that name clashes with (ignoring case),
@@ -100,6 +106,22 @@ class ComplaintCategoryCatalog:
             if category.name.casefold() == wanted:
                 return category.name
         return None
+
+    def _is_stale(self) -> bool:
+        loaded_at = self._loaded_at
+        return loaded_at is None or self._clock() - loaded_at >= self._cache_seconds
+
+    def _refresh(self) -> None:
+        # Stamped first, so a failing repository is retried once per
+        # cache_seconds rather than on every call.
+        self._loaded_at = self._clock()
+        try:
+            self._categories = _ordered(self._read_custom())
+            self._has_read = True
+        except Exception:
+            logger.exception(
+                "Could not read accepted complaint themes; keeping the last categories"
+            )
 
     def _read_custom(self) -> tuple[ComplaintCategory, ...]:
         accepted = self._repository.list_by_status((EmergingComplaintReviewStatus.ACCEPTED,))

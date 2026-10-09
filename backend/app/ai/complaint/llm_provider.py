@@ -107,17 +107,25 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
         if not isinstance(data, list):
             return self._reject("JSON response is not a list")
 
+        # The model may change a category's case or spacing ("wiper noise");
+        # match it to the catalog's spelling.
+        canonical = {_category_key(name): name for name in allowed}
         try:
-            results = [self._build_result(item, allowed) for item in data]
+            built = [self._build_result(item, canonical) for item in data]
         except (TypeError, ValueError) as exc:
             return self._reject(str(exc))
+        results = [result for result in built if result is not None]
 
         if len({r.category for r in results}) != len(results):
             return self._reject("duplicate categories in response")
         return results
 
     @staticmethod
-    def _build_result(item: Any, allowed: set[str]) -> ComplaintDetectionResult:
+    def _build_result(
+        item: Any, canonical: dict[str, str]
+    ) -> ComplaintDetectionResult | None:
+        """The result for one item; None for a category the catalog does not
+        have, which is skipped so the other complaints in the answer are kept."""
         if not isinstance(item, dict):
             raise TypeError("each item must be an object")
 
@@ -128,11 +136,17 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
         evidence = item["evidence"]
         if not isinstance(evidence, str):
             raise TypeError("evidence must be a string")
-        if item["category"] not in allowed:
-            raise ValueError(f"Unsupported complaint category: {item['category']!r}.")
+        if not isinstance(item["category"], str):
+            raise TypeError("category must be a string")
+        category = canonical.get(_category_key(item["category"]))
+        if category is None:
+            logger.warning(
+                "Skipping LLM complaint with an unknown category: %r", item["category"]
+            )
+            return None
 
         return ComplaintDetectionResult(
-            category=item["category"],
+            category=category,
             confidence=item["confidence"],
             evidence=evidence.strip(),
         )
@@ -141,6 +155,10 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
     def _reject(reason: str) -> list[ComplaintDetectionResult]:
         logger.warning("Discarding invalid LLM complaint response: %s", reason)
         return []
+
+
+def _category_key(name: str) -> str:
+    return " ".join(name.split()).casefold()
 
 
 def _strip_code_fence(text: str) -> str:

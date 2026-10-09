@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -372,7 +373,18 @@ class EmergingComplaintCandidateModel(Base):
     category_name: Mapped[str | None] = mapped_column(String, nullable=True)
     category_description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    __table_args__ = (Index("ix_emerging_complaint_candidates_status", "status"),)
+    __table_args__ = (
+        Index("ix_emerging_complaint_candidates_status", "status"),
+        # Two accepted themes may not share a category name (ignoring case),
+        # even when accepted at once on different API instances.
+        Index(
+            "uq_emerging_complaint_candidates_accepted_category",
+            func.lower(category_name),
+            unique=True,
+            postgresql_where=text("status = 'accepted'"),
+            sqlite_where=text("status = 'accepted'"),
+        ),
+    )
 
 
 class PriceListVersionModel(Base):

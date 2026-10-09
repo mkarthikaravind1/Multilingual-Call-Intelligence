@@ -2,6 +2,7 @@
 detection, next questions, summaries and feedback all recognise."""
 
 import json
+import threading
 import time
 
 import pytest
@@ -150,6 +151,35 @@ def test_catalog_keeps_the_last_categories_when_the_repository_fails():
 
     repository.list_by_status = broken  # type: ignore[method-assign]
     assert catalog.is_known("Wiper Noise")
+
+
+def test_callers_do_not_wait_for_a_slow_refresh():
+    repository = InMemoryEmergingComplaintRepository()
+    repository.save(accepted())
+    now = [0.0]
+    catalog = ComplaintCategoryCatalog(repository, cache_seconds=30.0, clock=lambda: now[0])
+    assert catalog.is_known("Wiper Noise")  # first read
+
+    reading, release = threading.Event(), threading.Event()
+    list_by_status = repository.list_by_status
+
+    def slow(statuses):
+        reading.set()
+        release.wait(5)
+        return list_by_status(statuses)
+
+    repository.list_by_status = slow  # type: ignore[method-assign]
+    now[0] = 31.0
+    refresher = threading.Thread(target=catalog.categories)
+    refresher.start()
+    assert reading.wait(5)
+
+    started = time.monotonic()
+    assert catalog.is_known("Wiper Noise")  # the last categories, at once
+    assert time.monotonic() - started < 1.0
+
+    release.set()
+    refresher.join(5)
 
 
 # ---- Detection ----

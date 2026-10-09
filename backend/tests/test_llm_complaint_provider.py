@@ -142,7 +142,6 @@ INVALID_RESPONSES = [
     pytest.param(_response(_item_without("confidence")), id="missing-confidence"),
     pytest.param(_response(_item_without("evidence")), id="missing-evidence"),
     pytest.param(_response(_item(category="Banana")), id="unsupported-category"),
-    pytest.param(_response(_item(category="cost")), id="category-wrong-case"),
     pytest.param(_response(_item(category="5")), id="category-wrong-type"),
     pytest.param(_response(_item(confidence="high")), id="confidence-text"),
     pytest.param(_response(_item(confidence="0.9")), id="confidence-numeric-string"),
@@ -164,16 +163,32 @@ INVALID_RESPONSES = [
         _response(_item("Cost"), _item("Communication", 2.0)),
         id="one-invalid-item-rejects-whole-response",
     ),
-    pytest.param(
-        _response(_item("Cost"), _item(category="Banana")),
-        id="unsupported-category-is-not-converted-to-other",
-    ),
 ]
 
 
 @pytest.mark.parametrize("response_text", INVALID_RESPONSES)
 def test_invalid_model_output_returns_empty_list(response_text):
     assert _detect(response_text) == []
+
+
+@pytest.mark.parametrize("category", ["cost", "COST", "  Cost ", "service  quality"])
+def test_category_case_and_spacing_are_matched_to_the_catalog(category):
+    (result,) = _detect(_response(_item(category=category)))
+
+    assert result.category in ("Cost", "Service Quality")
+
+
+def test_unknown_category_is_skipped_and_the_rest_kept(caplog):
+    with caplog.at_level(logging.WARNING):
+        results = _detect(_response(_item("Cost"), _item(category="Banana")))
+
+    # Not converted to "Other" either.
+    assert [r.category for r in results] == ["Cost"]
+    assert "unknown category" in caplog.text
+
+
+def test_categories_differing_only_in_case_are_duplicates():
+    assert _detect(_response(_item("Cost"), _item(category="cost"))) == []
 
 
 def test_non_string_response_text_returns_empty_list():

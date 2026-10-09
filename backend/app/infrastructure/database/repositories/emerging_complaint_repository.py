@@ -1,10 +1,12 @@
 from collections.abc import Iterable
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.emerging_complaint_candidate import (
     EmergingComplaintCandidate,
+    EmergingComplaintReviewError,
     EmergingComplaintReviewStatus,
 )
 from app.infrastructure.database.models import EmergingComplaintCandidateModel
@@ -54,12 +56,22 @@ class PostgresEmergingComplaintRepository(EmergingComplaintRepository):
             return None if model is None else _to_domain(model)
 
     def save(self, candidate: EmergingComplaintCandidate) -> None:
-        with self._session_factory() as session, session.begin():
-            model = session.get(EmergingComplaintCandidateModel, candidate.candidate_id)
-            if model is None:
-                model = EmergingComplaintCandidateModel(candidate_id=candidate.candidate_id)
-                session.add(model)
-            _apply(model, candidate)
+        try:
+            with self._session_factory() as session, session.begin():
+                model = session.get(EmergingComplaintCandidateModel, candidate.candidate_id)
+                if model is None:
+                    model = EmergingComplaintCandidateModel(candidate_id=candidate.candidate_id)
+                    session.add(model)
+                _apply(model, candidate)
+        except IntegrityError as exc:
+            # Only the accepted-category-name index can refuse an update:
+            # another instance accepted a theme with this name meanwhile.
+            if candidate.status is not EmergingComplaintReviewStatus.ACCEPTED:
+                raise
+            raise EmergingComplaintReviewError(
+                f"There is already a category called {candidate.category_name!r}; "
+                "choose another name."
+            ) from exc
 
     def list_by_status(
         self, statuses: Iterable[EmergingComplaintReviewStatus]

@@ -1010,3 +1010,38 @@ def test_emerging_complaint_candidates_round_trip_and_update_in_place(session_fa
     assert repo.get("emerging-1") == reviewed
     assert repo.list_by_status([EmergingComplaintReviewStatus.PENDING_REVIEW]) == ()
     assert repo.list_by_status([EmergingComplaintReviewStatus.ACCEPTED]) == (reviewed,)
+
+
+def test_two_accepted_themes_cannot_share_a_category_name(session_factory):
+    from app.domain.emerging_complaint_candidate import (
+        EmergingComplaintCandidate,
+        EmergingComplaintReviewError,
+        EmergingComplaintReviewStatus,
+    )
+    from app.infrastructure.database.repositories.emerging_complaint_repository import (
+        PostgresEmergingComplaintRepository,
+    )
+
+    accepted = EmergingComplaintReviewStatus.ACCEPTED
+    repo = PostgresEmergingComplaintRepository(session_factory)
+
+    def theme(candidate_id: str) -> EmergingComplaintCandidate:
+        return EmergingComplaintCandidate(
+            candidate_id=candidate_id,
+            proposed_name="Ac Smell",
+            description="Smell from the AC.",
+            evidence=("ac smells",),
+            occurrence_count=2,
+            confidence=0.5,
+            call_ids=("a", "b"),
+        ).first_stored(10.0)
+
+    repo.save(theme("emerging-1").review(accepted, "sup@example.com", 20.0, None, "Wiper Noise"))
+    # Pending themes are not categories, so they may share the name.
+    repo.save(theme("emerging-2"))
+
+    with pytest.raises(EmergingComplaintReviewError, match="already a category"):
+        repo.save(
+            theme("emerging-2").review(accepted, "sup@example.com", 20.0, None, "wiper noise")
+        )
+    assert repo.get("emerging-2").status is EmergingComplaintReviewStatus.PENDING_REVIEW
