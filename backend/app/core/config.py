@@ -192,7 +192,7 @@ class Settings(BaseSettings):
     # from one LLM request (each part asked separately if its answer is
     # unusable); "separate": three requests. The final analysis after the
     # call always uses separate requests.
-    live_analysis_mode: str = "separate"
+    live_analysis_mode: str = "combined"
     # Browser live-call WebSockets authenticate with a single-use ticket
     # (POST /api/v1/calls/{call_id}/live-token), never the access token.
     live_call_ws_token_ttl_seconds: int = 60
