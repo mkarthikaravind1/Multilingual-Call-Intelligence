@@ -218,3 +218,13 @@ def test_any_open_complaint_may_be_the_target_but_no_other():
 
     provider, _ = _provider(_payload(target_category="Hygiene"))
     assert provider.generate(_open_context()) is None
+
+
+@pytest.mark.parametrize("named", ["Parts Availability (detected)", "parts availability", " Parts Availability "])
+def test_a_target_copied_from_the_list_is_matched_to_the_category(named):
+    # Seen in a test call: "Service Quality (detected)" was rejected.
+    provider, _ = _provider(_payload(target_category=named.strip()))
+
+    suggestion = provider.generate(_open_context())
+
+    assert suggestion is not None and suggestion.target_category == "Parts Availability"

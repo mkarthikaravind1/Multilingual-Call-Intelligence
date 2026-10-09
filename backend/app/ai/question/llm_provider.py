@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any
 
 from app.ai.learning_guidance import format_learning_guidance
@@ -208,6 +209,9 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
         reason = _require_str(data["reason"], "reason")
         category = _require_str(data["target_category"], "target_category")
         allowed = {c.category for c in context.open_complaints} or {context.category}
+        # The model may copy a line of the list: "Service Quality (detected)".
+        named = re.sub(r"\s*\([^)]*\)\s*$", "", category).casefold()
+        category = next((a for a in allowed if a.casefold() == named), category)
         if category not in allowed:
             raise ValueError(f"target_category {category!r} is not one of {sorted(allowed)}")
 
