@@ -9,6 +9,7 @@ accepted), so their order is free and extra columns are ignored.
 import csv
 import io
 import re
+import zipfile
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -17,6 +18,11 @@ from app.estimation.price_list import MAX_ROWS, PriceListIssue, PriceListRow
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 _HEADER_SEARCH_ROWS = 10
+# Only the first columns are read. A stray cell far to the right (Excel's
+# last column is XFD, 16384) would otherwise pad every row to that width.
+MAX_COLUMNS = 50
+# An .xlsx is a zip; a small file can unpack to far more than it weighs.
+MAX_UNPACKED_XLSX_BYTES = 100 * 1024 * 1024
 
 # (field, header written on export, other accepted headers)
 _COLUMNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
@@ -99,6 +105,16 @@ def _read_xlsx(content: bytes) -> _Table:
     from openpyxl import load_workbook
 
     try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            unpacked = sum(entry.file_size for entry in archive.infolist())
+    except zipfile.BadZipFile as exc:
+        raise PriceListFileError("The file could not be opened as an Excel workbook.") from exc
+    if unpacked > MAX_UNPACKED_XLSX_BYTES:
+        raise PriceListFileError(
+            "The workbook is too large once opened; keep only the price list sheet "
+            "and save it again."
+        )
+    try:
         workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     except Exception as exc:
         raise PriceListFileError("The file could not be opened as an Excel workbook.") from exc
@@ -110,9 +126,10 @@ def _read_xlsx(content: bytes) -> _Table:
         if sheet is None:
             raise PriceListFileError("The workbook has no sheets.")
         table: _Table = []
-        for number, row in enumerate(sheet.iter_rows(), start=1):
-            if number > MAX_ROWS + _HEADER_SEARCH_ROWS + 1:
-                break
+        last_row = MAX_ROWS + _HEADER_SEARCH_ROWS + 1
+        for number, row in enumerate(
+            sheet.iter_rows(max_row=last_row, max_col=MAX_COLUMNS), start=1
+        ):
             table.append(
                 (
                     number,

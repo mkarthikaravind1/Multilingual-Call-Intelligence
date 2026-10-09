@@ -5,6 +5,7 @@ floor's responsibility)."""
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 from app.api.dependencies import get_price_list_service
@@ -80,7 +81,9 @@ async def preview_upload(
     """Read an uploaded .xlsx/.csv and check it; nothing is saved."""
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     try:
-        preview = service.preview_upload(file.filename or "", content)
+        # Reading a workbook takes up to seconds of CPU; off the event loop,
+        # so live-call websockets keep being served meanwhile.
+        preview = await run_in_threadpool(service.preview_upload, file.filename or "", content)
     except PriceListFileError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
     return PriceListPreviewResponse.from_preview(preview)

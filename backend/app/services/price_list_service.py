@@ -84,6 +84,10 @@ class PriceListService:
             if cached is None:
                 raise
             logger.warning("Could not reload the price list; using the last one read.", exc_info=True)
+            # Try the database again only after cache_seconds, so callers do
+            # not each wait on it while it is down.
+            with self._lock:
+                self._cached_at = now
             return cached
         with self._lock:
             self._cached, self._cached_at = config, now
