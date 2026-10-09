@@ -153,13 +153,25 @@ class CallWorkflowService:
         """Store the utterance and let open live views show it at once,
         before (and independently of) the slower AI analysis."""
         self._call_service.add_utterance(call_id, utterance)
+        self._flag_what_was_said(call_id)
         self._live_analysis.touch(call_id)
 
     def record_utterance_update(self, call_id: str, utterance: Utterance) -> None:
         """Like record_utterance, for the call's latest utterance growing
         (same utterance_id) as live speech continues it."""
         self._call_service.update_latest_utterance(call_id, utterance)
+        self._flag_what_was_said(call_id)
         self._live_analysis.touch(call_id)
+
+    def _flag_what_was_said(self, call_id: str) -> None:
+        """A manager demand or a threat escalates at once, not only when the
+        AI analysis (seconds behind, and dropped when the call ends) gets to it."""
+        if self._escalation_service is None:
+            return
+        try:
+            self._escalation_service.assess_what_was_said(self._call_service.get_call(call_id))
+        except Exception:
+            logger.exception("Quick escalation check failed for call %r", call_id)
 
     def analyze_latest_speech(self, call_id: str) -> CallAnalysisResult | None:
         """Run the AI analysis over the call as it is now (all utterances

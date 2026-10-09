@@ -754,3 +754,41 @@ def test_what_the_customer_says_at_the_end_is_assessed_after_the_call(api):
     escalation = icr.get("/api/v1/calls/c-end/analysis").json()["escalation"]
     assert "manager_request" in {s["signal_type"] for s in escalation["signals"]}
     assert escalation["level"] == "critical"  # manager request + negative tone
+
+
+def test_phrase_rules_alone_flag_what_was_said():
+    service = EscalationService(InMemoryEscalationRepository(), CountingProvider())
+
+    escalation = service.assess_what_was_said(
+        conversation((CUSTOMER, "Sorry is not enough. I want to speak to your manager right now."))
+    )
+
+    assert escalation is not None
+    assert {s.signal_type for s in escalation.signals} == {EscalationSignalType.MANAGER_REQUEST}
+    assert escalation.level is EscalationLevel.HIGH
+    assert service.assess_what_was_said(conversation((CUSTOMER, "The car was late."))) is escalation
+
+
+def test_a_manager_demand_escalates_as_soon_as_it_is_recorded(api):
+    # On a live call the AI analysis runs seconds behind the speech (and is
+    # dropped when the call ends); the demand must not wait for it.
+    icr, _, provider = api
+    icr.post("/api/v1/calls", json={"call_id": "c-now"})
+    calls_before = provider.calls
+
+    icr.app.state.services.workflow_service.record_utterance(
+        "c-now",
+        Utterance(
+            utterance_id="c-now-0",
+            transcript="I want to speak to your manager right now.",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=0.0,
+            end_time=1.0,
+        ),
+    )
+
+    escalation = icr.app.state.services.escalation_service.get("c-now")
+    assert escalation is not None
+    assert "manager_request" in {s.signal_type.value for s in escalation.signals}
+    assert provider.calls == calls_before  # the full (LLM) detector has not run yet

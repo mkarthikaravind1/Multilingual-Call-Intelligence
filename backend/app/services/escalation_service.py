@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from app.ai.escalation.provider import EscalationContext, EscalationDetectionProvider
+from app.ai.escalation.rule_based_provider import RuleBasedEscalationProvider
 from app.ai.sentiment.provider import SentimentResult
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
@@ -49,6 +50,11 @@ def _in_range(value: float | None, start: float | None, end: float | None) -> bo
     return (start is None or value >= start) and (end is None or value < end)
 
 
+# Without a sentiment or open complaints, the rules report only what the
+# customer said.
+_PHRASE_RULES = RuleBasedEscalationProvider()
+
+
 class EscalationNotFoundError(Exception):
     def __init__(self, call_id: str) -> None:
         super().__init__(f"No escalation for call {call_id!r}.")
@@ -80,11 +86,24 @@ class EscalationService:
     ) -> Escalation | None:
         """Fold the latest detection into the call's escalation. A detector
         failure is logged and never breaks call processing."""
-        call_id = conversation.call_id
+        return self._fold(self._provider, EscalationContext(conversation, coverage, sentiment))
+
+    def assess_what_was_said(self, conversation: Conversation) -> Escalation | None:
+        """The phrase rules alone (a manager demand, a threat, a refund) over
+        what was said: no LLM, so it takes milliseconds and can run as each
+        utterance arrives. The full assessment (tone, complaints, LLM) comes
+        with the slower analysis and only ever raises the level further."""
+        return self._fold(
+            _PHRASE_RULES,
+            EscalationContext(conversation, ConversationCoverage(call_id=conversation.call_id), None),
+        )
+
+    def _fold(
+        self, provider: EscalationDetectionProvider, context: EscalationContext
+    ) -> Escalation | None:
+        call_id = context.conversation.call_id
         try:
-            assessment = self._provider.assess(
-                EscalationContext(conversation, coverage, sentiment)
-            )
+            assessment = provider.assess(context)
         except Exception:
             logger.exception("Escalation detection failed for call %r", call_id)
             return self._repository.get(call_id)
