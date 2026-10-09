@@ -89,13 +89,41 @@ class LLMEscalationProvider(EscalationDetectionProvider):
         )
         return LLMRequest(prompt=prompt)
 
+    @staticmethod
+    def task_instructions() -> str:
+        """This provider's task inside a combined live-analysis request (see
+        LLMLiveAnalysisProvider): the same signal types, levels and rules as
+        assess()'s own prompt."""
+        rules = "\n".join(f"- {rule}" for rule in _GUARDRAILS)
+        return (
+            f"Signal types: {_SIGNAL_TYPES}\n"
+            f"Levels: {_SIGNAL_LEVELS}\n\n"
+            f"Rules:\n{rules}\n\n"
+            f'"escalation" is a JSON object in exactly this shape:\n{_RESPONSE_SHAPE}\n'
+            'If the call is not escalating, "escalation" is {"signals": []}.'
+        )
+
+    def parse_signals(
+        self, data: Any, context: EscalationContext
+    ) -> tuple[EscalationSignal, ...] | None:
+        """The signals in a decoded answer, checked as assess() checks them
+        (including that each quote was said on the call); None when the
+        answer is unusable."""
+        try:
+            return _grounded(self._signals(data), context)
+        except (ValueError, TypeError, KeyError) as exc:
+            logger.warning("Discarding invalid LLM escalation response: %s", exc)
+            return None
+
+    def _signals(self, data: Any) -> tuple[EscalationSignal, ...]:
+        raw_signals = data["signals"]
+        if not isinstance(raw_signals, list):
+            raise TypeError("signals must be a list")
+        return tuple(self._signal(item) for item in raw_signals)
+
     def _parse(self, text: str) -> tuple[EscalationSignal, ...]:
         try:
-            data = json.loads(_strip_code_fence(text))
-            raw_signals = data["signals"]
-            if not isinstance(raw_signals, list):
-                raise TypeError("signals must be a list")
-            return tuple(self._signal(item) for item in raw_signals)
+            return self._signals(json.loads(_strip_code_fence(text)))
         except (ValueError, TypeError, KeyError) as exc:
             logger.warning("Discarding invalid LLM escalation response: %s", exc)
             return ()
@@ -167,6 +195,10 @@ class HybridEscalationProvider(EscalationDetectionProvider):
         self._rules = rules
         self._llm = llm
 
+    @property
+    def llm(self) -> LLMEscalationProvider:
+        return self._llm
+
     def assess(self, context: EscalationContext) -> EscalationAssessment:
         from_rules = self._rules.assess(context)
         try:
@@ -174,11 +206,35 @@ class HybridEscalationProvider(EscalationDetectionProvider):
         except Exception:
             logger.exception("LLM escalation detection failed; using the rules only")
             return from_rules
-        signals = merge_signals(from_rules.signals, from_llm.signals)
-        level = EscalationLevel.highest(
-            from_rules.level, from_llm.level, combined_level(signals)
-        )
-        return EscalationAssessment(level=level, signals=signals)
+        return _with_llm(from_rules, from_llm.signals)
+
+    def with_llm_signals(
+        self, llm_signals: tuple[EscalationSignal, ...]
+    ) -> EscalationDetectionProvider:
+        """This provider with the LLM's signals already found (by a combined
+        live-analysis request): the rules still run, the LLM is not asked."""
+        return _GivenLLMSignals(self._rules, llm_signals)
+
+
+class _GivenLLMSignals(EscalationDetectionProvider):
+    def __init__(
+        self, rules: RuleBasedEscalationProvider, llm_signals: tuple[EscalationSignal, ...]
+    ) -> None:
+        self._rules = rules
+        self._llm_signals = llm_signals
+
+    def assess(self, context: EscalationContext) -> EscalationAssessment:
+        return _with_llm(self._rules.assess(context), self._llm_signals)
+
+
+def _with_llm(
+    from_rules: EscalationAssessment, llm_signals: tuple[EscalationSignal, ...]
+) -> EscalationAssessment:
+    signals = merge_signals(from_rules.signals, llm_signals)
+    level = EscalationLevel.highest(
+        from_rules.level, combined_level(llm_signals), combined_level(signals)
+    )
+    return EscalationAssessment(level=level, signals=signals)
 
 
 def _strip_code_fence(text: str) -> str:

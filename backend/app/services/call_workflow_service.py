@@ -247,14 +247,17 @@ class CallWorkflowService:
         still_active: Callable[[], bool] | None = None,
     ) -> CallAnalysisResult:
         call_id = conversation.call_id
-        result = self._analyze_active_call(conversation, still_active)
+        result, llm_escalation_signals = self._analyze_active_call(conversation, still_active)
         self._track_complaints(result.coverage)
         # Escalation is assessed only on new speech; reads reuse the result.
         if self._escalation_service is not None:
             result = replace(
                 result,
                 escalation=self._escalation_service.assess(
-                    conversation, result.coverage, result.sentiment
+                    conversation,
+                    result.coverage,
+                    result.sentiment,
+                    llm_signals=llm_escalation_signals,
                 ),
             )
         self._live_analysis.save(
@@ -312,8 +315,10 @@ class CallWorkflowService:
         self,
         conversation: Conversation,
         still_active: Callable[[], bool] | None = None,
-    ) -> CallAnalysisResult:
-        analysis = self._analyze_and_save_coverage(conversation, still_active)
+    ) -> tuple[CallAnalysisResult, tuple | None]:
+        """The analysis, and the LLM escalation signals when a combined
+        live-analysis request already found them."""
+        analysis = self._analyze_and_save_coverage(conversation, still_active, live=True)
         previous = self._live_analysis.load(conversation.call_id)
         suggestion = self._next_question_service.suggest_next_question(
             analysis.coverage,
@@ -321,11 +326,14 @@ class CallWorkflowService:
             previous_question=_question_text(previous),
         )
 
-        return CallAnalysisResult(
-            coverage=analysis.coverage,
-            sentiment=analysis.sentiment,
-            question_suggestion=suggestion,
-            service_estimate=self._estimate_call(conversation, live=True),
+        return (
+            CallAnalysisResult(
+                coverage=analysis.coverage,
+                sentiment=analysis.sentiment,
+                question_suggestion=suggestion,
+                service_estimate=self._estimate_call(conversation, live=True),
+            ),
+            analysis.escalation_signals,
         )
 
     def _assess_final_escalation(
@@ -478,12 +486,16 @@ class CallWorkflowService:
         self,
         conversation: Conversation,
         still_active: Callable[[], bool] | None = None,
+        *,
+        live: bool = False,
     ) -> ConversationAnalysisResult:
+        """live: during the call (a combined request when configured); the
+        final analysis after the call always uses separate requests."""
         coverage = self._coverage_repository.get(conversation.call_id)
         if coverage is None:
             coverage = ConversationCoverage(call_id=conversation.call_id)
 
-        analysis = self._analysis_service.analyze(conversation, coverage)
+        analysis = self._analysis_service.analyze(conversation, coverage, live=live)
         if still_active is not None and not still_active():
             raise _CallCompletedDuringAnalysis(conversation.call_id)
         self._coverage_repository.save(analysis.coverage)

@@ -13,7 +13,7 @@ class SentimentAnalysisService:
         self._learning = learning
 
     def analyze(self, conversation: Conversation) -> SentimentResult:
-        contexts = self._learning.contexts() if self._learning is not None else ()
+        contexts = self.guidance()
         # Approved guidance is passed only when there is some, so providers
         # written against the one-argument form keep working unchanged.
         result = (
@@ -21,6 +21,17 @@ class SentimentAnalysisService:
             if contexts
             else self._provider.analyze(conversation)
         )
+        return self.accept(conversation, result, contexts)
+
+    def guidance(self) -> tuple:
+        """The approved learning guidance for sentiment analysis."""
+        return self._learning.contexts() if self._learning is not None else ()
+
+    def accept(
+        self, conversation: Conversation, result: SentimentResult, contexts: tuple = ()
+    ) -> SentimentResult:
+        """A result made with `contexts` (here or in a combined live-analysis
+        request), checked and recorded for the learning loop."""
         if not isinstance(result, SentimentResult):
             raise TypeError(
                 "SentimentAnalysisProvider.analyze must return a SentimentResult, "

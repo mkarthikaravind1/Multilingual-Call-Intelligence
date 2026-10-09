@@ -25,7 +25,7 @@ class ComplaintAnalysisService:
                 f"conversation {conversation.call_id!r}."
             )
 
-        contexts = self._learning.contexts() if self._learning is not None else ()
+        contexts = self.guidance()
         # Approved guidance is passed only when there is some, so providers
         # written against the one-argument form keep working unchanged.
         detections = (
@@ -33,7 +33,21 @@ class ComplaintAnalysisService:
             if contexts
             else self._provider.detect(conversation)
         )
+        return self.apply(conversation, coverage, detections, contexts)
 
+    def guidance(self) -> tuple:
+        """The approved learning guidance for complaint detection."""
+        return self._learning.contexts() if self._learning is not None else ()
+
+    def apply(
+        self,
+        conversation: Conversation,
+        coverage: ConversationCoverage,
+        detections: list,
+        contexts: tuple = (),
+    ) -> ConversationCoverage:
+        """Record detections made with `contexts` (here or in a combined
+        live-analysis request) on the call's coverage."""
         for detection in detections:
             complaint = coverage.get_or_add(detection.category)
             # detect() is only valid from NOT_RAISED; any other status means the

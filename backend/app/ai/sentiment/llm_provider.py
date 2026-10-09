@@ -87,13 +87,38 @@ class LLMSentimentProvider(SentimentAnalysisProvider):
         except json.JSONDecodeError:
             return self._reject("response is not valid JSON")
 
-        if not isinstance(data, dict):
-            return self._reject("JSON response is not an object")
+        result = self.parse_object(data)
+        return result if result is not None else self._reject_quietly()
 
+    def task_instructions(
+        self, learning_context: tuple[RuntimeImprovementContext, ...] = ()
+    ) -> str:
+        """This provider's task inside a combined live-analysis request (see
+        LLMLiveAnalysisProvider): the same rules and guidance as analyze()'s
+        own prompt."""
+        rules = "\n".join(f"- {rule}" for rule in _GUARDRAILS)
+        return (
+            f"Rules:\n{rules}\n\n"
+            f"{format_learning_guidance(learning_context)}"
+            f'"sentiment" is a JSON object in exactly this shape:\n{_RESPONSE_SHAPE}'
+        )
+
+    def parse_object(self, data: Any) -> SentimentResult | None:
+        """The sentiment in a decoded answer, checked as analyze() checks it;
+        None when the answer is unusable."""
+        if not isinstance(data, dict):
+            self._reject("JSON response is not an object")
+            return None
         try:
             return self._build_result(data)
         except (TypeError, ValueError) as exc:
-            return self._reject(str(exc))
+            self._reject(str(exc))
+            return None
+
+    @staticmethod
+    def _reject_quietly() -> SentimentResult:
+        # parse_object() has already logged why.
+        return SentimentResult(SentimentLabel.NEUTRAL, 0.0, _UNDETERMINED_EVIDENCE)
 
     @staticmethod
     def _build_result(data: dict[str, Any]) -> SentimentResult:

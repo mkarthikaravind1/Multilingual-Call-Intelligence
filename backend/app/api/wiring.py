@@ -1,7 +1,11 @@
 import logging
 from collections.abc import Callable
 
+from app.ai.complaint.llm_provider import LLMComplaintProvider
 from app.ai.complaint.provider import ComplaintDetectionProvider
+from app.ai.escalation.llm_provider import HybridEscalationProvider
+from app.ai.live_analysis.llm_provider import LLMLiveAnalysisProvider
+from app.ai.sentiment.llm_provider import LLMSentimentProvider
 from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider
 from app.api.dependencies import ApiServices
@@ -355,6 +359,9 @@ def build_api_services(
                     improvement_effectiveness_service,
                 ),
             ),
+            live_analyzer=_build_live_analyzer(
+                settings, complaint_provider, sentiment_provider, escalation_provider
+            ),
         ),
         NextQuestionService(
             provider=question_provider,
@@ -579,3 +586,33 @@ def _register_domain_gauges(
         ),
     ):
         REGISTRY.register(gauge)
+
+
+def _build_live_analyzer(
+    settings: Settings,
+    complaint_provider: ComplaintDetectionProvider,
+    sentiment_provider: SentimentAnalysisProvider,
+    escalation_provider: EscalationDetectionProvider,
+) -> LLMLiveAnalysisProvider | None:
+    """One combined LLM request during a call when LIVE_ANALYSIS_MODE is
+    "combined" and the LLM providers it combines are in use."""
+    mode = settings.live_analysis_mode.strip().lower()
+    if mode == "separate":
+        return None
+    if mode != "combined":
+        logger.warning("Unknown LIVE_ANALYSIS_MODE %r; using separate requests", mode)
+        return None
+    if not isinstance(complaint_provider, LLMComplaintProvider) or not isinstance(
+        sentiment_provider, LLMSentimentProvider
+    ):
+        logger.warning(
+            "LIVE_ANALYSIS_MODE=combined needs the LLM complaint and sentiment providers; "
+            "using separate requests"
+        )
+        return None
+    return LLMLiveAnalysisProvider(
+        complaint_provider.llm_client,
+        complaint_provider,
+        sentiment_provider,
+        escalation_provider.llm if isinstance(escalation_provider, HybridEscalationProvider) else None,
+    )

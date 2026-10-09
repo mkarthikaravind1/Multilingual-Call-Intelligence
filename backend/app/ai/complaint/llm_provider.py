@@ -92,6 +92,54 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
         )
         return LLMRequest(prompt=prompt)
 
+    @property
+    def llm_client(self) -> LLMClient:
+        return self._llm_client
+
+    def task_instructions(
+        self, learning_context: tuple[RuntimeImprovementContext, ...] = ()
+    ) -> tuple[str, set[str]]:
+        """This provider's task inside a combined live-analysis request (see
+        LLMLiveAnalysisProvider): the same categories, rules and guidance as
+        detect()'s own prompt. Also returns the category names it may report."""
+        known = self._catalog.categories()
+        categories = "\n".join(
+            f"- {c.name}: {c.description}" if c.description else f"- {c.name}" for c in known
+        )
+        rules = "\n".join(f"- {rule}" for rule in _GUARDRAILS)
+        text = (
+            f"Complaint categories:\n{categories}\n\n"
+            f"Rules:\n{rules}\n\n"
+            f"{format_learning_guidance(learning_context)}"
+            f'"complaints" is a JSON array in exactly this shape:\n{_RESPONSE_SHAPE}\n'
+            'If the conversation contains no supported complaints, "complaints" is [].'
+        )
+        return text, {c.name for c in known}
+
+    def parse_items(
+        self, data: Any, allowed: set[str]
+    ) -> list[ComplaintDetectionResult] | None:
+        """The detections in a decoded answer, checked as detect() checks
+        them; None when the answer is unusable."""
+        if not isinstance(data, list):
+            self._reject("JSON response is not a list")
+            return None
+
+        # The model may change a category's case or spacing ("wiper noise");
+        # match it to the catalog's spelling.
+        canonical = {_category_key(name): name for name in allowed}
+        try:
+            built = [self._build_result(item, canonical) for item in data]
+        except (TypeError, ValueError) as exc:
+            self._reject(str(exc))
+            return None
+        results = [result for result in built if result is not None]
+
+        if len({r.category for r in results}) != len(results):
+            self._reject("duplicate categories in response")
+            return None
+        return results
+
     def _parse_response(
         self, text: str, allowed: set[str] | None = None
     ) -> list[ComplaintDetectionResult]:
@@ -103,22 +151,7 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
             data = json.loads(_strip_code_fence(text))
         except json.JSONDecodeError:
             return self._reject("response is not valid JSON")
-
-        if not isinstance(data, list):
-            return self._reject("JSON response is not a list")
-
-        # The model may change a category's case or spacing ("wiper noise");
-        # match it to the catalog's spelling.
-        canonical = {_category_key(name): name for name in allowed}
-        try:
-            built = [self._build_result(item, canonical) for item in data]
-        except (TypeError, ValueError) as exc:
-            return self._reject(str(exc))
-        results = [result for result in built if result is not None]
-
-        if len({r.category for r in results}) != len(results):
-            return self._reject("duplicate categories in response")
-        return results
+        return self.parse_items(data, allowed) or []
 
     @staticmethod
     def _build_result(

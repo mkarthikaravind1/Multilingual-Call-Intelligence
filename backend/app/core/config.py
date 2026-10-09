@@ -187,7 +187,12 @@ class Settings(BaseSettings):
     # A call's live AI analysis (complaints, sentiment, next question,
     # escalation, estimate) starts at most this often; speech in between is
     # covered by the next run. Each run makes several LLM calls. 0 = no limit.
-    live_analysis_min_interval_seconds: float = 15.0
+    live_analysis_min_interval_seconds: float = 30.0
+    # "combined": during a call, complaints, sentiment and escalation come
+    # from one LLM request (each part asked separately if its answer is
+    # unusable); "separate": three requests. The final analysis after the
+    # call always uses separate requests.
+    live_analysis_mode: str = "separate"
     # Browser live-call WebSockets authenticate with a single-use ticket
     # (POST /api/v1/calls/{call_id}/live-token), never the access token.
     live_call_ws_token_ttl_seconds: int = 60

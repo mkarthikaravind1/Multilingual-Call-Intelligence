@@ -83,10 +83,16 @@ class EscalationService:
         conversation: Conversation,
         coverage: ConversationCoverage,
         sentiment: SentimentResult | None,
+        llm_signals: tuple | None = None,
     ) -> Escalation | None:
         """Fold the latest detection into the call's escalation. A detector
-        failure is logged and never breaks call processing."""
-        return self._fold(self._provider, EscalationContext(conversation, coverage, sentiment))
+        failure is logged and never breaks call processing. llm_signals: the
+        LLM's signals when a combined live-analysis request found them; the
+        rules still run, the LLM is not asked again."""
+        provider = self._provider
+        if llm_signals is not None and hasattr(provider, "with_llm_signals"):
+            provider = provider.with_llm_signals(llm_signals)
+        return self._fold(provider, EscalationContext(conversation, coverage, sentiment))
 
     def assess_what_was_said(self, conversation: Conversation) -> Escalation | None:
         """The phrase rules alone (a manager demand, a threat, a refund) over
