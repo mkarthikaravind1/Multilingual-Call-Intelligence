@@ -52,6 +52,15 @@ class CallAnalysisResult:
     # None when the call has never escalated (or escalation is not wired).
     escalation: Escalation | None = None
 
+def _question_text(snapshot) -> str | None:
+    """The question last suggested on this call (its English when it was
+    translated), from the stored live analysis."""
+    suggestion = None if snapshot is None else snapshot.question_suggestion
+    if suggestion is None:
+        return None
+    return suggestion.question_en or suggestion.question
+
+
 class LearningRecordingError(Exception):
     pass
 
@@ -284,9 +293,11 @@ class CallWorkflowService:
         still_active: Callable[[], bool] | None = None,
     ) -> CallAnalysisResult:
         analysis = self._analyze_and_save_coverage(conversation, still_active)
+        previous = self._live_analysis.load(conversation.call_id)
         suggestion = self._next_question_service.suggest_next_question(
             analysis.coverage,
             conversation.utterances,
+            previous_question=_question_text(previous),
         )
 
         return CallAnalysisResult(

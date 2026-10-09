@@ -360,6 +360,9 @@ def build_api_services(
             provider=question_provider,
             runtime_improvement_service=runtime_improvement_service,
             improvement_usage_recorder=improvement_effectiveness_service,
+            category_descriptions=lambda: {
+                c.name: c.description for c in complaint_category_catalog.custom()
+            },
         ),
         _build_estimation_service(settings, price_list_service),
         build_post_call_summary_service(),

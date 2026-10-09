@@ -122,3 +122,43 @@ def test_service_does_not_depend_on_rule_based_provider():
     import app.services.next_question_service as module
 
     assert "RuleBasedQuestionProvider" not in dir(module)
+
+def test_every_open_complaint_is_offered_built_ins_first_in_their_order():
+    provider = FakeProvider()
+    service = NextQuestionService(
+        provider, category_descriptions=lambda: {"Wiper Noise": "Wipers squeak after a service."}
+    )
+    coverage = _coverage_with(
+        {
+            "Wiper Noise": "detected",
+            "Turnaround Time": "detected",
+            "Cost": "probed",
+            "Hygiene": "resolved",
+        }
+    )
+
+    service.suggest_next_question(coverage, previous_question="What did the bill say?")
+
+    context = provider.received_context
+    assert context is not None
+    assert [(c.category, c.status.value) for c in context.open_complaints] == [
+        ("Cost", "probed"),
+        ("Turnaround Time", "detected"),
+        ("Wiper Noise", "detected"),
+    ]
+    assert context.open_complaints[2].description == "Wipers squeak after a service."
+    assert context.category == "Cost"  # the rule-based fallback's choice is unchanged
+    assert context.previous_question == "What did the bill say?"
+
+
+def test_a_failing_category_catalog_does_not_stop_suggestions():
+    def broken():
+        raise RuntimeError("database down")
+
+    provider = FakeProvider()
+    NextQuestionService(provider, category_descriptions=broken).suggest_next_question(
+        _coverage_with({"Cost": "detected"})
+    )
+
+    assert provider.received_context is not None
+    assert provider.received_context.open_complaints[0].description is None

@@ -178,3 +178,43 @@ def test_prompt_shows_who_said_what_and_forbids_asking_for_given_facts():
     prompt = client.complete.call_args.args[0].prompt
     assert "CUSTOMER: Now the bill says 14,000." in prompt
     assert "never ask for a date, amount, bill" in prompt
+
+
+def _open_context(previous=None):
+    from app.ai.question.provider import OpenComplaint
+
+    return QuestionGenerationContext(
+        category="Cost",
+        status=ComplaintCoverageStatus.DETECTED,
+        utterances=_context().utterances,
+        open_complaints=(
+            OpenComplaint("Cost", ComplaintCoverageStatus.DETECTED),
+            OpenComplaint("Parts Availability", ComplaintCoverageStatus.DETECTED),
+            OpenComplaint("Wiper Noise", ComplaintCoverageStatus.DETECTED, "Wipers squeak."),
+        ),
+        previous_question=previous,
+    )
+
+
+def test_the_model_chooses_among_the_open_complaints_with_what_to_find_out():
+    provider, client = _provider(_payload())
+
+    provider.generate(_open_context(previous="What was the bill amount?"))
+
+    prompt = client.complete.call_args.args[0].prompt
+    assert "- Cost (detected): the amount quoted and the amount billed" in prompt
+    assert "- Parts Availability (detected): which part is missing" in prompt
+    assert "- Wiper Noise (detected): Wipers squeak." in prompt
+    assert "Never ask how the customer feels" in prompt
+    assert "Do not suggest this question again (it was suggested last): What was the bill amount?" in prompt
+    assert "<one of the open complaints above>" in prompt
+    assert "Do not ask about any other complaint category" not in prompt
+
+
+def test_any_open_complaint_may_be_the_target_but_no_other():
+    provider, _ = _provider(_payload(target_category="Parts Availability"))
+    suggestion = provider.generate(_open_context())
+    assert suggestion is not None and suggestion.target_category == "Parts Availability"
+
+    provider, _ = _provider(_payload(target_category="Hygiene"))
+    assert provider.generate(_open_context()) is None

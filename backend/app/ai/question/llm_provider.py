@@ -17,8 +17,36 @@ _REQUIRED_FIELDS = ("question", "target_category", "priority", "reason")
 
 _NO_CONVERSATION = "(no conversation available yet)"
 
-_GUARDRAILS = (
+# Asking about one given complaint (the rule-based order's choice).
+_ONE_CATEGORY_RULES = (
     "The question must directly address the target complaint category.",
+    "Do not ask about any other complaint category.",
+)
+
+# Choosing among the call's open complaints.
+_OPEN_COMPLAINTS_RULES = (
+    "Choose the open complaint where a missing fact matters most for the ICR to act on "
+    "it, and ask for that one fact; target_category is that complaint.",
+    "Ask for one concrete fact (a date, an amount, a part, a name, a registration "
+    "number). Never ask how the customer feels or about their experience in general.",
+    "If no important fact is missing for any open complaint, respond with null.",
+)
+
+# What an ICR needs to find out to act on each built-in complaint.
+WHAT_TO_FIND_OUT = {
+    "Cost": "the amount quoted and the amount billed; whether extra work was approved first",
+    "Hygiene": "what was left dirty, and where in the vehicle",
+    "Hospitality": "what happened during the visit, and when",
+    "Service Quality": "what is still wrong; when it was last repaired; the vehicle registration number",
+    "Turnaround Time": "the date that was promised; when the vehicle is needed",
+    "Communication": "which updates the customer did not get; how they want to be contacted",
+    "Parts Availability": "which part is missing; when it was ordered",
+    "Staff Behaviour": "who it was and when it happened",
+    "Documentation": "which document is wrong or missing",
+    "Other": "the one detail needed to act on it",
+}
+
+_GUARDRAILS = (
     "Ask for information that is still missing; do not repeat anything the conversation already states.",
     "Before you answer, check what the CUSTOMER has already said: never ask for a date, "
     "amount, bill, part, vehicle detail or event they already gave. If nothing about the "
@@ -26,7 +54,6 @@ _GUARDRAILS = (
     "The question is a suggestion for the ICR to ask the customer. Do not write as the ICR: "
     "no greetings, apologies, promises or statements on behalf of the company.",
     "Do not invent facts that are not present in the conversation.",
-    "Do not ask about any other complaint category.",
     "Respect the current complaint status when choosing what to ask.",
     "Keep the question concise and natural.",
 )
@@ -92,8 +119,23 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
         )
 
     def _build_request(self, context: QuestionGenerationContext) -> LLMRequest:
+        choosing = bool(context.open_complaints)
+        previous = (
+            (
+                "Do not suggest this question again (it was suggested last): "
+                f"{context.previous_question.strip()}",
+            )
+            if context.previous_question and context.previous_question.strip()
+            else ()
+        )
         rules = "\n".join(
-            f"- {rule}" for rule in (*_GUARDRAILS, *_language_rules(context))
+            f"- {rule}"
+            for rule in (
+                *(_OPEN_COMPLAINTS_RULES if choosing else _ONE_CATEGORY_RULES),
+                *_GUARDRAILS,
+                *previous,
+                *_language_rules(context),
+            )
         )
         shape = (
             _RESPONSE_SHAPE
@@ -102,12 +144,25 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
                 "{language}", language_name(context.language)
             )
         )
+        if choosing:
+            shape = shape.replace(
+                "<exactly the target category above>", "<one of the open complaints above>"
+            )
+            target = "Open complaints (status; what the ICR needs to find out):\n" + "".join(
+                f"- {c.category} ({c.status.value}): "
+                f"{WHAT_TO_FIND_OUT.get(c.category) or c.description or 'the details needed to act on it'}\n"
+                for c in context.open_complaints
+            )
+        else:
+            target = (
+                f"Target complaint category: {context.category}\n"
+                f"Current complaint status: {context.status.value}\n"
+            )
         prompt = (
             "You assist a human ICR (customer service representative) during a live "
             "automotive service call. You only suggest a question; the ICR decides "
             "whether to ask it.\n\n"
-            f"Target complaint category: {context.category}\n"
-            f"Current complaint status: {context.status.value}\n"
+            f"{target}"
             f"Conversation so far:\n{self._conversation_text(context) or _NO_CONVERSATION}\n\n"
             f"Rules:\n{rules}\n\n"
             f"{format_learning_guidance(context.learning_context)}"
@@ -152,10 +207,9 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
         question = _require_str(data["question"], "question")
         reason = _require_str(data["reason"], "reason")
         category = _require_str(data["target_category"], "target_category")
-        if category != context.category:
-            raise ValueError(
-                f"target_category {category!r} does not match {context.category!r}"
-            )
+        allowed = {c.category for c in context.open_complaints} or {context.category}
+        if category not in allowed:
+            raise ValueError(f"target_category {category!r} is not one of {sorted(allowed)}")
 
         priority = data["priority"]
         if isinstance(priority, bool):
