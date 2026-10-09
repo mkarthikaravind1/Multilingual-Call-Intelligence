@@ -3,9 +3,6 @@ import pytest
 from app.ai.complaint.llm_provider import LLMComplaintProvider
 from app.ai.llm.client import LLMClient, LLMRequest, LLMResponse
 from app.ai.sentiment.llm_provider import LLMSentimentProvider
-from app.ai.speaker.order_based_role_provider import (
-    OrderBasedRoleIdentificationProvider,
-)
 from app.ai.speaker.provider import DiarizedSegment, SpeakerRole
 from app.ai.speaker.scripted_diarization_provider import ScriptedDiarizationProvider
 from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
@@ -58,21 +55,15 @@ def test_create_diarization_provider_returns_scripted_provider():
 
 
 def test_create_diarization_provider_rejects_unconfigured_provider():
-    with pytest.raises(UnsupportedProviderError, match="diarization provider"):
+    with pytest.raises(UnsupportedProviderError, match="Diarization provider"):
         create_diarization_provider(
             [], make_settings(diarization_provider="not_configured")
         )
 
 
-def test_create_role_provider_order_based():
-    provider = create_role_provider(make_settings(role_provider="order_based"))
-
-    assignments = provider.identify_roles(
-        [DiarizedSegment("s0", 0.0, 1.0), DiarizedSegment("s1", 1.0, 2.0)]
-    )
-
-    assert isinstance(provider, OrderBasedRoleIdentificationProvider)
-    assert [a.role for a in assignments] == [SpeakerRole.ICR, SpeakerRole.CUSTOMER]
+def test_order_based_role_provider_is_no_longer_supported():
+    with pytest.raises(UnsupportedProviderError, match="no longer supported"):
+        create_role_provider(make_settings(role_provider="order_based"))
 
 
 def test_create_role_provider_static_uses_mapping():

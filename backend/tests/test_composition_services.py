@@ -9,6 +9,7 @@ from app.ai.language.provider import (
 from app.ai.llm.client import LLMClient, LLMRequest, LLMResponse
 from app.ai.sentiment.provider import SentimentResult
 from app.ai.speaker.provider import DiarizedSegment
+from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
 from app.composition import providers
 from app.composition.providers import UnsupportedProviderError
 from app.composition.services import (
@@ -67,7 +68,8 @@ def make_utterance() -> Utterance:
 def test_repository_builders_return_fresh_empty_repositories():
     assert build_conversation_repository() is not build_conversation_repository()
     assert build_conversation_repository().get("call-1") is None
-    assert build_coverage_repository().get("call-1") is None
+    # Explicit settings: the defaults from .env may point at a real Redis.
+    assert build_coverage_repository(make_settings()).get("call-1") is None
 
 
 def test_call_workflow_service_processes_utterance_with_injected_llm_client():
@@ -123,9 +125,8 @@ def test_audio_pipeline_runs_through_shared_workflow_service():
     pipeline = build_audio_processing_pipeline(
         workflow,
         [DiarizedSegment("s0", 0.0, 2.0)],
-        settings=make_settings(
-            diarization_provider="scripted", role_provider="order_based"
-        ),
+        settings=make_settings(diarization_provider="scripted"),
+        role_provider=StaticRoleIdentificationProvider({"s0": SpeakerRole.ICR}),
         asr_provider=FakeASRProvider(),
         language_provider=FakeLanguageProvider(),
     )
@@ -146,7 +147,6 @@ def test_audio_pipeline_builds_default_sarvam_providers_from_settings():
         language_provider="sarvam",
         sarvam_api_key="test-key",
         diarization_provider="scripted",
-        role_provider="order_based",
     )
     workflow = build_call_workflow_service(llm_client=FakeLLMClient())
 
@@ -167,6 +167,5 @@ def test_audio_pipeline_requires_configured_asr_provider():
             settings=make_settings(
                 asr_provider="not_configured",
                 diarization_provider="scripted",
-                role_provider="order_based",
             ),
         )

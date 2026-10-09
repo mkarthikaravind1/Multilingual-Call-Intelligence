@@ -52,7 +52,6 @@ def make_settings(**overrides) -> Settings:
         "asr_provider": "sarvam",
         "language_provider": "sarvam",
         "diarization_provider": "scripted",
-        "role_provider": "order_based",
         "sarvam_api_key": "test-key",
     }
     values.update(overrides)
@@ -86,7 +85,9 @@ def test_audio_flows_through_settings_selected_providers(fake_providers):
     conversation = services.call_service.get_call("call-1")
     assert conversation.utterance_count == 1
     assert conversation.latest_utterance is not None
-    assert conversation.latest_utterance.speaker_role == SpeakerRole.ICR
+    # The default (session) role provider leaves a speaker UNKNOWN until
+    # its call's speaker session assigns it a role.
+    assert conversation.latest_utterance.speaker_role == SpeakerRole.UNKNOWN
 
 
 def test_pipeline_and_workflow_share_call_state(fake_providers):
