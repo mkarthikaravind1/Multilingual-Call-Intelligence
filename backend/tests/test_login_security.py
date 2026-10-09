@@ -230,3 +230,31 @@ def test_refreshing_keeps_the_sign_in_time_and_stops_after_the_maximum(client):
     expired = client.post("/api/v1/auth/refresh", headers={"Authorization": f"Bearer {too_old}"})
     assert expired.status_code == 401
     assert "sign in again" in expired.json()["detail"]
+
+
+# ---- Timing does not reveal which emails have accounts ----
+
+
+def test_an_unknown_email_takes_as_long_as_a_wrong_password():
+    import statistics
+    import time as clock
+
+    from app.services.auth_service import AuthService, InvalidCredentialsError
+    from app.domain.user_repository import InMemoryUserRepository
+
+    auth = AuthService(InMemoryUserRepository())
+    auth.register(EMAIL, PASSWORD, UserRole.ICR)
+
+    def seconds(email):
+        times = []
+        for _ in range(3):
+            started = clock.perf_counter()
+            with pytest.raises(InvalidCredentialsError):
+                auth.authenticate(email, "wrong-password")
+            times.append(clock.perf_counter() - started)
+        return statistics.median(times)
+
+    seconds("nobody@dealer.com")  # the dummy hash is made once
+    known, unknown = seconds(EMAIL), seconds("nobody@dealer.com")
+
+    assert unknown > known * 0.5  # both check a bcrypt hash (before: ~0 s)

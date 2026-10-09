@@ -1,4 +1,5 @@
 import time
+from functools import lru_cache
 from uuid import uuid4
 
 from app.domain.user import User, UserRole
@@ -40,6 +41,15 @@ class AuthService:
             user = self._user_repository.get_by_email(email)
         # Same generic error whether the email is unknown or the password is
         # wrong, and whether the account is inactive — never reveal which.
-        if user is None or not user.is_active or not verify_password(password, user.password_hash):
+        # The password is checked either way, so the answer takes as long
+        # and its timing does not reveal which emails have accounts.
+        password_hash = user.password_hash if user is not None else _unknown_user_hash()
+        if not verify_password(password, password_hash) or user is None or not user.is_active:
             raise InvalidCredentialsError("Invalid email or password.")
         return user
+
+
+@lru_cache(maxsize=1)
+def _unknown_user_hash() -> str:
+    """A hash no password matches in practice, checked for unknown emails."""
+    return hash_password(uuid4().hex)
