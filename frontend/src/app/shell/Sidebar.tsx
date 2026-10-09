@@ -18,6 +18,11 @@ const supervisorNavItems: NavItem[] = [
   { to: '/escalations', label: 'Escalations', icon: 'escalations' },
 ]
 
+// Supervisors only, not admins.
+const supervisorRoleNavItems: NavItem[] = [
+  { to: '/price-list', label: 'Price List', icon: 'price-list' },
+]
+
 const adminNavItems: NavItem[] = [
   { to: '/administration', label: 'Administration', icon: 'administration' },
 ]
@@ -28,6 +33,7 @@ export function Sidebar() {
   const visibleItems = [
     ...navItems,
     ...(session?.role === 'SUPERVISOR' || session?.role === 'ADMIN' ? supervisorNavItems : []),
+    ...(session?.role === 'SUPERVISOR' ? supervisorRoleNavItems : []),
     ...(session?.role === 'ADMIN' ? adminNavItems : []),
   ]
 

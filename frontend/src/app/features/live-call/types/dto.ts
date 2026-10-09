@@ -85,14 +85,19 @@ export interface QuestionSuggestionDto {
 export interface EstimatedPartDto {
   name: string
   quantity: number
+  // Before GST.
   unit_price: string
   total_price: string
+  gst_percent: string
+  gst_amount: string
 }
 
 export interface LabourEstimateDto {
   hours: number
   hourly_rate: string
   total_cost: string
+  gst_percent: string
+  gst_amount: string
 }
 
 export interface ServiceLineDto {
@@ -103,7 +108,13 @@ export interface ServiceLineDto {
   estimated_duration_hours: number
   parts_cost: string
   labour_cost: string
+  // Before GST; total_cost = estimated_cost + gst_amount.
   estimated_cost: string
+  gst_amount: string
+  total_cost: string
+  // The vehicle model this price is for; null: the all-models price.
+  priced_for_model: string | null
+  approximate: boolean
 }
 
 // Every service that came up in the call, and their totals.
@@ -114,6 +125,10 @@ export interface ServiceEstimateDto {
   parts_cost: string
   labour_cost: string
   estimated_cost: string
+  gst_amount: string
+  total_cost: string
+  vehicle_model: string | null
+  approximate: boolean
 }
 
 export interface ComplaintSummaryDto {

@@ -113,6 +113,10 @@ export function toServiceEstimateViewModel(
     partsCost: estimate.parts_cost,
     labourCost: estimate.labour_cost,
     estimatedCost: estimate.estimated_cost,
+    gstAmount: estimate.gst_amount,
+    totalCost: estimate.total_cost,
+    vehicleModel: estimate.vehicle_model,
+    approximate: estimate.approximate,
   }
 }
 
@@ -125,16 +129,22 @@ function toServiceLineViewModel(line: ServiceLineDto): ServiceLineViewModel {
       quantity: part.quantity,
       unitPrice: part.unit_price,
       totalPrice: part.total_price,
+      gstPercent: part.gst_percent,
     })),
     labour: {
       hours: line.labour.hours,
       hourlyRate: line.labour.hourly_rate,
       totalCost: line.labour.total_cost,
+      gstPercent: line.labour.gst_percent,
     },
     estimatedDurationHours: line.estimated_duration_hours,
     partsCost: line.parts_cost,
     labourCost: line.labour_cost,
     estimatedCost: line.estimated_cost,
+    gstAmount: line.gst_amount,
+    totalCost: line.total_cost,
+    pricedForModel: line.priced_for_model,
+    approximate: line.approximate,
   }
 }
 

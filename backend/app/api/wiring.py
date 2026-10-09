@@ -123,6 +123,11 @@ from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
 from app.services.post_call_repair_service import PostCallRepairService
 from app.services.user_management_service import UserManagementService
 from app.services.auth_service import AuthService
+from app.services.price_list_repository import (
+    InMemoryPriceListRepository,
+    PriceListRepository,
+)
+from app.services.price_list_service import PriceListService
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +159,7 @@ def build_api_services(
     emerging_complaint_provider: EmergingComplaintDiscoveryProvider | None = None,
     live_state_store: LiveStateStore | None = None,
     call_listing_query: CallListingQuery | None = None,
+    price_list_repository: PriceListRepository | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -226,6 +232,12 @@ def build_api_services(
     )
     if customer_contact_resolver is None:
         customer_contact_resolver = call_customer_service.resolve_contact
+
+    # --- The service centre's price list (what estimates are priced with) ---
+    price_list_service = PriceListService(
+        price_list_repository or InMemoryPriceListRepository(),
+        cache_seconds=settings.price_list_cache_seconds,
+    )
 
     # --- Escalation intelligence ---
     if escalation_provider is None:
@@ -336,7 +348,7 @@ def build_api_services(
             runtime_improvement_service=runtime_improvement_service,
             improvement_usage_recorder=improvement_effectiveness_service,
         ),
-        _build_estimation_service(settings),
+        _build_estimation_service(settings, price_list_service),
         build_post_call_summary_service(),
         customer_summary_delivery_service=customer_summary_delivery_service,
         customer_contact_resolver=customer_contact_resolver,
@@ -354,6 +366,7 @@ def build_api_services(
         live_state_store=live_state_store,
         live_analysis_ttl_seconds=settings.live_analysis_ttl_seconds,
         transcript_reviser=transcript_reviser,
+        vehicle_model_resolver=call_customer_service.resolve_vehicle_model,
     )
 
     # --- Post-call repair ---
@@ -468,6 +481,7 @@ def build_api_services(
         live_call_push_interval_seconds=settings.live_call_push_interval_seconds,
         post_call_repair_service=post_call_repair_service,
         user_management_service=user_management_service,
+        price_list_service=price_list_service,
         background_jobs=background_jobs,
         warm_up=warm_up_live_models if live_chunk_processing_service is not None else None,
         health_checks={"live_state": live_state_store.ping} if shared_live_state else {},
@@ -483,14 +497,16 @@ def build_api_services(
     return services
 
 
-def _build_estimation_service(settings: Settings):
+def _build_estimation_service(settings: Settings, price_list_service: PriceListService):
     llm_client = None
     if settings.estimation_provider.strip().lower() == "llm":
         try:
             llm_client = create_llm_client(settings)
         except Exception as exc:
             logger.warning("Service estimates will use the price-list keywords only: %s", exc)
-    return build_estimation_service(settings=settings, llm_client=llm_client)
+    return build_estimation_service(
+        settings=settings, llm_client=llm_client, pricing=price_list_service.pricing
+    )
 
 
 def _dependency_status(checks) -> dict[tuple[str, ...], float]:

@@ -12,6 +12,7 @@ import { LoginPage } from '../pages/LoginPage'
 import { AdministrationPage } from '../pages/AdministrationPage'
 import { EscalationsPage } from '../pages/EscalationsPage'
 import { ComplaintsPage } from '../pages/ComplaintsPage'
+import { PriceListPage } from '../pages/PriceListPage'
 import { isCallDetailsView } from '../features/live-call/liveCallMode'
 
 // "Call details" for a call opened from a list, "Live Call" otherwise.
@@ -59,6 +60,12 @@ function SupervisorOnly({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   const allowed = session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
   return allowed ? <>{children}</> : <Navigate to="/dashboard" replace />
+}
+
+// Supervisors only; admins too are sent away.
+function SupervisorRoleOnly({ children }: { children: ReactNode }) {
+  const { session } = useAuth()
+  return session?.role === 'SUPERVISOR' ? <>{children}</> : <Navigate to="/dashboard" replace />
 }
 
 export function AppRoutes() {
@@ -132,6 +139,19 @@ export function AppRoutes() {
                 <EscalationsPage />
               </AppShell>
             </SupervisorOnly>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/price-list"
+        element={
+          <ProtectedRoute>
+            <SupervisorRoleOnly>
+              <AppShell title="Price List" subtitle="Service prices used for call estimates">
+                <PriceListPage />
+              </AppShell>
+            </SupervisorRoleOnly>
           </ProtectedRoute>
         }
       />

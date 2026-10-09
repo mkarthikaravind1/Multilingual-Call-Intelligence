@@ -97,6 +97,41 @@ export class ApiClient {
       body: JSON.stringify(body),
     })
   }
+
+  put<T>(path: string, body: unknown, init?: RequestInit) {
+    return this.request<T>(path, {
+      ...init,
+      method: 'PUT',
+      body: JSON.stringify(body),
+    })
+  }
+
+  // A file download (e.g. an export) as a Blob, sent with the access token.
+  async download(path: string): Promise<Blob> {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`
+    const headers = new Headers()
+    if (this.accessToken) {
+      headers.set('Authorization', `Bearer ${this.accessToken}`)
+    }
+
+    let response: Response
+    try {
+      response = await fetch(`${this.baseUrl}${normalizedPath}`, { headers })
+    } catch (error) {
+      throw new ApiError(500, 'Unable to reach the server. Please try again.', error)
+    }
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        this.errorHandlers.onUnauthorized?.()
+      }
+      if (response.status === 403) {
+        this.errorHandlers.onForbidden?.()
+      }
+      throw new ApiError(response.status, 'Download failed.')
+    }
+    return response.blob()
+  }
 }
 
 export const apiClient = new ApiClient()

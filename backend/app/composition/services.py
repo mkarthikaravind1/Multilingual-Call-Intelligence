@@ -41,6 +41,7 @@ from app.services.in_memory_conversation_repository import (
 from app.services.next_question_service import NextQuestionService
 from app.services.sentiment_analysis_service import SentimentAnalysisService
 from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
+from app.estimation.pricing_config import PricingSource
 from app.estimation.provider import ServiceEstimationProvider
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
 from app.estimation.detection import (
@@ -155,8 +156,10 @@ def build_estimation_service(
     *,
     settings: Settings | None = None,
     llm_client: LLMClient | None = None,
+    pricing: PricingSource | None = None,
 ) -> EstimationService:
-    pricing = DEFAULT_PRICING_CONFIG
+    # The price list in use (PriceListService.pricing), else the sample one.
+    pricing = pricing or DEFAULT_PRICING_CONFIG
     provider = provider or RuleBasedEstimationProvider(pricing)
     detector: ServiceDetectionProvider = KeywordServiceDetector(pricing)
     name = (settings.estimation_provider if settings is not None else "rule_based").strip().lower()

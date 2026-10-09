@@ -57,7 +57,9 @@ Implemented:
 - **Complaint detection** in 10 categories with per-call coverage tracking.
 - **Sentiment / tone** analysis.
 - **Next-question suggestions** targeting complaints not yet fully covered.
-- **Service cost estimate** from what the customer asks for.
+- **Service cost estimate** from what the customer asks for, priced from the
+  service centre's own price list (supervisors upload it from Excel on the
+  Price List page; prices per vehicle model, GST added per row).
 - **Escalation detection** (rules, optionally plus an LLM) with in-app
   alerts and an acknowledge/resolve workflow.
 - **Post-call summary**, complaint close-out, follow-up flags and optional
@@ -531,7 +533,6 @@ With the backend running, interactive OpenAPI docs are at
   categories automatically.
 - WhatsApp delivery falls back to SMS; there is no WhatsApp provider.
 - The frontend has no automated unit tests yet.
-- Service estimates come from a fixed rule table, not a dealer price list.
 
 ## Future improvements
 

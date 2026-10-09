@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     # any supported language, understands "the battery is fine"; falls back
     # to the keywords when the LLM fails) or "rule_based" (English keywords).
     estimation_provider: str = "llm"
+    # How long an API instance keeps the price list before re-reading it, so
+    # a supervisor's save reaches every instance within this time.
+    price_list_cache_seconds: float = 30.0
     # "rule_based", or "llm" (the rules plus an LLM detector that can only add).
     escalation_provider: str = "rule_based"
     # Emerging-complaint discovery: "rule_based" (same wording across calls)

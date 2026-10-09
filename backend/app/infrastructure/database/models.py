@@ -370,3 +370,18 @@ class EmergingComplaintCandidateModel(Base):
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (Index("ix_emerging_complaint_candidates_status", "status"),)
+
+
+class PriceListVersionModel(Base):
+    # Every saved version of the price list; the newest is in use. Rows and
+    # settings are kept as JSON exactly as the supervisor gave them.
+    __tablename__ = "price_list_versions"
+
+    version_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False)
+    rows: Mapped[list[dict]] = mapped_column(JSON, nullable=False)

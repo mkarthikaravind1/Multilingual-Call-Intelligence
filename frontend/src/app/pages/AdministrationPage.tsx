@@ -13,11 +13,12 @@ const ROLE_CAPABILITIES = [
   {
     role: 'SUPERVISOR',
     description:
-      'Everything an ICR can do, plus the escalation queue, reviewing AI improvements and emerging complaints, and retrying post-call processing.',
+      'Everything an ICR can do, plus the escalation queue, reviewing AI improvements and emerging complaints, retrying post-call processing, and managing the price list.',
   },
   {
     role: 'ADMIN',
-    description: 'Everything a Supervisor can do, plus managing users and roles.',
+    description:
+      'Everything a Supervisor can do except managing the price list, plus managing users and roles.',
   },
 ]
 

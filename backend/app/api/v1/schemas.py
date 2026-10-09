@@ -181,13 +181,19 @@ class QuestionSuggestionResponse(_Response):
 class EstimatedPartResponse(_Response):
     name: str
     quantity: int
+    # Before GST.
     unit_price: Decimal
     total_price: Decimal
+    gst_percent: Decimal
+    gst_amount: Decimal
 
 class LabourEstimateResponse(_Response):
     hours: float
+    # Before GST.
     hourly_rate: Decimal
     total_cost: Decimal
+    gst_percent: Decimal
+    gst_amount: Decimal
 
 class ServiceLineResponse(_Response):
     """One service of the estimate, priced from the price list."""
@@ -198,7 +204,14 @@ class ServiceLineResponse(_Response):
     estimated_duration_hours: float
     parts_cost: Decimal
     labour_cost: Decimal
+    # Before GST; total_cost = estimated_cost + gst_amount.
     estimated_cost: Decimal
+    gst_amount: Decimal
+    total_cost: Decimal
+    # The vehicle model this price is for; None: the all-models price.
+    priced_for_model: str | None = None
+    # The service is priced per model, but not for this vehicle.
+    approximate: bool = False
 
 class ServiceEstimateResponse(_Response):
     """Every service that came up in the call, and their totals."""
@@ -207,7 +220,12 @@ class ServiceEstimateResponse(_Response):
     estimated_duration_hours: float
     parts_cost: Decimal
     labour_cost: Decimal
+    # Before GST; total_cost = estimated_cost + gst_amount.
     estimated_cost: Decimal
+    gst_amount: Decimal
+    total_cost: Decimal
+    vehicle_model: str | None = None
+    approximate: bool = False
 
 class ComplaintSummaryResponse(_Response):
     category: str

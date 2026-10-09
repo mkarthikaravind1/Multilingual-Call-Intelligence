@@ -75,6 +75,10 @@ from app.infrastructure.database.repositories.emerging_complaint_repository impo
     PostgresEmergingComplaintRepository,
 )
 from app.services.emerging_complaint_repository import EmergingComplaintRepository
+from app.infrastructure.database.repositories.price_list_repository import (
+    PostgresPriceListRepository,
+)
+from app.services.price_list_repository import PriceListRepository
 
 @dataclass(frozen=True)
 class PostgresRepositories:
@@ -97,6 +101,7 @@ class PostgresRepositories:
     call_customer: CallCustomerRepository
     escalation: EscalationRepository
     emerging_complaint: EmergingComplaintRepository
+    price_list: PriceListRepository | None = None
     # Read model over conversations, customers, escalations and complaints.
     call_listing: CallListingQuery | None = None
     session_factory: sessionmaker[Session] | None = None
@@ -129,6 +134,7 @@ def build_postgres_repositories(
         escalation=PostgresEscalationRepository(session_factory),
         emerging_complaint=PostgresEmergingComplaintRepository(session_factory),
         call_listing=PostgresCallListingQuery(session_factory),
+        price_list=PostgresPriceListRepository(session_factory),
         session_factory=session_factory,
     )
 

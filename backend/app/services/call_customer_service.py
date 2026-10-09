@@ -136,6 +136,15 @@ class CallCustomerService:
         customer = self.get(call_id).customer
         return None if customer is None else customer.customer_id
 
+    def resolve_vehicle_model(self, call_id: str) -> str | None:
+        """The model ("make model", e.g. "Maruti Swift") of the vehicle the
+        call is about, if the CRM knows it. Used to price the estimate."""
+        view = self.get(call_id)
+        vehicle = next(
+            (v for v in view.vehicles if v.vehicle_id == view.selected_vehicle_id), None
+        )
+        return None if vehicle is None else f"{vehicle.make} {vehicle.model}"
+
     def stored_links(self, call_ids: Iterable[str]) -> dict[str, CallCustomerLink]:
         """Who each call was with, as last stored (the customer name and
         vehicle snapshot included); no CRM lookup."""

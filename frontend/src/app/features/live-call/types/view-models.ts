@@ -53,12 +53,14 @@ export interface EstimatedPartViewModel {
   quantity: number
   unitPrice: string
   totalPrice: string
+  gstPercent: string
 }
 
 export interface LabourEstimateViewModel {
   hours: number
   hourlyRate: string
   totalCost: string
+  gstPercent: string
 }
 
 export interface ServiceLineViewModel {
@@ -70,6 +72,10 @@ export interface ServiceLineViewModel {
   partsCost: string
   labourCost: string
   estimatedCost: string
+  gstAmount: string
+  totalCost: string
+  pricedForModel: string | null
+  approximate: boolean
 }
 
 export interface ServiceEstimateViewModel {
@@ -79,6 +85,10 @@ export interface ServiceEstimateViewModel {
   partsCost: string
   labourCost: string
   estimatedCost: string
+  gstAmount: string
+  totalCost: string
+  vehicleModel: string | null
+  approximate: boolean
 }
 
 export interface ComplaintSummaryViewModel {

@@ -6,6 +6,7 @@ export type NavIconName =
   | 'administration'
   | 'escalations'
   | 'complaints'
+  | 'price-list'
   | 'menu'
   | 'collapse-panel'
   | 'close'
@@ -26,6 +27,8 @@ const PATHS: Record<NavIconName, string[]> = {
   ],
   escalations: ['M12 4l9 16H3z', 'M12 10v4', 'M12 17.5v.5'],
   complaints: ['M4 5h16v11H9l-5 4z', 'M8.5 9.5h7', 'M8.5 12.5h4'],
+  // A price tag.
+  'price-list': ['M3 12V4h8l10 10-8 8z', 'M7.5 8.5h.01'],
   menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
   // A side panel with an arrow pointing into it: "fold the panel away".
   'collapse-panel': [

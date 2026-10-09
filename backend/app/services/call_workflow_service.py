@@ -87,7 +87,11 @@ class CallWorkflowService:
         live_analysis_ttl_seconds: float = DEFAULT_LIVE_ANALYSIS_TTL_SECONDS,
         transcript_reviser: Callable[[Conversation], tuple[Utterance, ...] | None]
         | None = None,
+        vehicle_model_resolver: Callable[[str], str | None] | None = None,
     ) -> None:
+        # The model of the caller's vehicle (from the CRM), so the estimate
+        # uses that model's prices; None when it is not known.
+        self._vehicle_model_resolver = vehicle_model_resolver
         # After the call: a better transcript of the whole call (e.g. from
         # its recording, see PostCallRetranscriptionService), or None.
         self._transcript_reviser = transcript_reviser
@@ -465,11 +469,22 @@ class CallWorkflowService:
                 summary.call_id,
             )
 
+    def _vehicle_model(self, call_id: str) -> str | None:
+        if self._vehicle_model_resolver is None:
+            return None
+        try:
+            return self._vehicle_model_resolver(call_id)
+        except Exception:
+            logger.warning("Could not look up the vehicle model of call %r", call_id, exc_info=True)
+            return None
+
     def _estimate_call(self, conversation: Conversation) -> CallServiceEstimate | None:
         """Every service the call has needed so far, added up. A failure
         here never stops the rest of the analysis."""
         try:
-            return self._estimation_service.estimate_call(conversation.utterances)
+            return self._estimation_service.estimate_call(
+                conversation.utterances, self._vehicle_model(conversation.call_id)
+            )
         except Exception:
             logger.exception("Service estimate failed for call %r", conversation.call_id)
             return None
