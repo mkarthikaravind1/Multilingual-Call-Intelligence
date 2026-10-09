@@ -31,6 +31,8 @@ class QuestionGenerationContext:
     open_complaints: tuple[OpenComplaint, ...] = ()
     # The question suggested last time, so it is not suggested again.
     previous_question: str | None = None
+    # Questions found to ask for something the customer already gave.
+    answered_questions: tuple[str, ...] = ()
 
 class QuestionSuggestionProvider(ABC):
     @abstractmethod

@@ -100,10 +100,15 @@ def create_llm_client(
 def create_question_provider(
     llm_client: LLMClient | None = None, settings: Settings | None = None
 ) -> QuestionSuggestionProvider:
+    settings = settings or get_settings()
     if llm_client is None:
         llm_client = create_llm_client(settings)
     # The fixed questions (translated) stand in when the LLM fails.
-    return LLMQuestionProvider(llm_client, fallback=RuleBasedQuestionProvider())
+    return LLMQuestionProvider(
+        llm_client,
+        fallback=RuleBasedQuestionProvider(),
+        check_answered=settings.question_answered_check,
+    )
 
 def _build_sarvam_asr(settings: Settings) -> ASRProvider:
     return SarvamASRProvider(settings)

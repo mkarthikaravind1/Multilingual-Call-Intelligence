@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from dataclasses import replace
 from typing import Any
 
 from app.ai.learning_guidance import format_learning_guidance
@@ -94,14 +95,30 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
         self,
         llm_client: LLMClient,
         fallback: QuestionSuggestionProvider | None = None,
+        check_answered: bool = False,
     ) -> None:
         self._llm_client = llm_client
         self._fallback = fallback
+        # Each suggestion is checked against what the customer already said;
+        # one asking for that is replaced once, else nothing is suggested.
+        self._check_answered = check_answered
 
     def generate(self, context: QuestionGenerationContext) -> QuestionSuggestion | None:
         try:
-            response = self._llm_client.complete(self._build_request(context))
-            return self._parse_response(response.text, context)
+            suggestion = self._ask(context)
+            if suggestion is None or not self._check_answered:
+                return suggestion
+            answered = self._answered_by_customer(suggestion, context)
+            if answered is None:
+                return suggestion
+            # One more try with that question ruled out.
+            context = replace(
+                context, answered_questions=(*context.answered_questions, answered)
+            )
+            suggestion = self._ask(context)
+            if suggestion is None or self._answered_by_customer(suggestion, context) is None:
+                return suggestion
+            return None
         except _InvalidResponse as exc:
             logger.warning("Discarding invalid LLM question response: %s", exc)
         except Exception:
@@ -111,6 +128,47 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
         if self._fallback is None:
             return None
         return self._fallback.generate(context)
+
+    def _ask(self, context: QuestionGenerationContext) -> QuestionSuggestion | None:
+        response = self._llm_client.complete(self._build_request(context))
+        return self._parse_response(response.text, context)
+
+    def _answered_by_customer(
+        self, suggestion: QuestionSuggestion, context: QuestionGenerationContext
+    ) -> str | None:
+        """The question (in English) when the customer has already given what
+        it asks for, else None. Asked separately: checking one question
+        against the call is more reliable than writing one that respects
+        everything said. A failed check keeps the suggestion."""
+        question = suggestion.question_en or suggestion.question
+        prompt = (
+            "A call-centre assistant suggests questions for an ICR (customer service "
+            "representative) to ask a customer during a live automotive service call.\n\n"
+            f"Conversation so far:\n{self._conversation_text(context)}\n\n"
+            f"Suggested question: {question}\n\n"
+            "Has the customer already given the information this question asks for "
+            "(possibly in other words, e.g. the date they brought the car in, or that "
+            "nobody asked them first)? Respond with ONLY one JSON object: "
+            '{"already_answered": true or false, "where": "<the customer\'s words, or empty>"}'
+        )
+        try:
+            data = json.loads(
+                _strip_code_fence(self._llm_client.complete(LLMRequest(prompt=prompt)).text)
+            )
+            answered = data["already_answered"]
+            if not isinstance(answered, bool):
+                raise TypeError("already_answered must be true or false")
+        except Exception as exc:
+            logger.warning("Could not check the suggested question against the call: %s", exc)
+            return None
+        if not answered:
+            return None
+        logger.info(
+            "Dropping suggested question %r: the customer already said %r",
+            question,
+            str(data.get("where", ""))[:120],
+        )
+        return question
 
     @staticmethod
     def _conversation_text(context: QuestionGenerationContext) -> str:
@@ -131,12 +189,21 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
             if context.previous_question and context.previous_question.strip()
             else ()
         )
+        answered = (
+            (
+                "Do not suggest these questions: the customer has already given what they "
+                "ask for: " + "; ".join(context.answered_questions),
+            )
+            if context.answered_questions
+            else ()
+        )
         rules = "\n".join(
             f"- {rule}"
             for rule in (
                 *(_OPEN_COMPLAINTS_RULES if choosing else _ONE_CATEGORY_RULES),
                 *_GUARDRAILS,
                 *previous,
+                *answered,
                 *_language_rules(context),
             )
         )
