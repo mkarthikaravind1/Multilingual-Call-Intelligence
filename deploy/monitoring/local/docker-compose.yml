@@ -1,10 +1,17 @@
 # Local monitoring for development: Prometheus + Grafana watching the
-# backend on this machine. Production uses deploy/docker-compose.prod.yml.
+# backend on this machine, and Alertmanager sending its alert e-mails to
+# Mailpit, a local mail catcher. Production uses deploy/docker-compose.prod.yml.
 #
 #   docker compose -f deploy/monitoring/local/docker-compose.yml up -d
 #
 # Grafana: http://localhost:3000 (no login; local only)
 # Prometheus: http://localhost:9090
+# Alertmanager: http://localhost:9093
+# Mailpit (the caught alert e-mails): http://localhost:8025
+#
+# Mailpit keeps every message it receives and relays nothing, so no e-mail
+# leaves this machine. Send a test alert with
+#   sh deploy/monitoring/send-test-alert.sh
 name: call-intelligence-monitoring-local
 
 services:
@@ -19,8 +26,35 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
+    depends_on:
+      - alertmanager
     ports:
       - "127.0.0.1:9090:9090"
+
+  # The production config and template, pointed at Mailpit (no TLS, no login).
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      ALERT_EMAIL_TO: oncall@call-intelligence.test
+      ALERT_EMAIL_FROM: alerts@call-intelligence.test
+      SMTP_SMARTHOST: mailpit:1025
+      SMTP_REQUIRE_TLS: "false"
+      GRAFANA_URL: http://localhost:3000
+    volumes:
+      - ../alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro
+      - ../alertmanager/templates:/etc/alertmanager/templates:ro
+      - ../alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
+    depends_on:
+      - mailpit
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  # Catches the e-mails; its SMTP port is only reachable inside this stack.
+  mailpit:
+    image: axllent/mailpit:v1.20.0
+    ports:
+      - "127.0.0.1:8025:8025"
 
   grafana:
     image: grafana/grafana:11.2.0

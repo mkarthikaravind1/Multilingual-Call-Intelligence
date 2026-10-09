@@ -4,10 +4,15 @@ global:
   scrape_interval: 15s
   evaluation_interval: 30s
 
-# The production alert rules, so Prometheus' Alerts page shows them.
-# Nothing sends emails locally (no Alertmanager).
+# The production alert rules. Firing alerts go to the local Alertmanager,
+# whose e-mails end up in Mailpit (http://localhost:8025), not in any inbox.
 rule_files:
   - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   - job_name: call-intelligence-backend

@@ -1,0 +1,97 @@
+{{/*
+  Alert e-mails: subject, HTML body and plain-text body.
+
+  entrypoint.sh copies this file to /tmp/templates/ and fills in
+  ${GRAFANA_URL} (the address people open Grafana at; may be empty, then
+  the dashboard link is left out). Times are UTC.
+
+  Each alert's "description" annotation says what to check first, so the
+  e-mail shows it prominently.
+*/}}
+
+{{ define "email.subject" -}}
+[Call Intelligence] {{ if eq .Status "firing" }}FIRING{{ if gt (len .Alerts.Firing) 1 }} x{{ len .Alerts.Firing }}{{ end }}{{ else }}RESOLVED{{ end }}
+{{- with .CommonLabels.severity }} {{ . | toUpper }}{{ end }}: {{ .GroupLabels.alertname }}
+{{- with .CommonAnnotations.summary }} - {{ . }}{{ end }}
+{{- end }}
+
+{{/* Labels worth showing besides alertname and severity, e.g. dependency. */}}
+{{ define "email.extra_labels" -}}
+{{ range .Labels.SortedPairs }}{{ if and (ne .Name "alertname") (ne .Name "severity") (ne .Name "job") }}{{ .Name }}={{ .Value }} {{ end }}{{ end }}
+{{- end }}
+
+{{ define "email.text" -}}
+{{ $dashboard := "${GRAFANA_URL}" -}}
+{{ if .Alerts.Firing -}}
+{{ len .Alerts.Firing }} alert(s) firing:
+
+{{ range .Alerts.Firing -}}
+* {{ .Labels.alertname }} ({{ .Labels.severity }}) {{ template "email.extra_labels" . }}
+  {{ .Annotations.summary }}
+  What to check: {{ .Annotations.description }}
+  Since: {{ .StartsAt.UTC.Format "02 Jan 2006 15:04 UTC" }}
+
+{{ end }}{{ end -}}
+{{ if .Alerts.Resolved -}}
+{{ len .Alerts.Resolved }} alert(s) resolved:
+
+{{ range .Alerts.Resolved -}}
+* {{ .Labels.alertname }} {{ template "email.extra_labels" . }}
+  {{ .Annotations.summary }}
+  From {{ .StartsAt.UTC.Format "02 Jan 2006 15:04" }} to {{ .EndsAt.UTC.Format "02 Jan 2006 15:04 UTC" }}
+
+{{ end }}{{ end -}}
+{{ if $dashboard }}Dashboard: {{ $dashboard }}/d/call-intelligence
+{{ end -}}
+{{- end }}
+
+{{ define "email.html" -}}
+{{ $dashboard := "${GRAFANA_URL}" -}}
+<!doctype html>
+<html>
+<body style="margin:0;padding:16px;background:#f4f5f7;font-family:Segoe UI,Arial,sans-serif;color:#1f2328;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #d0d7de;border-radius:6px;">
+  <tr>
+    <td style="padding:16px 20px;border-bottom:1px solid #d0d7de;">
+      <div style="font-size:12px;color:#57606a;">Multilingual Call Intelligence</div>
+      <div style="font-size:18px;font-weight:600;margin-top:4px;">
+        {{ if eq .Status "firing" }}{{ len .Alerts.Firing }} alert(s) firing{{ else }}All clear{{ end }}: {{ .GroupLabels.alertname }}
+      </div>
+    </td>
+  </tr>
+  {{ range .Alerts.Firing }}
+  <tr>
+    <td style="padding:14px 20px;border-bottom:1px solid #eaeef2;border-left:4px solid {{ if eq .Labels.severity "critical" }}#cf222e{{ else }}#bf8700{{ end }};">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:{{ if eq .Labels.severity "critical" }}#cf222e{{ else }}#9a6700{{ end }};">
+        FIRING · {{ .Labels.severity | toUpper }}
+      </div>
+      <div style="font-size:15px;font-weight:600;margin-top:4px;">{{ .Annotations.summary }}</div>
+      <div style="font-size:14px;margin-top:8px;"><strong>What to check:</strong> {{ .Annotations.description }}</div>
+      <div style="font-size:12px;color:#57606a;margin-top:8px;">
+        {{ .Labels.alertname }} {{ template "email.extra_labels" . }}· since {{ .StartsAt.UTC.Format "02 Jan 2006 15:04 UTC" }}
+      </div>
+    </td>
+  </tr>
+  {{ end }}
+  {{ range .Alerts.Resolved }}
+  <tr>
+    <td style="padding:14px 20px;border-bottom:1px solid #eaeef2;border-left:4px solid #1a7f37;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:#1a7f37;">RESOLVED</div>
+      <div style="font-size:15px;font-weight:600;margin-top:4px;">{{ .Annotations.summary }}</div>
+      <div style="font-size:12px;color:#57606a;margin-top:8px;">
+        {{ .Labels.alertname }} {{ template "email.extra_labels" . }}· {{ .StartsAt.UTC.Format "02 Jan 2006 15:04" }} to {{ .EndsAt.UTC.Format "02 Jan 2006 15:04 UTC" }}
+      </div>
+    </td>
+  </tr>
+  {{ end }}
+  {{ if $dashboard }}
+  <tr>
+    <td style="padding:16px 20px;">
+      <a href="{{ $dashboard }}/d/call-intelligence" style="display:inline-block;padding:8px 14px;background:#0969da;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;">Open the Grafana dashboard</a>
+    </td>
+  </tr>
+  {{ end }}
+</table>
+</body>
+</html>
+{{- end }}

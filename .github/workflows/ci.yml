@@ -84,3 +84,46 @@ jobs:
           # env_file in the production stack points at deploy/.env.production.
           cp deploy/.env.production.example deploy/.env.production
           docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production config --quiet
+          docker compose -f deploy/monitoring/local/docker-compose.yml config --quiet
+
+  # Read-only checks in throwaway containers: nothing is scraped and no
+  # e-mail is sent.
+  monitoring:
+    name: Monitoring config (Prometheus, Alertmanager)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/monitoring
+    steps:
+      - uses: actions/checkout@v4
+
+      # Production and local prometheus.yml, each with the alert rules.
+      - name: Check the Prometheus configs and alert rules
+        run: |
+          for config in prometheus/prometheus.yml local/prometheus.yml; do
+            echo "== $config"
+            docker run --rm --entrypoint /bin/sh \
+              -v "$PWD/$config:/etc/prometheus/prometheus.yml:ro" \
+              -v "$PWD/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro" \
+              prom/prometheus:v2.53.2 \
+              -c 'touch /tmp/metrics_token && promtool check config /etc/prometheus/prometheus.yml'
+          done
+
+      # Renders alertmanager.yml and the e-mail template the way the container
+      # does at start-up, then runs amtool check-config and renders each
+      # template with sample data (entrypoint.sh --check).
+      - name: Check the Alertmanager config and e-mail template
+        run: |
+          check() {
+            docker run --rm --entrypoint /bin/sh "$@" \
+              -v "$PWD/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro" \
+              -v "$PWD/alertmanager/templates:/etc/alertmanager/templates:ro" \
+              -v "$PWD/alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro" \
+              prom/alertmanager:v0.27.0 /etc/alertmanager/entrypoint.sh --check
+          }
+          echo "== production settings"
+          check -e ALERT_EMAIL_TO=oncall@example.com -e SMTP_SMARTHOST=smtp.example.com:587 \
+            -e SMTP_USERNAME=alerts@example.com -e GRAFANA_URL=https://grafana.example.com
+          echo "== local (Mailpit) settings"
+          check -e ALERT_EMAIL_TO=oncall@call-intelligence.test -e SMTP_SMARTHOST=mailpit:1025 \
+            -e SMTP_REQUIRE_TLS=false

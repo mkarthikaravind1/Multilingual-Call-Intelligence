@@ -1,12 +1,17 @@
 # Alert e-mails. The ${...} values are filled in from deploy/.env.production
 # when the container starts (see docker-compose.prod.yml); the SMTP password
-# is read from a file, never written into this config.
+# is read from a file, never written into this config. The local stack
+# (deploy/monitoring/local) uses this same file, pointed at Mailpit.
 global:
   smtp_smarthost: "${SMTP_SMARTHOST}"
   smtp_from: "${ALERT_EMAIL_FROM}"
   smtp_auth_username: "${SMTP_USERNAME}"
   smtp_auth_password_file: /tmp/smtp_password
-  smtp_require_tls: true
+  smtp_require_tls: ${SMTP_REQUIRE_TLS}
+
+# Subject and body layout: templates/email.tmpl (copied here by entrypoint.sh).
+templates:
+  - /tmp/templates/*.tmpl
 
 route:
   receiver: email
@@ -24,6 +29,10 @@ receivers:
     email_configs:
       - to: "${ALERT_EMAIL_TO}"
         send_resolved: true
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+        text: '{{ template "email.text" . }}'
 
 inhibit_rules:
   # When the backend is down every other alert about it is noise.

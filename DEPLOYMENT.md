@@ -177,7 +177,7 @@ in `deploy/monitoring/`:
 | Service      | What it does                                                     |
 |--------------|------------------------------------------------------------------|
 | prometheus   | Scrapes the backend every 15 s (sends `METRICS_TOKEN`); keeps 30 days (`PROMETHEUS_RETENTION`). |
-| alertmanager | E-mails alerts to `ALERT_EMAIL_TO` through `SMTP_SMARTHOST` (STARTTLS), critical ones repeated hourly, others every 4 h, plus a "resolved" mail. |
+| alertmanager | E-mails alerts to `ALERT_EMAIL_TO` through `SMTP_SMARTHOST` (STARTTLS), critical ones repeated hourly, others every 4 h, plus a "resolved" mail. See [E-mail alerts](#e-mail-alerts). |
 | grafana      | Published on `GRAFANA_PORT` (3000). Sign in with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`. Opens on the **Multilingual Call Intelligence** dashboard. |
 
 Set the monitoring values in `deploy/.env.production` (see the example
@@ -200,10 +200,76 @@ Alert rules (`deploy/monitoring/prometheus/alerts.yml`):
 | CriticalEscalationOpen | a critical escalation is unacknowledged for 15 min |
 
 The thresholds are starting points. Tune them once you know real call
-volumes. To check the configuration after editing it:
+volumes.
+
+#### E-mail alerts
+
+Each e-mail's subject names the alert and its severity, e.g.
+`[Call Intelligence] FIRING CRITICAL: BackendDown - The backend is not
+answering /metrics`. The body lists every firing alert with its "what to
+check" description and start time (UTC), and links to the Grafana dashboard
+when `GRAFANA_URL` is set. When the alert clears, a "RESOLVED" e-mail
+follows. The layout is in `deploy/monitoring/alertmanager/templates/email.tmpl`.
+
+SMTP settings in `deploy/.env.production`:
+
+| Provider | `SMTP_SMARTHOST` | `SMTP_USERNAME` / `ALERT_EMAIL_FROM` | `SMTP_PASSWORD` |
+|---|---|---|---|
+| Gmail | `smtp.gmail.com:587` | your Gmail address | an App Password (myaccount.google.com/apppasswords; needs 2-Step Verification), without spaces |
+| Yahoo | `smtp.mail.yahoo.com:587` | your Yahoo address | an app password (login.yahoo.com/account/security → Generate app password) |
+| Other | `host:587` | as your provider says | as your provider says |
+
+Your normal account password does not work for Gmail or Yahoo. Keep
+`SMTP_REQUIRE_TLS=true` for any real mail server.
+
+**Try it locally first (no real e-mail).** The local monitoring stack runs
+the same Alertmanager config and template but sends to
+[Mailpit](https://mailpit.axllent.org/), a mail catcher that keeps every
+message and relays nothing:
 
 ```bash
-docker run --rm --entrypoint /bin/promtool -v "$PWD/deploy/monitoring/prometheus:/cfg" prom/prometheus:v2.53.2 check rules /cfg/alerts.yml
+docker compose -f deploy/monitoring/local/docker-compose.yml up -d
+```
+
+```bash
+sh deploy/monitoring/send-test-alert.sh
+```
+
+Open http://localhost:8025. The test e-mail arrives in about 30 s.
+`send-test-alert.sh critical` fires a critical one, and
+`send-test-alert.sh --resolve` (or `--resolve critical`) clears it, which
+sends the "resolved" e-mail. The script only talks to an Alertmanager on
+this machine. The real rules also fire locally: stop the backend for 2
+minutes and a `BackendDown` e-mail appears in Mailpit.
+
+**Test production on purpose.** This sends a real e-mail to `ALERT_EMAIL_TO`:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production exec alertmanager amtool alert add alertname=TestAlert severity=warning test=true --annotation=summary="Test alert: ignore this message" --annotation=description="Checking that alert e-mails arrive." --alertmanager.url=http://localhost:9093
+```
+
+If nothing arrives, the reason is in the Alertmanager log (look for
+`Notify for alerts failed`; `535` means a wrong username or app password):
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.production logs alertmanager
+```
+
+#### Checking the configuration
+
+CI runs these checks on every push. Run them yourself after editing the
+monitoring files. They only read the files and send nothing.
+
+Prometheus config and alert rules:
+
+```bash
+docker run --rm --entrypoint /bin/sh -v "$PWD/deploy/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" -v "$PWD/deploy/monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro" prom/prometheus:v2.53.2 -c "touch /tmp/metrics_token && promtool check config /etc/prometheus/prometheus.yml"
+```
+
+Alertmanager config and e-mail template, rendered as at start-up:
+
+```bash
+docker run --rm --entrypoint /bin/sh -e ALERT_EMAIL_TO=oncall@example.com -e SMTP_SMARTHOST=smtp.example.com:587 -v "$PWD/deploy/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.template.yml:ro" -v "$PWD/deploy/monitoring/alertmanager/templates:/etc/alertmanager/templates:ro" -v "$PWD/deploy/monitoring/alertmanager/entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro" prom/alertmanager:v0.27.0 /etc/alertmanager/entrypoint.sh --check
 ```
 
 Logs go to stdout. `LOG_FORMAT=json` writes one JSON object per line. Each
