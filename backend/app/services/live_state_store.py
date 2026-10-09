@@ -36,6 +36,14 @@ class LiveStateStore(ABC):
         """Release the lock if token still holds it."""
         raise NotImplementedError
 
+    def increment(self, key: str, ttl_seconds: float) -> int:
+        """Add one to a counter and return the new count. A new counter
+        expires ttl_seconds after its first increment. This default is not
+        atomic; the stores below are."""
+        count = int(self.get_json(key) or 0) + 1
+        self.set_json(key, count, ttl_seconds=ttl_seconds if count == 1 else None)
+        return count
+
     def ping(self) -> None:
         """Raise if the store is unreachable."""
 
@@ -59,6 +67,16 @@ class InMemoryLiveStateStore(LiveStateStore):
     def delete(self, key: str) -> None:
         with self._lock:
             self._values.pop(key, None)
+
+    def increment(self, key: str, ttl_seconds: float) -> int:
+        with self._lock:
+            raw = self._live(key)
+            if raw is None:
+                count, expires = 1, self._clock() + ttl_seconds
+            else:
+                count, expires = int(json.loads(raw)) + 1, self._values[key][1]
+            self._values[key] = (json.dumps(count), expires)
+        return count
 
     def acquire_lock(self, name: str, ttl_seconds: float) -> str | None:
         token = f"{id(self)}-{time.time_ns()}"
@@ -92,6 +110,13 @@ class RedisClient(Protocol):
     def ping(self) -> object: ...
 
 
+# Adds one; a new counter expires ARGV[1] seconds after it was started.
+_INCREMENT_SCRIPT = (
+    "local n = redis.call('incr', KEYS[1]) "
+    "if n == 1 then redis.call('expire', KEYS[1], ARGV[1]) end "
+    "return n"
+)
+
 # Deletes the lock only if it still holds our token (never someone else's).
 _RELEASE_SCRIPT = (
     "if redis.call('get', KEYS[1]) == ARGV[1] then "
@@ -117,6 +142,11 @@ class RedisLiveStateStore(LiveStateStore):
 
     def delete(self, key: str) -> None:
         self._client.delete(self._key(key))
+
+    def increment(self, key: str, ttl_seconds: float) -> int:
+        return int(
+            self._client.eval(_INCREMENT_SCRIPT, 1, self._key(key), str(_seconds(ttl_seconds)))
+        )
 
     def acquire_lock(self, name: str, ttl_seconds: float) -> str | None:
         token = f"{time.time_ns()}-{threading.get_ident()}"

@@ -4,7 +4,7 @@ import threading
 
 from app.domain.user import User, UserRole
 from app.domain.user_repository import UserRepository
-from app.security.password import hash_password
+from app.security.password import MAX_PASSWORD_BYTES, hash_password, password_too_long
 from app.services.auth_service import AuthService, EmailAlreadyRegisteredError
 
 logger = logging.getLogger(__name__)
@@ -126,4 +126,9 @@ def _check_password(password: str) -> None:
     if not isinstance(password, str) or len(password) < MIN_PASSWORD_LENGTH:
         raise UserManagementError(
             f"Passwords must be at least {MIN_PASSWORD_LENGTH} characters long."
+        )
+    if password_too_long(password):
+        raise UserManagementError(
+            f"Passwords must be at most {MAX_PASSWORD_BYTES} bytes long "
+            f"(about {MAX_PASSWORD_BYTES} English letters, fewer in Indian scripts)."
         )

@@ -132,6 +132,7 @@ from app.services.price_list_repository import (
     PriceListRepository,
 )
 from app.services.price_list_service import PriceListService
+from app.services.login_throttle import LoginLimits, LoginThrottle
 from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 
 logger = logging.getLogger(__name__)
@@ -488,6 +489,14 @@ def build_api_services(
             complaint_categories=complaint_category_catalog.names,
         ),
         auth=auth_service,
+        login_throttle=LoginThrottle(
+            live_state_store,
+            LoginLimits(
+                max_failures_per_email=settings.login_max_failures_per_email,
+                max_failures_per_address=settings.login_max_failures_per_address,
+                window_seconds=settings.login_failure_window_seconds,
+            ),
+        ),
         user_repository=user_repository,
         telephony_provider=telephony_provider,
         telephony_call_service=telephony_call_service,

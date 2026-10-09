@@ -8,6 +8,7 @@ from app.ai.asr.provider import ASRProvider
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
+from app.services.login_throttle import LoginThrottle
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_recording_store import CallRecordingStore
 from app.services.call_listing import CallListingQuery
@@ -37,6 +38,8 @@ class ApiServices:
 
     learning: LearningManagementService | None = None
     auth: AuthService | None = None
+    # Limits password guessing; None: no limit (e.g. some tests).
+    login_throttle: LoginThrottle | None = None
     user_repository: UserRepository | None = None
 
     telephony_provider: TelephonyProvider | None = None
@@ -158,6 +161,10 @@ def get_live_call_handler(connection: HTTPConnection) -> LiveCallHandler:
 
 def get_auth_service(request: Request) -> AuthService:
     return request.app.state.services.auth
+
+
+def get_login_throttle(request: Request) -> LoginThrottle | None:
+    return request.app.state.services.login_throttle
 
 
 def get_user_repository(request: Request) -> UserRepository:
