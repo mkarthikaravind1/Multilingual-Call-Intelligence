@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies import (
     get_call_service,
+    get_complaint_category_catalog,
     get_complaint_lifecycle_service,
     get_emerging_complaint_service,
     get_optional_call_customer_service,
@@ -12,11 +13,13 @@ from app.api.security_dependencies import get_current_user, require_roles
 from app.api.v1.complaint_schemas import (
     CallComplaintsResponse,
     ComplaintActionRequest,
+    ComplaintCategoryResponse,
     ComplaintResponse,
     DiscoveryRunResponse,
     EmergingComplaintResponse,
     EmergingComplaintsResponse,
     ReviewEmergingComplaintRequest,
+    to_complaint_category_response,
     to_complaint_response,
     to_discovery_run_response,
     to_emerging_complaint_response,
@@ -26,6 +29,7 @@ from app.domain.emerging_complaint_candidate import EmergingComplaintReviewStatu
 from app.domain.user import User, UserRole
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
+from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
 
@@ -70,6 +74,17 @@ def list_complaints(
     """Open complaints: follow-ups first, then the oldest first."""
     views = service.list_queue(state, limit, categories=category, stages=stage)
     return _responses(views, call_customer_service)
+
+
+# Before /{complaint_id}, which would otherwise match "categories".
+@router.get("/categories", response_model=list[ComplaintCategoryResponse])
+def list_complaint_categories(
+    catalog: ComplaintCategoryCatalog = Depends(get_complaint_category_catalog),
+    _: User = Depends(get_current_user),
+) -> list[ComplaintCategoryResponse]:
+    """The categories detection reports now: built-ins, then accepted
+    emerging themes by name, then "Other"."""
+    return [to_complaint_category_response(c) for c in catalog.categories()]
 
 
 @router.get("/{complaint_id}", response_model=ComplaintResponse)
@@ -166,5 +181,12 @@ def review_emerging_complaint(
     user: User = Depends(_SUPERVISORS),
 ) -> EmergingComplaintResponse:
     return to_emerging_complaint_response(
-        service.review(candidate_id, payload.decision, user.email, payload.note)
+        service.review(
+            candidate_id,
+            payload.decision,
+            user.email,
+            payload.note,
+            category_name=payload.category_name,
+            category_description=payload.category_description,
+        )
     )

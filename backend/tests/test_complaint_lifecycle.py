@@ -75,9 +75,13 @@ def test_transition_timestamp_before_last_updated_rejected():
         record.transition_to(ComplaintLifecycleStatus.PROBED, at=4.0)
 
 
-def test_invalid_category_rejected():
+def test_blank_category_rejected():
     with pytest.raises(ValueError):
-        _record(category="Not A Real Category")
+        _record(category=" ")
+
+
+def test_category_from_an_accepted_theme_is_kept():
+    assert _record(category="Wiper Noise").category == "Wiper Noise"
 
 
 def test_missing_ids_rejected():

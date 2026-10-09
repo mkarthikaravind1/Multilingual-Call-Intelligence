@@ -36,8 +36,10 @@ def test_confidence_boundaries_are_valid(confidence):
     assert ComplaintDetectionResult("Cost", confidence, "evidence").confidence == confidence
 
 
-@pytest.mark.parametrize("category", ["Banana", "cost", ""])
+@pytest.mark.parametrize("category", ["", "  ", " Cost", 7])
 def test_invalid_category_is_rejected(category):
+    # Unknown names ("Banana") are refused by the provider against the
+    # category catalog, not here: accepted themes add categories.
     with pytest.raises(ValueError, match="Unsupported complaint category"):
         ComplaintDetectionResult(category, 0.5, "evidence")
 

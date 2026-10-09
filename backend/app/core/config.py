@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     # Background runs start at most this often (a burst of completed calls
     # waits and is covered by one run). Manual runs are not limited.
     emerging_complaint_discovery_min_interval_seconds: float = 300.0
+    # Accepted themes become complaint categories; each API instance
+    # re-reads them at most this often (seconds).
+    complaint_category_cache_seconds: float = 30.0
     redis_key_prefix: str = "conversation_coverage"
     redis_ttl_seconds: float = 86400.0
     redis_socket_timeout_seconds: float = 5.0

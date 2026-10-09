@@ -129,11 +129,20 @@ class NextQuestionService:
         coverage: ConversationCoverage,
     ) -> ComplaintCoverage | None:
 
+        # Built-in categories in their fixed order, then any others
+        # (accepted emerging themes) in the order they were raised.
         for category in COMPLAINT_CATEGORIES:
             complaint = coverage.get(category)
 
             if (
                 complaint is not None
+                and complaint.status in _ACTIONABLE_STATUSES
+            ):
+                return complaint
+
+        for complaint in coverage.complaints:
+            if (
+                complaint.category not in COMPLAINT_CATEGORIES
                 and complaint.status in _ACTIONABLE_STATUSES
             ):
                 return complaint

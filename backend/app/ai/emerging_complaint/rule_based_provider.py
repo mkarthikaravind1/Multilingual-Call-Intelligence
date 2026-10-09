@@ -75,8 +75,9 @@ class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProv
         call_ids_by_phrase: dict[str, list[str]] = defaultdict(list)
         evidence_by_phrase: dict[str, list[str]] = defaultdict(list)
 
+        known = _NORMALIZED_CATEGORIES | {_normalize(name) for name in request.known_categories}
         for record in request.call_records:
-            self._collect_phrases(record, call_ids_by_phrase, evidence_by_phrase)
+            self._collect_phrases(record, call_ids_by_phrase, evidence_by_phrase, known)
 
         total_calls = len(request.call_records)
         candidates = []
@@ -107,6 +108,7 @@ class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProv
         record: CallComplaintRecord,
         call_ids_by_phrase: dict[str, list[str]],
         evidence_by_phrase: dict[str, list[str]],
+        known_categories: frozenset[str] = _NORMALIZED_CATEGORIES,
     ) -> None:
         for utterance in record.utterances:
             if utterance.speaker_role != SpeakerRole.CUSTOMER:
@@ -115,7 +117,7 @@ class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProv
             normalized = _normalize(utterance.transcript)
 
             # An existing category, however phrased, is not "emerging".
-            if normalized in _NORMALIZED_CATEGORIES:
+            if normalized in known_categories:
                 continue
 
             if len(normalized.split()) < MIN_PHRASE_WORDS:

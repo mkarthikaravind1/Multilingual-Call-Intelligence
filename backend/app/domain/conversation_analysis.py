@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from app.core.constants import COMPLAINT_CATEGORIES, SUPPORTED_LANGUAGES
+from app.core.constants import SUPPORTED_LANGUAGES
+from app.domain.complaint_category import require_category_name
 
 
 class Sentiment(str, Enum):
@@ -16,10 +17,7 @@ class ComplaintDetection:
     confidence: float
 
     def __post_init__(self) -> None:
-        if self.category not in COMPLAINT_CATEGORIES:
-            raise ValueError(
-                f"Unsupported complaint category: {self.category!r}."
-            )
+        require_category_name(self.category)
 
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("confidence must be between 0.0 and 1.0.")

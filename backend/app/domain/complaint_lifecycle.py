@@ -2,7 +2,7 @@ import dataclasses
 from dataclasses import dataclass
 from enum import Enum
 
-from app.core.constants import COMPLAINT_CATEGORIES
+from app.domain.complaint_category import require_category_name
 
 
 class ComplaintLifecycleStatus(str, Enum):
@@ -100,8 +100,7 @@ class ComplaintLifecycleRecord:
         _require_id(self.complaint_id, "complaint_id")
         _require_id(self.call_id, "call_id")
 
-        if self.category not in COMPLAINT_CATEGORIES:
-            raise ValueError(f"Unsupported complaint category: {self.category!r}.")
+        require_category_name(self.category)
 
         if not isinstance(self.status, ComplaintLifecycleStatus):
             raise TypeError(

@@ -67,9 +67,13 @@ def test_complaint_summary_valid():
     assert summary.confidence == 0.8
 
 
-def test_complaint_summary_rejects_unknown_category():
+def test_complaint_summary_rejects_blank_category():
     with pytest.raises(ValueError):
-        make_complaint_summary(category="Not A Category")
+        make_complaint_summary(category=" ")
+
+
+def test_complaint_summary_keeps_a_category_from_an_accepted_theme():
+    assert make_complaint_summary(category="Wiper Noise").category == "Wiper Noise"
 
 
 def test_complaint_summary_rejects_empty_description():

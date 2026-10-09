@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.call_customer import CallCustomerLink
+from app.domain.complaint_category import MAX_CUSTOM_CATEGORY_NAME_LENGTH, ComplaintCategory
 from app.domain.complaint_lifecycle import ComplaintLifecycleStatus
 from app.domain.emerging_complaint_candidate import (
     EmergingComplaintCandidate,
@@ -103,6 +104,9 @@ class EmergingComplaintResponse(_Response):
     reviewed_by: str | None
     reviewed_at: float | None
     review_note: str | None
+    # The complaint category it is detected as while accepted.
+    category_name: str | None
+    category_description: str | None
 
 
 class DiscoveryRunResponse(_Response):
@@ -122,6 +126,27 @@ class EmergingComplaintsResponse(BaseModel):
 class ReviewEmergingComplaintRequest(_Request):
     decision: EmergingComplaintReviewStatus
     note: str | None = Field(default=None, max_length=500)
+    # Accepting only: the category's name (default: the proposed name) and
+    # what counts as it (default: the theme's description).
+    category_name: str | None = Field(default=None, max_length=MAX_CUSTOM_CATEGORY_NAME_LENGTH)
+    category_description: str | None = Field(default=None, max_length=500)
+
+
+class ComplaintCategoryResponse(BaseModel):
+    name: str
+    # Custom categories (accepted emerging themes) only.
+    description: str | None
+    built_in: bool
+    candidate_id: str | None
+
+
+def to_complaint_category_response(category: ComplaintCategory) -> ComplaintCategoryResponse:
+    return ComplaintCategoryResponse(
+        name=category.name,
+        description=category.description,
+        built_in=category.built_in,
+        candidate_id=category.candidate_id,
+    )
 
 
 def to_emerging_complaint_response(

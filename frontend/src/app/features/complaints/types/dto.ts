@@ -16,7 +16,9 @@ export type ComplaintQueueState = 'open' | 'resolved' | 'all'
 // "outcome" is resolved or unresolved.
 export type ComplaintStage = 'detected' | 'probed' | 'covered' | 'outcome' | 'follow_up'
 
-// Mirrors COMPLAINT_CATEGORIES in backend/app/core/constants.py.
+// The built-in categories (COMPLAINT_CATEGORIES in backend/app/core/constants.py).
+// The full list, with accepted emerging themes, comes from
+// GET /complaints/categories; this is the fallback until it answers.
 export const COMPLAINT_CATEGORIES = [
   'Cost',
   'Hygiene',
@@ -29,6 +31,17 @@ export const COMPLAINT_CATEGORIES = [
   'Documentation',
   'Other',
 ] as const
+
+// Longest name an accepted emerging theme's category may have.
+export const MAX_CUSTOM_CATEGORY_NAME_LENGTH = 40
+
+export interface ComplaintCategoryDto {
+  name: string
+  // What counts as it; custom categories (accepted themes) only.
+  description: string | null
+  built_in: boolean
+  candidate_id: string | null
+}
 
 export interface ComplaintQueueFilters {
   // Any of these; empty means all.
@@ -89,6 +102,10 @@ export interface EmergingComplaintDto {
   reviewed_by: string | null
   reviewed_at: number | null
   review_note: string | null
+  // The complaint category it is detected as while accepted. null for
+  // themes accepted before categories existed (they add none).
+  category_name: string | null
+  category_description: string | null
 }
 
 export interface DiscoveryRunDto {

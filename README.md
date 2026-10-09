@@ -66,7 +66,8 @@ Implemented:
   SMS summary to the customer.
 - **Complaint lifecycle** across calls, with customer history from the CRM
   boundary.
-- **Emerging-complaint discovery** across calls, reviewed by supervisors.
+- **Emerging-complaint discovery** across calls, reviewed by supervisors;
+  an accepted theme becomes a new complaint category.
 - **AI Improvement Center**: a human-in-the-loop learning loop (below).
 - Production readiness: JWT auth, role checks, multi-instance live state in
   Redis, migrations, health/readiness probes, Prometheus metrics, structured
@@ -238,8 +239,14 @@ flowchart LR
 
 The AI Improvement Center also hosts emerging-complaint review:
 discovery finds themes recurring across calls that match no known
-category and supervisors accept or reject them. (An accepted theme is not
-yet turned into a detectable category automatically.)
+category and supervisors accept or reject them. Accepting a theme makes it
+a complaint category: the supervisor names it (up to 40 characters) and
+says what counts as it, and from then on complaint detection reports it
+on new calls, next questions follow it up, and it appears in the
+complaint filters and feedback options. Each API instance picks up a
+newly accepted category within `COMPLAINT_CATEGORY_CACHE_SECONDS` (30 s).
+Rejecting or reopening the theme stops detection; calls already labelled
+keep the category.
 
 ## Architecture
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from app.core.constants import COMPLAINT_CATEGORIES
+from app.domain.complaint_category import require_category_name
 
 
 class ComplaintCoverageStatus(str, Enum):
@@ -19,10 +19,7 @@ class ComplaintCoverage:
     status: ComplaintCoverageStatus = ComplaintCoverageStatus.NOT_RAISED
 
     def __post_init__(self) -> None:
-        if self.category not in COMPLAINT_CATEGORIES:
-            raise ValueError(
-                f"Unsupported complaint category: {self.category!r}."
-            )
+        require_category_name(self.category)
 
     def detect(self) -> None:
         self._move_to(ComplaintCoverageStatus.DETECTED)

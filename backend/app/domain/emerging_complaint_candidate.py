@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.core.constants import COMPLAINT_CATEGORIES
+from app.domain.complaint_category import MAX_CUSTOM_CATEGORY_NAME_LENGTH
 
 
 class EmergingComplaintReviewStatus(str, Enum):
@@ -21,6 +22,27 @@ class EmergingComplaintReviewError(ValueError):
 def _optional_text(value: str | None, field_name: str) -> None:
     if value is not None and (not isinstance(value, str) or not value.strip()):
         raise ValueError(f"{field_name} must not be blank when provided.")
+
+
+def _collapse_spaces(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _require_category_name(value: object) -> None:
+    """The name an accepted theme is detected under: short, and not a
+    built-in category (ignoring case)."""
+    if not isinstance(value, str) or not value.strip():
+        raise EmergingComplaintReviewError("The category name must not be blank.")
+    if len(value) > MAX_CUSTOM_CATEGORY_NAME_LENGTH:
+        raise EmergingComplaintReviewError(
+            f"The category name must be at most {MAX_CUSTOM_CATEGORY_NAME_LENGTH} "
+            f"characters; {value!r} has {len(value)}."
+        )
+    clash = next((c for c in COMPLAINT_CATEGORIES if c.casefold() == value.casefold()), None)
+    if clash is not None:
+        raise EmergingComplaintReviewError(
+            f"{clash!r} is already a built-in category; choose another name."
+        )
 
 
 def _require_confidence(value: float) -> None:
@@ -67,6 +89,12 @@ class EmergingComplaintCandidate:
     reviewed_by: str | None = None
     reviewed_at: float | None = None
     review_note: str | None = None
+    # Set when a supervisor accepts the theme. While it is accepted,
+    # complaint detection reports it as this category, described to the
+    # detector by category_description. Kept if the theme is later
+    # rejected or reopened (calls already labelled keep the name).
+    category_name: str | None = None
+    category_description: str | None = None
 
     def __post_init__(self) -> None:
         if not self.candidate_id.strip():
@@ -119,6 +147,11 @@ class EmergingComplaintCandidate:
             raise ValueError("last_seen_at cannot be before first_seen_at.")
         _optional_text(self.reviewed_by, "reviewed_by")
         _optional_text(self.review_note, "review_note")
+        _optional_text(self.category_description, "category_description")
+        # An accepted candidate without one (accepted before categories
+        # existed) adds no category until it is accepted again.
+        if self.category_name is not None:
+            _require_category_name(self.category_name)
 
     def first_stored(self, at: float) -> "EmergingComplaintCandidate":
         return dataclasses.replace(self, first_seen_at=at, last_seen_at=at)
@@ -146,8 +179,16 @@ class EmergingComplaintCandidate:
         by: str,
         at: float,
         note: str | None = None,
+        category_name: str | None = None,
+        category_description: str | None = None,
     ) -> "EmergingComplaintCandidate":
-        """Accept, reject, or reopen (back to pending_review) the candidate."""
+        """Accept, reject, or reopen (back to pending_review) the candidate.
+
+        Accepting makes it a complaint category named category_name
+        (default: the proposed name), described by category_description
+        (default: the candidate's description). Checking the name against
+        the other categories is EmergingComplaintService's job.
+        """
         if not isinstance(decision, EmergingComplaintReviewStatus):
             raise TypeError("decision must be an EmergingComplaintReviewStatus.")
         if decision is self.status:
@@ -158,10 +199,17 @@ class EmergingComplaintCandidate:
             return dataclasses.replace(
                 self, status=decision, reviewed_by=None, reviewed_at=None, review_note=None
             )
+        accepted = {}
+        if decision is EmergingComplaintReviewStatus.ACCEPTED:
+            name = _collapse_spaces(category_name or self.proposed_name)
+            _require_category_name(name)
+            description = (category_description or "").strip() or self.description
+            accepted = {"category_name": name, "category_description": description}
         return dataclasses.replace(
             self,
             status=decision,
             reviewed_by=by,
             reviewed_at=at,
             review_note=note.strip() if note and note.strip() else None,
+            **accepted,
         )

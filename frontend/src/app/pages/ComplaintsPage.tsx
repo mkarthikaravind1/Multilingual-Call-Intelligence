@@ -58,8 +58,28 @@ export function ComplaintsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadCount, setReloadCount] = useState(0)
+  // Built-ins plus accepted emerging themes; the built-ins until loaded.
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([...COMPLAINT_CATEGORIES])
 
-  const filterKey = `${view}|${categories.join(',')}|${stages.join(',')}`
+  useEffect(() => {
+    let cancelled = false
+    complaintRestService
+      .listCategories()
+      .then((list) => {
+        if (!cancelled) {
+          setCategoryOptions(list.map((category) => category.name))
+        }
+      })
+      .catch(() => {
+        // Keep the built-in categories; the queue still loads.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // JSON, not a joined string: category names may contain commas.
+  const filterKey = JSON.stringify({ view, categories, stages })
   const hasFilters = categories.length > 0 || stages.length > 0
 
   const load = useCallback(
@@ -78,14 +98,14 @@ export function ComplaintsPage() {
 
   useEffect(() => {
     let cancelled = false
-    const [state, categoryList, stageList] = filterKey.split('|')
-    const filters = {
-      categories: categoryList ? categoryList.split(',') : [],
-      stages: (stageList ? stageList.split(',') : []) as ComplaintStage[],
+    const { view: state, ...filters } = JSON.parse(filterKey) as {
+      view: ComplaintQueueState
+      categories: string[]
+      stages: ComplaintStage[]
     }
     const refresh = () => {
       if (!cancelled) {
-        void load(state as ComplaintQueueState, filters)
+        void load(state, filters)
       }
     }
     refresh()
@@ -176,7 +196,7 @@ export function ComplaintsPage() {
 
         <fieldset className="call-filters__checks">
           <legend>Category</legend>
-          {COMPLAINT_CATEGORIES.map((category) => (
+          {categoryOptions.map((category) => (
             <label key={category} className="call-filters__check">
               <input
                 type="checkbox"

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from app.core.constants import COMPLAINT_CATEGORIES
+from app.domain.complaint_category import require_category_name
 from app.domain.conversation import Conversation
 from app.domain.runtime_improvement_context import RuntimeImprovementContext
 
@@ -13,11 +13,9 @@ class ComplaintDetectionResult:
     evidence: str
 
     def __post_init__(self) -> None:
-        if self.category not in COMPLAINT_CATEGORIES:
-            raise ValueError(
-                f"Unsupported complaint category: {self.category!r}. "
-                f"Must be one of {COMPLAINT_CATEGORIES}."
-            )
+        # Which categories may be reported is checked by the provider
+        # against the ComplaintCategoryCatalog.
+        require_category_name(self.category)
 
         if (
             isinstance(self.confidence, bool)

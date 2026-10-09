@@ -7,6 +7,7 @@ import { ApiError } from '../../../api/errors'
 import { StatePanel } from '../../../components/StatePanel'
 import { emergingComplaintRestService } from '../services/complaintRestService'
 
+import { MAX_CUSTOM_CATEGORY_NAME_LENGTH } from '../types/dto'
 import type {
   DiscoveryRunDto,
   EmergingComplaintDto,
@@ -62,6 +63,29 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAllEvidence, setShowAllEvidence] = useState(false)
+  // Accepting: the category the theme becomes (editable; the previous
+  // name if it was accepted before, else the proposed name).
+  const [categoryName, setCategoryName] = useState('')
+  const [categoryDescription, setCategoryDescription] = useState('')
+
+  const startDecision = (chosen: EmergingComplaintStatus) => {
+    if (chosen === 'accepted') {
+      setCategoryName(candidate.category_name ?? candidate.proposed_name)
+      setCategoryDescription(candidate.category_description ?? candidate.description)
+    }
+    setError(null)
+    setDecision(chosen)
+  }
+
+  const trimmedName = categoryName.trim()
+  const nameProblem =
+    decision !== 'accepted'
+      ? null
+      : trimmedName === ''
+        ? 'Give the category a name.'
+        : trimmedName.length > MAX_CUSTOM_CATEGORY_NAME_LENGTH
+          ? `Shorten the name to ${MAX_CUSTOM_CATEGORY_NAME_LENGTH} characters or fewer (now ${trimmedName.length}).`
+          : null
 
   const submit = async (chosen: EmergingComplaintStatus) => {
     setIsSaving(true)
@@ -71,6 +95,9 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
         candidate.candidate_id,
         chosen,
         note,
+        chosen === 'accepted'
+          ? { name: categoryName, description: categoryDescription }
+          : undefined,
       )
       setDecision(null)
       setNote('')
@@ -86,6 +113,9 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
     ? candidate.evidence
     : candidate.evidence.slice(0, EVIDENCE_PREVIEW)
   const noteId = `emerging-note-${candidate.candidate_id}`
+  const nameId = `emerging-category-${candidate.candidate_id}`
+  const descriptionId = `emerging-category-description-${candidate.candidate_id}`
+  const detectedAs = candidate.status === 'accepted' ? candidate.category_name : null
 
   return (
     <article className="list-card">
@@ -99,10 +129,21 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
           <span className={`badge ${STATUS_BADGES[candidate.status]}`}>
             {STATUS_LABELS[candidate.status]}
           </span>
+          {detectedAs && (
+            <span className="badge badge--approved" title="New calls are checked for this category">
+              Detected as: {detectedAs}
+            </span>
+          )}
         </div>
       </div>
 
       <p>{candidate.description}</p>
+      {candidate.status === 'accepted' && !detectedAs && (
+        <p className="customer-panel__muted">
+          Accepted before themes became categories, so calls are not checked for it. Reopen and
+          accept it again to name the category.
+        </p>
+      )}
 
       <ul className="escalation-card__signals">
         {evidence.map((quote, index) => (
@@ -162,7 +203,7 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
                 type="button"
                 className="button"
                 disabled={isSaving}
-                onClick={() => setDecision('accepted')}
+                onClick={() => startDecision('accepted')}
               >
                 Accept theme
               </button>
@@ -170,7 +211,7 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
                 type="button"
                 className="button button--secondary"
                 disabled={isSaving}
-                onClick={() => setDecision('rejected')}
+                onClick={() => startDecision('rejected')}
               >
                 Reject
               </button>
@@ -190,6 +231,37 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
 
       {canReview && decision !== null && (
         <div className="escalation-card__resolve">
+          {decision === 'accepted' && (
+            <>
+              <p className="customer-panel__muted">
+                Accepting makes this a complaint category: new calls are checked for it, and it
+                appears in the complaint filters and feedback options.
+              </p>
+              <label htmlFor={nameId}>Category name</label>
+              <input
+                id={nameId}
+                type="text"
+                value={categoryName}
+                disabled={isSaving}
+                aria-invalid={nameProblem !== null}
+                aria-describedby={`${nameId}-hint`}
+                onChange={(event) => setCategoryName(event.target.value)}
+              />
+              <span id={`${nameId}-hint`} className="customer-panel__muted">
+                {nameProblem ??
+                  `A short name, e.g. "Wiper Noise" (${trimmedName.length}/${MAX_CUSTOM_CATEGORY_NAME_LENGTH}).`}
+              </span>
+              <label htmlFor={descriptionId}>What counts as this complaint</label>
+              <textarea
+                id={descriptionId}
+                rows={2}
+                maxLength={500}
+                value={categoryDescription}
+                disabled={isSaving}
+                onChange={(event) => setCategoryDescription(event.target.value)}
+              />
+            </>
+          )}
           <label htmlFor={noteId}>
             {decision === 'accepted'
               ? 'What should happen about it? (optional)'
@@ -207,10 +279,10 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
             <button
               type="button"
               className="button"
-              disabled={isSaving}
+              disabled={isSaving || nameProblem !== null}
               onClick={() => void submit(decision)}
             >
-              {isSaving ? 'Saving…' : decision === 'accepted' ? 'Accept theme' : 'Reject'}
+              {isSaving ? 'Saving…' : decision === 'accepted' ? 'Accept as category' : 'Reject'}
             </button>
             <button
               type="button"

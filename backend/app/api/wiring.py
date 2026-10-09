@@ -128,6 +128,7 @@ from app.services.price_list_repository import (
     PriceListRepository,
 )
 from app.services.price_list_service import PriceListService
+from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ def build_api_services(
     complaint_lifecycle_repository: ComplaintLifecycleRepository | None = None,
     emerging_complaint_repository: EmergingComplaintRepository | None = None,
     emerging_complaint_provider: EmergingComplaintDiscoveryProvider | None = None,
+    complaint_category_catalog: ComplaintCategoryCatalog | None = None,
     live_state_store: LiveStateStore | None = None,
     call_listing_query: CallListingQuery | None = None,
     price_list_repository: PriceListRepository | None = None,
@@ -269,14 +271,25 @@ def build_api_services(
         except Exception as exc:
             logger.warning("Falling back to rule-based emerging-complaint discovery: %s", exc)
             emerging_complaint_provider = RuleBasedEmergingComplaintDiscoveryProvider()
+    emerging_complaint_repository = (
+        emerging_complaint_repository or InMemoryEmergingComplaintRepository()
+    )
+    # Built-in categories plus accepted themes. Pass the catalog the
+    # complaint provider uses (main.py does) so an accept reaches it at once.
+    if complaint_category_catalog is None:
+        complaint_category_catalog = ComplaintCategoryCatalog(
+            emerging_complaint_repository,
+            cache_seconds=settings.complaint_category_cache_seconds,
+        )
     emerging_complaint_service = EmergingComplaintService(
-        emerging_complaint_repository or InMemoryEmergingComplaintRepository(),
+        emerging_complaint_repository,
         emerging_complaint_provider,
         call_service,
         coverage_repository,
         max_calls=settings.emerging_complaint_discovery_max_calls,
         store=live_state_store,
         min_interval_seconds=settings.emerging_complaint_discovery_min_interval_seconds,
+        catalog=complaint_category_catalog,
     )
 
     try:
@@ -462,6 +475,7 @@ def build_api_services(
             feedback_repository=feedback_repository,
             active_improvement_repository=active_improvement_repository,
             usage_repository=usage_repository,
+            complaint_categories=complaint_category_catalog.names,
         ),
         auth=auth_service,
         user_repository=user_repository,
@@ -482,6 +496,7 @@ def build_api_services(
         post_call_repair_service=post_call_repair_service,
         user_management_service=user_management_service,
         price_list_service=price_list_service,
+        complaint_category_catalog=complaint_category_catalog,
         background_jobs=background_jobs,
         warm_up=warm_up_live_models if live_chunk_processing_service is not None else None,
         health_checks={"live_state": live_state_store.ping} if shared_live_state else {},

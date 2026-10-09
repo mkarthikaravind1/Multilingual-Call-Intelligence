@@ -14,9 +14,11 @@ from app.ai.emerging_complaint.provider import (
 from app.domain.conversation import ConversationStatus
 from app.domain.emerging_complaint_candidate import (
     EmergingComplaintCandidate,
+    EmergingComplaintReviewError,
     EmergingComplaintReviewStatus,
 )
 from app.services.call_service import CallService
+from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
 from app.services.emerging_complaint_repository import EmergingComplaintRepository
 from app.services.live_state_store import LiveStateStore
@@ -66,6 +68,9 @@ class EmergingComplaintService:
     and share one run), only one instance runs at a time, and a run whose
     calls are exactly those the previous run read is skipped without asking
     the provider. Manual runs always ask the provider.
+
+    Accepting a candidate makes it a complaint category (see
+    ComplaintCategoryCatalog); its name must not clash with another one.
     """
 
     def __init__(
@@ -80,8 +85,10 @@ class EmergingComplaintService:
         store: LiveStateStore | None = None,
         min_interval_seconds: float = 0.0,
         sleep: Callable[[float], None] = time.sleep,
+        catalog: ComplaintCategoryCatalog | None = None,
     ) -> None:
         self._repository = repository
+        self._catalog = catalog or ComplaintCategoryCatalog(repository)
         # Shares the last run with every instance; per-instance without it.
         self._live_state = store
         self._provider = provider
@@ -222,7 +229,10 @@ class EmergingComplaintService:
                 return run
 
             discovered = self._provider.discover(
-                EmergingComplaintDiscoveryRequest(call_records=records)
+                EmergingComplaintDiscoveryRequest(
+                    call_records=records,
+                    known_categories=tuple(c.name for c in self._catalog.custom()),
+                )
             )
             new_count = 0
             for candidate in discovered:
@@ -258,14 +268,34 @@ class EmergingComplaintService:
         decision: EmergingComplaintReviewStatus,
         by: str,
         note: str | None = None,
+        category_name: str | None = None,
+        category_description: str | None = None,
     ) -> EmergingComplaintCandidate:
+        """Accepting names the category (default: the proposed name);
+        rejecting or reopening an accepted theme stops it being detected."""
         with self._lock:
             candidate = self._repository.get(candidate_id)
             if candidate is None:
                 raise EmergingComplaintNotFoundError(candidate_id)
-            reviewed = candidate.review(decision, by, self._clock(), note)
+            reviewed = candidate.review(
+                decision, by, self._clock(), note, category_name, category_description
+            )
+            if decision is EmergingComplaintReviewStatus.ACCEPTED:
+                clash = self._catalog.conflicting_name(reviewed.category_name, candidate_id)
+                if clash is not None:
+                    raise EmergingComplaintReviewError(
+                        f"There is already a category called {clash!r}; choose another name."
+                    )
             self._repository.save(reviewed)
-            return reviewed
+        # Only this instance refreshes at once; others within the cache time.
+        self._catalog.invalidate()
+        if decision is EmergingComplaintReviewStatus.ACCEPTED:
+            logger.info(
+                "Emerging theme %s accepted as complaint category %r",
+                candidate_id,
+                reviewed.category_name,
+            )
+        return reviewed
 
     def _store(self, discovered: EmergingComplaintCandidate, at: float) -> bool:
         discovered = _trim_evidence(discovered)

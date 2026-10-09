@@ -1,6 +1,6 @@
 from app.ai.question.provider import QuestionGenerationContext, QuestionSuggestionProvider
 from app.ai.question.translations import DETECTED_QUESTIONS, PROBED_QUESTIONS
-from app.core.constants import COMPLAINT_CATEGORIES
+from app.domain.complaint_category import OTHER_CATEGORY, is_built_in_category
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
 
@@ -33,15 +33,18 @@ _PROBED_QUESTIONS = {
 
 class RuleBasedQuestionProvider(QuestionSuggestionProvider):
     def generate(self, context: QuestionGenerationContext) -> QuestionSuggestion | None:
-        if context.category not in COMPLAINT_CATEGORIES:
-            raise ValueError(f"Unsupported complaint category: {context.category!r}.")
+        # A category from an accepted emerging theme has no fixed questions
+        # of its own; the general "Other" ones fit any complaint.
+        question_key = (
+            context.category if is_built_in_category(context.category) else OTHER_CATEGORY
+        )
 
         if context.status == ComplaintCoverageStatus.DETECTED:
-            question = _DETECTED_QUESTIONS[context.category]
+            question = _DETECTED_QUESTIONS[question_key]
             translations = DETECTED_QUESTIONS
             priority, confidence = 2, 0.6
         elif context.status == ComplaintCoverageStatus.PROBED:
-            question = _PROBED_QUESTIONS[context.category]
+            question = _PROBED_QUESTIONS[question_key]
             translations = PROBED_QUESTIONS
             priority, confidence = 1, 0.75
         else:
@@ -49,7 +52,7 @@ class RuleBasedQuestionProvider(QuestionSuggestionProvider):
 
         # In the customer's language when there is a translation, with the
         # English for the ICR; otherwise English.
-        translated = translations.get(context.language, {}).get(context.category)
+        translated = translations.get(context.language, {}).get(question_key)
         return QuestionSuggestion(
             question=translated or question,
             language=context.language if translated else "en",

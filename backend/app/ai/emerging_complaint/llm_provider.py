@@ -68,8 +68,13 @@ class LLMEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
         if len(transcripts_by_call) < _MIN_DISTINCT_CALLS:
             return ()
 
-        response = self._llm_client.complete(self._build_request(transcripts_by_call))
-        return self._parse_response(response.text, valid_call_ids=set(transcripts_by_call))
+        known = (*COMPLAINT_CATEGORIES, *request.known_categories)
+        response = self._llm_client.complete(self._build_request(transcripts_by_call, known))
+        return self._parse_response(
+            response.text,
+            valid_call_ids=set(transcripts_by_call),
+            known_categories=frozenset(_normalize(name) for name in known),
+        )
 
     @staticmethod
     def _customer_transcripts_by_call(
@@ -86,12 +91,16 @@ class LLMEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
                 transcripts_by_call[record.call_id] = customer_lines
         return transcripts_by_call
 
-    def _build_request(self, transcripts_by_call: dict[str, list[str]]) -> LLMRequest:
+    def _build_request(
+        self,
+        transcripts_by_call: dict[str, list[str]],
+        known_categories: tuple[str, ...] = tuple(COMPLAINT_CATEGORIES),
+    ) -> LLMRequest:
         calls_block = "\n\n".join(
             f"Call {call_id}:\n" + "\n".join(f"- {line}" for line in lines)
             for call_id, lines in transcripts_by_call.items()
         )
-        categories = "\n".join(f"- {c}" for c in COMPLAINT_CATEGORIES)
+        categories = "\n".join(f"- {c}" for c in known_categories)
         prompt = (
             "You analyse customer utterances from several automotive service calls "
             "and look for recurring complaint patterns - the same underlying issue, "
@@ -113,7 +122,10 @@ class LLMEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
         return LLMRequest(prompt=prompt)
 
     def _parse_response(
-        self, text: str, valid_call_ids: set[str]
+        self,
+        text: str,
+        valid_call_ids: set[str],
+        known_categories: frozenset[str] = _NORMALIZED_CATEGORIES,
     ) -> tuple[EmergingComplaintCandidate, ...]:
         if not isinstance(text, str):
             return self._reject("response text is not a string")
@@ -133,7 +145,7 @@ class LLMEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
         candidates = []
         for proposed_name, description, evidence, confidence in parsed:
             candidate = self._build_candidate(
-                proposed_name, description, evidence, confidence, valid_call_ids
+                proposed_name, description, evidence, confidence, valid_call_ids, known_categories
             )
             if candidate is not None:
                 candidates.append(candidate)
@@ -185,8 +197,9 @@ class LLMEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
         evidence: list[dict],
         confidence: float,
         valid_call_ids: set[str],
+        known_categories: frozenset[str] = _NORMALIZED_CATEGORIES,
     ) -> EmergingComplaintCandidate | None:
-        if _normalize(proposed_name) in _NORMALIZED_CATEGORIES:
+        if _normalize(proposed_name) in known_categories:
             logger.info("Skipping candidate matching an existing category: %s", proposed_name)
             return None
 

@@ -46,8 +46,16 @@ class EmergingComplaintDiscoveryRequest:
     """
 
     call_records: tuple[CallComplaintRecord, ...]
+    # Categories besides COMPLAINT_CATEGORIES that already exist (accepted
+    # themes); a provider must not propose them again.
+    known_categories: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.known_categories, tuple) or not all(
+            isinstance(name, str) for name in self.known_categories
+        ):
+            raise ValueError("known_categories must be a tuple of strings.")
+
         if not isinstance(self.call_records, tuple) or not all(
             isinstance(record, CallComplaintRecord) for record in self.call_records
         ):

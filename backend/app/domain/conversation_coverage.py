@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from app.core.constants import COMPLAINT_CATEGORIES
+from app.domain.complaint_category import require_category_name
 from app.domain.complaint_coverage import ComplaintCoverage
 
 @dataclass
@@ -19,10 +19,7 @@ class ConversationCoverage:
         return self._complaints.get(category)
 
     def add(self, category: str) -> ComplaintCoverage:
-        if category not in COMPLAINT_CATEGORIES:
-            raise ValueError(
-                f"Unsupported complaint category: {category!r}."
-            )
+        require_category_name(category)
 
         if category in self._complaints:
             raise ValueError(

@@ -1701,7 +1701,8 @@
   letter-spacing: 0.08em;
 }
 
-.escalation-card__resolve textarea {
+.escalation-card__resolve textarea,
+.escalation-card__resolve input[type='text'] {
   width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -1711,6 +1712,10 @@
   font: inherit;
   font-size: 0.9rem;
   resize: vertical;
+}
+
+.escalation-card__resolve input[aria-invalid='true'] {
+  border-color: var(--color-danger);
 }
 
 .call-history__status {

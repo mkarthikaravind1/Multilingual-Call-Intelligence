@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -45,10 +46,14 @@ QUESTION_OUTCOMES = (QUESTION_HELPFUL, QUESTION_NOT_HELPFUL)
 MAX_FEEDBACK_TEXT_LENGTH = 500
 
 
-def correction_options(component: LearningComponent) -> tuple[str, ...]:
-    """The values a correction may take; empty means free text."""
+def correction_options(
+    component: LearningComponent,
+    complaint_categories: Sequence[str] = COMPLAINT_CATEGORIES,
+) -> tuple[str, ...]:
+    """The values a correction may take; empty means free text.
+    complaint_categories: the categories detection can report now."""
     if component is LearningComponent.COMPLAINT_DETECTION:
-        return (*COMPLAINT_CATEGORIES, NO_COMPLAINT_CORRECTION)
+        return (*complaint_categories, NO_COMPLAINT_CORRECTION)
     if component is LearningComponent.SENTIMENT_ANALYSIS:
         return tuple(label.value for label in SentimentLabel)
     return ()
@@ -107,8 +112,12 @@ class LearningManagementService:
         candidate_generation: LearningCandidateGenerationService | None = None,
         application_service: ImprovementApplicationService | None = None,
         effectiveness_service: ImprovementEffectivenessService | None = None,
+        complaint_categories: Callable[[], Sequence[str]] | None = None,
     ) -> None:
         self._evidence_service = evidence_service
+        # The complaint categories a correction may name (built-ins plus
+        # accepted emerging themes); the built-ins when None.
+        self._complaint_categories = complaint_categories or (lambda: COMPLAINT_CATEGORIES)
         self._pattern_discovery = pattern_discovery
         self._candidate_repository = candidate_repository
         self._review_service = review_service
@@ -191,7 +200,9 @@ class LearningManagementService:
             CallObservation(
                 observation=observation,
                 feedback=feedback_by_observation.get(observation.observation_id),
-                correction_options=correction_options(observation.component),
+                correction_options=correction_options(
+                    observation.component, self._complaint_categories()
+                ),
             )
             for observation in sorted(
                 observation_service.get_for_call(call_id),
@@ -221,7 +232,12 @@ class LearningManagementService:
             raise LearningObservationNotFoundError(observation_id)
 
         corrected_value, outcome, notes = _validated_feedback(
-            observation, feedback_type, corrected_value, outcome, notes
+            observation,
+            feedback_type,
+            corrected_value,
+            outcome,
+            notes,
+            correction_options(observation.component, self._complaint_categories()),
         )
 
         with self._feedback_lock:
@@ -307,6 +323,7 @@ def _validated_feedback(
     corrected_value: str | None,
     outcome: str | None,
     notes: str | None,
+    options: tuple[str, ...] | None = None,
 ) -> tuple[str | None, str | None, str | None]:
     corrected_value = _clean_text(corrected_value, "corrected_value")
     outcome = _clean_text(outcome, "outcome")
@@ -315,7 +332,8 @@ def _validated_feedback(
     if feedback_type is FeedbackType.HUMAN_CORRECTION:
         if corrected_value is None:
             raise InvalidLearningFeedbackError("A correction needs corrected_value.")
-        options = correction_options(observation.component)
+        if options is None:
+            options = correction_options(observation.component)
         if options and corrected_value not in options:
             raise InvalidLearningFeedbackError(
                 f"corrected_value must be one of: {', '.join(options)}."

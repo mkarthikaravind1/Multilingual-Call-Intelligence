@@ -21,6 +21,8 @@ _COLUMNS = (
     "reviewed_by",
     "reviewed_at",
     "review_note",
+    "category_name",
+    "category_description",
 )
 
 

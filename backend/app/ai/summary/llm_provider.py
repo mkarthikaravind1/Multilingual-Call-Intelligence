@@ -80,7 +80,7 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
             for coverage in request.complaint_coverages
             if coverage.status != ComplaintCoverageStatus.NOT_RAISED
         ) or "none"
-        allowed_categories = ", ".join(sorted(COMPLAINT_CATEGORIES))
+        allowed_categories = ", ".join(sorted(_allowed_categories(request)))
         allowed_statuses = ", ".join(status.name.lower() for status in ComplaintCoverageStatus)
 
         return (
@@ -124,7 +124,10 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
         return payload
 
     def _parse_complaints(
-        self, raw_complaints: object, call_id: str
+        self,
+        raw_complaints: object,
+        call_id: str,
+        allowed: frozenset[str] = frozenset(COMPLAINT_CATEGORIES),
     ) -> tuple[ComplaintSummary, ...] | None:
         if not isinstance(raw_complaints, list):
             logger.warning("LLM summary 'complaints' for call %s was not a list", call_id)
@@ -145,6 +148,14 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
                 or not isinstance(entry.get("evidence"), str)
             ):
                 logger.warning("LLM summary complaint entry for call %s is malformed", call_id)
+                return None
+
+            if entry["category"] not in allowed:
+                logger.warning(
+                    "LLM summary for call %s names an unknown category: %r",
+                    call_id,
+                    entry["category"],
+                )
                 return None
 
             if confidence is not None and (
@@ -174,7 +185,9 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
     def _build_summary(
         self, request: PostCallSummaryRequest, payload: dict
     ) -> PostCallSummary | None:
-        complaints = self._parse_complaints(payload["complaints"], request.call_id)
+        complaints = self._parse_complaints(
+            payload["complaints"], request.call_id, _allowed_categories(request)
+        )
         if complaints is None:
             return None
 
@@ -212,3 +225,9 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
                 request.call_id,
             )
             return None
+
+
+def _allowed_categories(request: PostCallSummaryRequest) -> frozenset[str]:
+    """The built-in categories plus any the call's detection reported
+    (accepted emerging themes)."""
+    return frozenset(COMPLAINT_CATEGORIES) | {c.category for c in request.complaint_coverages}

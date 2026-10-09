@@ -22,6 +22,7 @@ from app.composition.providers import (
     create_sentiment_provider,
 )
 from app.core.config import get_settings
+from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.core.production_checks import check_configuration
 from app.observability.logging import configure_logging
 
@@ -35,8 +36,14 @@ def build_app():
     repositories = build_production_repositories(settings)
 
     llm_client = create_llm_client(settings)
+    # Built-in categories plus accepted emerging themes; shared by detection
+    # and the emerging-complaint review so an accept takes effect at once.
+    complaint_categories = ComplaintCategoryCatalog(
+        repositories.emerging_complaint,
+        cache_seconds=settings.complaint_category_cache_seconds,
+    )
     services = build_api_services(
-        complaint_provider=create_complaint_provider(llm_client, settings),
+        complaint_provider=create_complaint_provider(llm_client, settings, complaint_categories),
         sentiment_provider=create_sentiment_provider(llm_client, settings),
         question_provider=create_question_provider(llm_client, settings),
         settings=settings,
@@ -56,6 +63,7 @@ def build_app():
         escalation_provider=create_escalation_provider(llm_client, settings),
         complaint_lifecycle_repository=repositories.complaint_lifecycle,
         emerging_complaint_repository=repositories.emerging_complaint,
+        complaint_category_catalog=complaint_categories,
         call_listing_query=repositories.call_listing,
         price_list_repository=repositories.price_list,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),

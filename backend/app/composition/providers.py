@@ -15,6 +15,7 @@ from app.ai.language.sarvam_provider import SarvamLanguageProvider
 from collections.abc import Callable, Mapping, Sequence
 from app.ai.complaint.llm_provider import LLMComplaintProvider
 from app.ai.complaint.provider import ComplaintDetectionProvider
+from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.ai.sentiment.llm_provider import LLMSentimentProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider
 from app.ai.speaker.provider import (
@@ -151,11 +152,14 @@ def create_language_provider(
 
 
 def create_complaint_provider(
-    llm_client: LLMClient | None = None, settings: Settings | None = None
+    llm_client: LLMClient | None = None,
+    settings: Settings | None = None,
+    catalog: ComplaintCategoryCatalog | None = None,
 ) -> ComplaintDetectionProvider:
+    """catalog: the categories to detect (built-ins only when None)."""
     if llm_client is None:
         llm_client = create_llm_client(settings)
-    return LLMComplaintProvider(llm_client)
+    return LLMComplaintProvider(llm_client, catalog)
 
 
 def create_sentiment_provider(

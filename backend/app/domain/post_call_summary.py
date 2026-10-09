@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
 from app.ai.sentiment.provider import SentimentResult
-from app.core.constants import COMPLAINT_CATEGORIES, SUPPORTED_LANGUAGES
+from app.core.constants import SUPPORTED_LANGUAGES
+from app.domain.complaint_category import require_category_name
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.service_estimate import CallServiceEstimate
 
@@ -22,8 +23,7 @@ class ComplaintSummary:
     confidence: float | None = None
 
     def __post_init__(self) -> None:
-        if self.category not in COMPLAINT_CATEGORIES:
-            raise ValueError(f"Unsupported complaint category: {self.category!r}.")
+        require_category_name(self.category)
 
         if not self.description.strip():
             raise ValueError("description must not be empty.")

@@ -215,10 +215,12 @@ def test_injected_detector_is_called_with_the_conversation():
     assert provider.received_conversation is conversation
 
 
-def test_unsupported_category_is_rejected_by_domain_validation():
+def test_blank_category_is_rejected_by_domain_validation():
+    # Which names may be detected is the provider's check (the category
+    # catalog); records only refuse names that are not names at all.
     invalid = cast(
         ComplaintDetectionResult,
-        SimpleNamespace(category="Banana", confidence=0.9, evidence="evidence"),
+        SimpleNamespace(category=" ", confidence=0.9, evidence="evidence"),
     )
     coverage = _coverage()
 

@@ -368,6 +368,9 @@ class EmergingComplaintCandidateModel(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
     reviewed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The complaint category an accepted theme is detected as.
+    category_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    category_description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (Index("ix_emerging_complaint_candidates_status", "status"),)
 

@@ -1,3 +1,5 @@
+from collections.abc import Callable, Sequence
+
 from app.domain.improvement_candidate_repository import (
     ImprovementCandidateRepository,
     InMemoryImprovementCandidateRepository,
@@ -54,6 +56,7 @@ def build_learning_management_service(
     feedback_repository: LearningFeedbackRepository | None = None,
     active_improvement_repository: ActiveImprovementRepository | None = None,
     usage_repository: ImprovementUsageRepository | None = None,
+    complaint_categories: Callable[[], Sequence[str]] | None = None,
 ) -> LearningManagementService:
     """The whole learning loop. Pass the same repositories the runtime uses
     (notably active_improvement_repository) so approvals reach live calls."""
@@ -84,6 +87,7 @@ def build_learning_management_service(
             usage_repository=usage_repository,
             evidence_repository=evidence_repository,
         ),
+        complaint_categories=complaint_categories,
     )
 
 def build_learning_call_recorder(

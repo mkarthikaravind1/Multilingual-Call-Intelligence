@@ -11,6 +11,7 @@ from app.services.auth_service import AuthService
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_recording_store import CallRecordingStore
 from app.services.call_listing import CallListingQuery
+from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
 from app.services.escalation_service import EscalationService
@@ -51,6 +52,8 @@ class ApiServices:
     escalation_service: EscalationService | None = None
     complaint_lifecycle_service: ComplaintLifecycleService | None = None
     emerging_complaint_service: EmergingComplaintService | None = None
+    # Built-in complaint categories plus accepted emerging themes.
+    complaint_category_catalog: ComplaintCategoryCatalog | None = None
     live_state_store: LiveStateStore | None = None
     # How often an open live-call WebSocket checks for new analysis to push.
     live_call_push_interval_seconds: float = 0.5
@@ -90,6 +93,15 @@ def get_complaint_lifecycle_service(connection: HTTPConnection) -> ComplaintLife
     if service is None:
         raise HTTPException(status_code=503, detail="Complaint tracking is not configured.")
     return service
+
+
+def get_complaint_category_catalog(connection: HTTPConnection) -> ComplaintCategoryCatalog:
+    catalog = connection.app.state.services.complaint_category_catalog
+    if catalog is None:
+        from app.services.complaint_category_catalog import BUILT_IN_CATALOG
+
+        return BUILT_IN_CATALOG
+    return catalog
 
 
 def get_emerging_complaint_service(connection: HTTPConnection) -> EmergingComplaintService:

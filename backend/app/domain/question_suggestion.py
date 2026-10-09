@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from app.core.constants import COMPLAINT_CATEGORIES, SUPPORTED_LANGUAGES
+from app.core.constants import SUPPORTED_LANGUAGES
+from app.domain.complaint_category import require_category_name
 
 
 class SuggestionSource(str, Enum):
@@ -37,11 +38,7 @@ class QuestionSuggestion:
         if not self.reason.strip():
             raise ValueError("reason must not be empty.")
 
-        if self.target_category not in COMPLAINT_CATEGORIES:
-            raise ValueError(
-                f"Unsupported complaint category: {self.target_category!r}. "
-                f"Must be one of {COMPLAINT_CATEGORIES}."
-            )
+        require_category_name(self.target_category)
 
         if not isinstance(self.priority, int) or self.priority < 0:
             raise ValueError("priority must be a non-negative integer.")
