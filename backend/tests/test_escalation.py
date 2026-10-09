@@ -173,16 +173,27 @@ def test_open_or_unresolved_complaints_are_a_watch():
     assert one_open.level is EscalationLevel.NONE
 
 
-def test_two_concerns_together_step_the_level_up():
+def test_two_concerns_together_step_the_level_up_when_one_is_serious():
+    highs = assess((CUSTOMER, "Cancel my booking, I want my manager."))
+    manager_and_angry = assess((CUSTOMER, "I want to speak to your manager."), sentiment=ANGRY)
+
+    assert highs.level is EscalationLevel.CRITICAL
+    assert manager_and_angry.level is EscalationLevel.CRITICAL
+
+
+def test_a_negative_tone_with_open_complaints_alone_stays_at_watch():
+    # Nearly every complaint call has both; stepping them up made every such call high.
     watches = assess(
         (CUSTOMER, "This is ridiculous."),
         sentiment=ANGRY,
         complaints=(("Service Quality", ComplaintCoverageStatus.UNRESOLVED),),
     )
-    highs = assess((CUSTOMER, "Cancel my booking, I want my manager."))
 
-    assert watches.level is EscalationLevel.HIGH
-    assert highs.level is EscalationLevel.CRITICAL
+    assert {s.signal_type for s in watches.signals} == {
+        EscalationSignalType.NEGATIVE_TONE,
+        EscalationSignalType.UNRESOLVED_COMPLAINTS,
+    }
+    assert watches.level is EscalationLevel.WATCH
 
 
 # ---- LLM detector (optional) ----
@@ -655,3 +666,28 @@ def test_unknown_escalation_returns_404(api):
     _, supervisor, _ = api
 
     assert supervisor.post("/api/v1/escalations/missing/acknowledge").status_code == 404
+
+
+def test_what_the_customer_says_at_the_end_is_assessed_after_the_call(api):
+    icr, _, _ = api
+    icr.post("/api/v1/calls", json={"call_id": "c-end"})
+    _say(icr, "c-end", 0, "The car was late again.")
+    # The last words never got a live analysis (it is dropped when the call
+    # ends), as happens with streamed audio.
+    icr.app.state.services.call_service.add_utterance(
+        "c-end",
+        Utterance(
+            utterance_id="c-end-1",
+            transcript="Sorry is not enough. I want to speak to your manager right now.",
+            speaker_role=SpeakerRole.CUSTOMER,
+            languages=("en",),
+            start_time=1.0,
+            end_time=2.0,
+        ),
+    )
+
+    icr.post("/api/v1/calls/c-end/complete", json={"end_time": 10.0})
+
+    escalation = icr.get("/api/v1/calls/c-end/analysis").json()["escalation"]
+    assert "manager_request" in {s["signal_type"] for s in escalation["signals"]}
+    assert escalation["level"] == "critical"  # manager request + negative tone

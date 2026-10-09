@@ -114,13 +114,28 @@ def _evidence(text: str) -> str:
     return text if len(text) <= _MAX_EVIDENCE else text[: _MAX_EVIDENCE - 1] + "…"
 
 
+# What the customer said or threatened, as opposed to how the call is going
+# (tone, open complaints), which nearly every complaint call shows.
+SERIOUS_SIGNAL_TYPES = frozenset(
+    {
+        EscalationSignalType.MANAGER_REQUEST,
+        EscalationSignalType.LEGAL_THREAT,
+        EscalationSignalType.PUBLIC_COMPLAINT,
+        EscalationSignalType.CANCELLATION,
+    }
+)
+
+
 def combined_level(signals: tuple[EscalationSignal, ...]) -> EscalationLevel:
     """Several concerns together weigh more than any one alone: two or more
-    signals step the level up by one (at most to critical)."""
+    kinds of signal step the level up by one (at most to critical), but only
+    when one of them is serious. A negative tone with open complaints alone
+    stays at watch, or every complaint call would be high."""
     if not signals:
         return EscalationLevel.NONE
     level = EscalationLevel.highest(*(signal.level for signal in signals))
-    if len({signal.signal_type for signal in signals}) < 2:
+    types = {signal.signal_type for signal in signals}
+    if len(types) < 2 or not types & SERIOUS_SIGNAL_TYPES:
         return level
     return _ONE_STEP_UP[level]
 

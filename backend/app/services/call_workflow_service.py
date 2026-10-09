@@ -284,6 +284,19 @@ class CallWorkflowService:
             service_estimate=self._estimate_call(conversation),
         )
 
+    def _assess_final_escalation(
+        self, conversation: Conversation, analysis: ConversationAnalysisResult
+    ) -> None:
+        """Escalation is otherwise assessed only during the call, and the
+        last live analysis is dropped when the call ends: without this, what
+        the customer said at the end (a manager demand, a refund) is missed."""
+        if self._escalation_service is None:
+            return
+        try:
+            self._escalation_service.assess(conversation, analysis.coverage, analysis.sentiment)
+        except Exception:
+            logger.exception("Final escalation assessment failed for call %r", conversation.call_id)
+
     def _stored_escalation(self, call_id: str) -> Escalation | None:
         if self._escalation_service is None:
             return None
@@ -333,6 +346,7 @@ class CallWorkflowService:
             return None
 
         self._close_out_complaints(call_id, analysis.coverage)
+        self._assess_final_escalation(conversation, analysis)
 
         try:
             summary = self._post_call_summary_service.generate_summary(
