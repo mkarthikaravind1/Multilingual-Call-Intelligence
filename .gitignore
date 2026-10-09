@@ -22,6 +22,9 @@ __pycache__/
 # Node dependencies
 node_modules/
 docs/
+test-audio/
+# Local dev-server launch settings (machine-specific paths)
+.claude/launch.json
 secrets.txt
 ai-prompts.txt
 
