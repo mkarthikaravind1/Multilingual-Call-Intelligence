@@ -16,6 +16,9 @@ class User:
     role: UserRole
     is_active: bool
     created_at: float
+    # When the password was last set by a reset; sessions signed in before
+    # it no longer count. None: never reset.
+    password_changed_at: float | None = None
 
     def __post_init__(self) -> None:
         if not self.user_id.strip():

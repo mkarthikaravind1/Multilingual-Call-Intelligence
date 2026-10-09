@@ -1,6 +1,7 @@
 import dataclasses
 import logging
 import threading
+import time
 
 from app.domain.user import User, UserRole
 from app.domain.user_repository import UserRepository
@@ -94,7 +95,12 @@ class UserManagementService:
         _check_password(new_password)
         with self._lock:
             user = self._require(user_id)
-            updated = dataclasses.replace(user, password_hash=hash_password(new_password))
+            updated = dataclasses.replace(
+                user,
+                password_hash=hash_password(new_password),
+                # Signs the user out everywhere: older sessions stop working.
+                password_changed_at=time.time(),
+            )
             self._repository.save(updated)
         logger.info("%s reset the password of %s", acting_user.email, user.email)
         return updated

@@ -12,13 +12,18 @@ class TokenError(Exception):
     pass
 
 
-def create_access_token(user: User, settings: Settings | None = None) -> str:
+def create_access_token(
+    user: User, settings: Settings | None = None, auth_time: int | None = None
+) -> str:
+    """auth_time: when the user signed in (kept across refreshes, which may
+    continue for AUTH_SESSION_MAX_HOURS); now for a fresh sign-in."""
     settings = settings or get_settings()
     now = int(time.time())
     payload = {
         "sub": user.user_id,
         "role": user.role.value,
         "iat": now,
+        "auth_time": now if auth_time is None else auth_time,
         "exp": now + settings.auth_access_token_expire_minutes * 60,
     }
     return jwt.encode(payload, settings.auth_secret_key, algorithm=_ALGORITHM)

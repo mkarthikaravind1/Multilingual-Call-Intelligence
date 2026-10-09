@@ -112,6 +112,9 @@ class Settings(BaseSettings):
     redis_socket_timeout_seconds: float = 5.0
     auth_secret_key: str = "not_configured"
     auth_access_token_expire_minutes: int = 30
+    # A session can be refreshed for this long after signing in; then the
+    # user signs in again.
+    auth_session_max_hours: float = 12.0
     # Sign-in is refused for LOGIN_FAILURE_WINDOW_SECONDS after this many
     # failed attempts for one email, or from one address.
     login_max_failures_per_email: int = 5

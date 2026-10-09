@@ -22,10 +22,11 @@ _CREDENTIALS_ERROR = HTTPException(
 )
 
 
-def get_current_user(
+def get_current_session(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     user_repository: UserRepository = Depends(get_user_repository),
-) -> User:
+) -> tuple[User, dict]:
+    """The signed-in user and their token's claims."""
     if credentials is None:
         raise _CREDENTIALS_ERROR
 
@@ -42,7 +43,18 @@ def get_current_user(
     if user is None or not user.is_active:
         raise _CREDENTIALS_ERROR
 
-    return user
+    # A password reset signs the user out everywhere.
+    issued = payload.get("iat")
+    if user.password_changed_at is not None and (
+        not isinstance(issued, (int, float)) or issued < int(user.password_changed_at)
+    ):
+        raise _CREDENTIALS_ERROR
+
+    return user, payload
+
+
+def get_current_user(session: tuple[User, dict] = Depends(get_current_session)) -> User:
+    return session[0]
 
 
 def require_roles(*roles: UserRole):

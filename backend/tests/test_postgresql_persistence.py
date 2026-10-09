@@ -1046,3 +1046,16 @@ def test_two_accepted_themes_cannot_share_a_category_name(session_factory):
             theme("emerging-2").review(accepted, "sup@example.com", 20.0, None, "wiper noise")
         )
     assert repo.get("emerging-2").status is EmergingComplaintReviewStatus.PENDING_REVIEW
+
+
+def test_users_keep_when_their_password_was_reset(session_factory):
+    from app.domain.user import User, UserRole
+    from app.infrastructure.database.repositories.user_repository import PostgresUserRepository
+
+    repo = PostgresUserRepository(session_factory)
+    user = User("u-1", "a@dealer.com", "hash", UserRole.ICR, True, 1.0)
+    repo.save(user)
+    assert repo.get_by_id("u-1").password_changed_at is None
+
+    repo.save(User("u-1", "a@dealer.com", "hash2", UserRole.ICR, True, 1.0, password_changed_at=5.5))
+    assert repo.get_by_id("u-1").password_changed_at == 5.5

@@ -306,6 +306,8 @@ class UserModel(Base):
     role: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[float] = mapped_column(Float, nullable=False)
+    # Sessions signed in before this no longer count (see User).
+    password_changed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     __table_args__ = (Index("ix_users_email", "email"),)
 

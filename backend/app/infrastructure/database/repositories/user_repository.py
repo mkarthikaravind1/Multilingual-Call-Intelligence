@@ -14,6 +14,7 @@ def _to_domain(model: UserModel) -> User:
         role=UserRole(model.role),
         is_active=model.is_active,
         created_at=model.created_at,
+        password_changed_at=model.password_changed_at,
     )
 
 
@@ -25,6 +26,7 @@ def _to_model(user: User) -> UserModel:
         role=user.role.value,
         is_active=user.is_active,
         created_at=user.created_at,
+        password_changed_at=user.password_changed_at,
     )
 
 

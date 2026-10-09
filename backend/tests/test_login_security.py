@@ -172,3 +172,61 @@ def test_admins_get_a_clear_message_for_a_too_long_password(client):
 
     with pytest.raises(UserManagementError, match="at most 72 bytes"):
         users.create_user("new@dealer.com", "x" * 80, UserRole.ICR)
+
+
+# ---- Sessions: a password reset ends them; refreshing has an end ----
+
+
+def _token(client, password=PASSWORD):
+    response = _login(client, password)
+    assert response.status_code == 200
+    return response.json()["access_token"]
+
+
+def _me(client, token):
+    # Any endpoint that needs a signed-in user.
+    return client.get("/api/v1/calls", headers={"Authorization": f"Bearer {token}"})
+
+
+def test_a_password_reset_signs_the_user_out_everywhere(client):
+    import time as clock
+
+    services = client.app.state.services
+    old = _token(client)
+    assert _me(client, old).status_code == 200
+
+    user = services.user_repository.get_by_email(EMAIL)
+    clock.sleep(1.1)  # tokens carry whole seconds
+    services.user_management_service.reset_password(user.user_id, "a-new-password-1", user)
+
+    assert _me(client, old).status_code == 401
+    assert client.post(
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {old}"}
+    ).status_code == 401
+    assert _me(client, _token(client, "a-new-password-1")).status_code == 200
+
+
+def test_refreshing_keeps_the_sign_in_time_and_stops_after_the_maximum(client):
+    import time as clock
+
+    import jwt as pyjwt
+
+    from app.core.config import get_settings
+    from app.security.jwt import create_access_token
+
+    user = client.app.state.services.user_repository.get_by_email(EMAIL)
+    signed_in = int(clock.time()) - 3600
+    fresh = client.post(
+        "/api/v1/auth/refresh",
+        headers={"Authorization": f"Bearer {create_access_token(user, auth_time=signed_in)}"},
+    )
+    assert fresh.status_code == 200
+    claims = pyjwt.decode(
+        fresh.json()["access_token"], get_settings().auth_secret_key, algorithms=["HS256"]
+    )
+    assert claims["auth_time"] == signed_in
+
+    too_old = create_access_token(user, auth_time=int(clock.time()) - 13 * 3600)
+    expired = client.post("/api/v1/auth/refresh", headers={"Authorization": f"Bearer {too_old}"})
+    assert expired.status_code == 401
+    assert "sign in again" in expired.json()["detail"]
