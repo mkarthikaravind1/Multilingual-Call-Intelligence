@@ -178,6 +178,7 @@ def test_prompt_shows_who_said_what_and_forbids_asking_for_given_facts():
     prompt = client.complete.call_args.args[0].prompt
     assert "CUSTOMER: Now the bill says 14,000." in prompt
     assert "never ask for a date, amount, bill" in prompt
+    assert "may be garbled by speech recognition" in prompt
 
 
 def _open_context(previous=None):

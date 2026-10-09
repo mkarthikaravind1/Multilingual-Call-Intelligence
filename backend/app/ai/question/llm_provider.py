@@ -52,6 +52,8 @@ _GUARDRAILS = (
     "Before you answer, check what the CUSTOMER has already said: never ask for a date, "
     "amount, bill, part, vehicle detail or event they already gave. If nothing about the "
     "target category is still missing, respond with null.",
+    "Letters and numbers the customer read out may be garbled by speech recognition "
+    '(e.g. "TNO9AB4 321" for registration TN 09 AB 4321); treat them as already given.',
     "The question is a suggestion for the ICR to ask the customer. Do not write as the ICR: "
     "no greetings, apologies, promises or statements on behalf of the company.",
     "Do not invent facts that are not present in the conversation.",
