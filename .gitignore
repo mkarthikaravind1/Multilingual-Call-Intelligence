@@ -21,6 +21,7 @@ __pycache__/
 
 # Node dependencies
 node_modules/
+docs/
 secrets.txt
 ai-prompts.txt
 
