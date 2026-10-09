@@ -200,10 +200,12 @@ class CallWorkflowService:
         AI analysis (seconds behind, and dropped when the call ends) gets to it."""
         if self._escalation_service is None:
             return
-        try:
-            self._escalation_service.assess_what_was_said(self._call_service.get_call(call_id))
-        except Exception:
-            logger.exception("Quick escalation check failed for call %r", call_id)
+        self._best_effort(
+            "Quick escalation check", call_id,
+            lambda: self._escalation_service.assess_what_was_said(
+                self._call_service.get_call(call_id)
+            ),
+        )
 
     def analyze_latest_speech(self, call_id: str) -> CallAnalysisResult | None:
         """Run the AI analysis over the call as it is now (all utterances
@@ -356,19 +358,17 @@ class CallWorkflowService:
         the customer said at the end (a manager demand, a refund) is missed."""
         if self._escalation_service is None:
             return
-        try:
-            self._escalation_service.assess(conversation, analysis.coverage, analysis.sentiment)
-        except Exception:
-            logger.exception("Final escalation assessment failed for call %r", conversation.call_id)
+        self._best_effort(
+            "Final escalation assessment", conversation.call_id,
+            self._escalation_service.assess, conversation, analysis.coverage, analysis.sentiment,
+        )
 
     def _stored_escalation(self, call_id: str) -> Escalation | None:
         if self._escalation_service is None:
             return None
-        try:
-            return self._escalation_service.get(call_id)
-        except Exception:
-            logger.exception("Reading the escalation for call %r failed", call_id)
-            return None
+        return self._best_effort(
+            "Reading the escalation", call_id, self._escalation_service.get, call_id
+        )
 
     def complete_call(self, call_id: str, end_time: float) -> ConversationCompletion:
         """Shared completion entry point: post-call processing runs only
@@ -492,35 +492,33 @@ class CallWorkflowService:
     def _track_complaints(self, coverage: ConversationCoverage) -> None:
         if self._complaint_lifecycle_service is None:
             return
-        try:
-            self._complaint_lifecycle_service.sync_from_coverage(coverage)
-        except Exception:
-            logger.exception("Complaint lifecycle tracking failed for call %r", coverage.call_id)
+        self._best_effort(
+            "Complaint lifecycle tracking", coverage.call_id,
+            self._complaint_lifecycle_service.sync_from_coverage, coverage,
+        )
 
     def _close_out_complaints(self, call_id: str, coverage: ConversationCoverage) -> None:
         """After the call: final complaint states, the customer link, open
         complaints flagged for follow-up, and a discovery run requested."""
         if self._complaint_lifecycle_service is not None:
             self._track_complaints(coverage)
-            try:
-                customer_id = (
-                    self._customer_id_resolver(call_id)
-                    if self._customer_id_resolver is not None
-                    else None
+            customer_id = (
+                self._best_effort(
+                    "Resolving the customer", call_id, self._customer_id_resolver, call_id
                 )
-            except Exception:
-                logger.exception("Resolving the customer for call %r failed", call_id)
-                customer_id = None
-            try:
-                self._complaint_lifecycle_service.close_call(call_id, customer_id)
-            except Exception:
-                logger.exception("Closing out the complaints of call %r failed", call_id)
+                if self._customer_id_resolver is not None
+                else None
+            )
+            self._best_effort(
+                "Closing out the complaints", call_id,
+                self._complaint_lifecycle_service.close_call, call_id, customer_id,
+            )
 
         if self._emerging_complaint_service is not None and self._emerging_complaint_auto_discovery:
-            try:
-                self._emerging_complaint_service.request_discovery()
-            except Exception:
-                logger.exception("Requesting emerging-complaint discovery failed")
+            self._best_effort(
+                "Requesting emerging-complaint discovery", call_id,
+                self._emerging_complaint_service.request_discovery,
+            )
 
     def _analyze_and_save_coverage(
         self,
@@ -566,18 +564,15 @@ class CallWorkflowService:
         ):
             return
 
-        try:
+        def deliver() -> None:
             contact = self._customer_contact_resolver(summary.call_id)
             if contact is not None:
                 self._customer_summary_delivery_service.send_summary_to_customer(
                     summary=summary,
                     contact=contact,
                 )
-        except Exception:
-            logger.exception(
-                "Customer summary delivery failed for call %r",
-                summary.call_id,
-            )
+
+        self._best_effort("Customer summary delivery", summary.call_id, deliver)
 
     def _vehicle_model(self, call_id: str) -> str | None:
         if self._vehicle_model_resolver is None:
@@ -594,10 +589,20 @@ class CallWorkflowService:
         """Every service the call has needed so far, added up. A failure
         here never stops the rest of the analysis. live: from the price
         list's keywords only (no LLM request on every update)."""
-        try:
-            return self._estimation_service.estimate_call(
+        return self._best_effort(
+            "Service estimate", conversation.call_id,
+            lambda: self._estimation_service.estimate_call(
                 conversation.utterances, self._vehicle_model(conversation.call_id), live=live
-            )
+            ),
+        )
+
+    @staticmethod
+    def _best_effort(what: str, call_id: str, action: Callable[..., _T], *args) -> _T | None:
+        """action(*args), for a step the call's processing must not stop for
+        (lifecycle, escalation, delivery, estimate...): a failure is logged
+        and gives None."""
+        try:
+            return action(*args)
         except Exception:
-            logger.exception("Service estimate failed for call %r", conversation.call_id)
+            logger.exception("%s failed for call %r", what, call_id)
             return None
