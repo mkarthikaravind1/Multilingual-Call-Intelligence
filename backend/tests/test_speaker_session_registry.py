@@ -19,3 +19,15 @@ def test_separate_calls_have_independent_mappings():
 
 def test_get_returns_none_for_unknown_call():
     assert SpeakerSessionRegistry().get("missing") is None
+
+def test_forget_drops_the_calls_in_memory_session_and_evidence():
+    registry = SpeakerSessionRegistry()
+    session = registry.get_or_create("call-1")
+    evidence = registry.evidence_store("call-1")
+
+    registry.forget("call-1")
+
+    assert registry.get("call-1") is None
+    assert registry.get_or_create("call-1") is not session
+    assert registry.evidence_store("call-1") is not evidence
+    registry.forget("never-seen")  # no error

@@ -61,6 +61,11 @@ STREAM_CALL_COMPLETED_CLOSE_CODE = 1000  # normal closure: the call ended elsewh
 # (keepCallAlive="true") even when we can't process its audio.
 _MIN_FLUSH_AUDIO_SECONDS = 0.25
 
+# Whether the call ended elsewhere (the status webhook) is looked up at most
+# this often while audio flows: media frames arrive ~50 times a second per
+# track, and each lookup loads the whole call.
+COMPLETION_CHECK_SECONDS = 1.0
+
 # A call streamed as two tracks (Plivo dials the ICR, see
 # PlivoTelephonyProvider.build_stream_response): the caller is the customer,
 # and what the caller hears is the ICR.
@@ -182,6 +187,7 @@ async def _serve_stream(
     if telephony_call_service is not None:
         telephony_call_service.stream_opened(call_id)
 
+    next_completion_check = 0.0
     try:
         while True:
             message = await websocket.receive()
@@ -212,6 +218,10 @@ async def _serve_stream(
                 # provider-side stream restart) without a "stop" first
                 # must not silently discard whatever was already buffered.
                 _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=False)
+                # The new stream's chunks and times start at 0 again (as do
+                # a reconnected socket's); they carry on from the call's
+                # previous ones.
+                worker.stream_started()
                 settings = get_settings()
                 encoding = stream_event.encoding
                 split = set(TRACK_ROLES) <= set(stream_event.tracks)
@@ -259,10 +269,15 @@ async def _serve_stream(
                 if telephony_call_service is not None:
                     telephony_call_service.stream_drained(call_id)
 
-            # After handling any event, check whether the call ended
-            # elsewhere (the status webhook) while this socket was still
-            # open. Waiting indefinitely for a "stop" that may never
-            # arrive would otherwise strand any further buffered audio.
+            # Check whether the call ended elsewhere (the status webhook)
+            # while this socket was still open. Waiting indefinitely for a
+            # "stop" that may never arrive would otherwise strand any
+            # further buffered audio. Media frames check at most once per
+            # COMPLETION_CHECK_SECONDS; other events always check.
+            now = time.monotonic()
+            if stream_event.event_type == "media" and now < next_completion_check:
+                continue
+            next_completion_check = now + COMPLETION_CHECK_SECONDS
             if await _call_is_completed(call_id, call_service):
                 _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
                 buffers = {}
@@ -296,6 +311,10 @@ async def _call_is_completed(call_id: str, call_service: CallService) -> bool:
     return conversation.status == ConversationStatus.COMPLETED
 
 
+# Queued between chunks: the stream (re)started (see _ChunkWorker.stream_started).
+_STREAM_STARTED = object()
+
+
 class _ChunkWorker:
     """Processes one stream's audio chunks, in the order submitted, on a
     background task."""
@@ -310,11 +329,17 @@ class _ChunkWorker:
         self._call_service = call_service
         self._live_chunk_processing_service = live_chunk_processing_service
         self._queue: asyncio.Queue[
-            tuple[BufferedAudioChunk, int, bool, str | None] | None
+            tuple[BufferedAudioChunk, int, bool, str | None] | object | None
         ] = asyncio.Queue()
-        # Each track numbers its chunks from 0.
+        # Each track numbers its chunks from 0, again after each "start".
         self._next_sequence: dict[str | None, int] = {}
         self._task = asyncio.create_task(self._run())
+
+    def stream_started(self) -> None:
+        """A stream (re)starts: number its chunks from 0, and tell the
+        processing service once the chunks submitted before are done."""
+        self._next_sequence = {}
+        self._queue.put_nowait(_STREAM_STARTED)
 
     def submit(self, chunk: BufferedAudioChunk, is_final: bool, track: str | None = None) -> None:
         sequence = self._next_sequence.get(track, 0)
@@ -336,6 +361,11 @@ class _ChunkWorker:
             try:
                 if item is None:
                     return
+                if item is _STREAM_STARTED:
+                    await run_in_threadpool(
+                        self._live_chunk_processing_service.stream_started, self.call_id
+                    )
+                    continue
                 chunk, sequence, is_final, track = item
                 await _process_chunk(
                     self.call_id,

@@ -1493,3 +1493,61 @@ def test_telephony_calls_start_and_end_on_the_wall_clock():
 
     service.handle_status_event(CallStatusEvent("uuid-clock", CallProviderStatus.COMPLETED))
     assert call_service.get_call(call_id).end_time == 1_090.0
+
+
+def _start_event() -> str:
+    return json.dumps(
+        {"event": "start", "start": {"mediaFormat": {"encoding": "audio/x-mulaw", "sampleRate": 8000}}}
+    )
+
+
+def _media_event(chunk: int, samples: int = 80) -> str:
+    return json.dumps({"event": "media", "media": {"chunk": str(chunk), "payload": _mulaw_b64(samples)}})
+
+
+def test_telephony_stream_reconnect_keeps_transcribing_the_call(monkeypatch):
+    fake_asr = _FakeASRProvider(transcript="my car is making a noise")
+    client, services = _build_client(
+        monkeypatch, asr_provider=fake_asr, plivo_stream_flush_seconds=0.01
+    )
+    call_id = _answer_call(client, "uuid-reconnect-1")
+
+    # The socket drops without a "stop", and the stream reconnects.
+    for connection in range(2):
+        with client.websocket_connect(_stream_path(call_id)) as ws:
+            ws.send_text(_start_event())
+            _wait_for_stream(services, "uuid-reconnect-1", is_open=True)
+            ws.send_text(_media_event(1))
+            # Closing the test client's socket cancels the handler, so let
+            # the chunk be transcribed first.
+            deadline = time.monotonic() + 5
+            while len(fake_asr.calls) <= connection and time.monotonic() < deadline:
+                time.sleep(0.01)
+        _wait_for_stream(services, "uuid-reconnect-1", is_open=False)
+
+    assert len(fake_asr.calls) == 2
+    assert services.call_service.get_call(call_id).utterance_count == 2
+
+
+def test_telephony_stream_checks_for_call_end_at_most_once_a_second(monkeypatch):
+    client, services = _build_client(
+        monkeypatch, asr_provider=_FakeASRProvider(), plivo_stream_flush_seconds=60.0
+    )
+    call_id = _answer_call(client, "uuid-checks-1")
+    lookups = []
+    get_call = services.call_service.get_call
+    monkeypatch.setattr(
+        services.call_service, "get_call", lambda cid: lookups.append(cid) or get_call(cid)
+    )
+
+    with client.websocket_connect(_stream_path(call_id)) as ws:
+        ws.send_text(_start_event())
+        _wait_for_stream(services, "uuid-checks-1", is_open=True)
+        lookups.clear()
+        for chunk in range(1, 101):  # about 2 s of frames, sent at once
+            ws.send_text(_media_event(chunk, samples=160))
+        ws.send_text(json.dumps({"event": "stop"}))
+        _wait_for_stream(services, "uuid-checks-1", is_open=False)
+
+    # Without the limit it is one per frame (over 100).
+    assert len(lookups) <= 10

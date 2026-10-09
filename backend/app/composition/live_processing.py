@@ -49,7 +49,7 @@ def build_live_chunk_processing_service(
             ),
         )
 
-    return LiveChunkProcessingService(pipeline_for_call)
+    return LiveChunkProcessingService(pipeline_for_call, on_forget=registry.forget)
 
 def _role_llm_client(settings: Settings | None) -> LLMClient | None:
     if settings is None or not settings.role_llm_enabled:

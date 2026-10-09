@@ -61,6 +61,12 @@ class SpeakerSessionRegistry:
             return store
         return _SharedEvidenceStore(self._store, call_id)
 
+    def forget(self, call_id: str) -> None:
+        """Drop the call's in-memory session and evidence. A shared store
+        keeps its copy until SPEAKER_ROLES_TTL_SECONDS."""
+        self._sessions.pop(call_id, None)
+        self._evidence.pop(call_id, None)
+
     def get(self, call_id: str) -> SpeakerSession | None:
         if self._store is not None:
             return self._shared_session(call_id) if self._load(call_id) else None

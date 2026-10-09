@@ -382,3 +382,71 @@ def test_chunk_continuity_reaches_the_processor(service, factory):
         (True, True),
         (True, True),
     ]
+
+
+# ---- A stream that restarts or reconnects mid-call ----
+
+
+def test_a_restarted_stream_carries_on_from_the_previous_one():
+    factory = FakeFactory()
+    service = LiveChunkProcessingService(factory)
+    service.process_chunk("call-1", make_chunk(0, 0.0, 3.0))
+    service.process_chunk("call-1", make_chunk(1, 3.0, 6.0))
+
+    # The new stream numbers its chunks and times from 0 again.
+    service.stream_started("call-1")
+    result = service.process_chunk("call-1", make_chunk(0, 0.0, 2.0))
+
+    assert (result.sequence, result.start_time, result.end_time) == (2, 6.0, 8.0)
+    assert factory.processors["call-1"].calls[-1][2] == 6.0
+    assert factory.created == ["call-1"]  # same processor: one transcript
+
+
+def test_without_stream_started_a_renumbered_stream_is_still_rejected():
+    service = LiveChunkProcessingService(FakeFactory())
+    service.process_chunk("call-1", make_chunk(0, 0.0, 3.0))
+
+    with pytest.raises(DuplicateChunkError):
+        service.process_chunk("call-1", make_chunk(0, 0.0, 2.0))
+
+
+def test_a_stream_restarted_after_its_final_chunk_is_accepted_again():
+    service = LiveChunkProcessingService(FakeFactory())
+    service.process_chunk("call-1", make_chunk(0, 0.0, 3.0, final=True))
+
+    service.stream_started("call-1")
+    result = service.process_chunk("call-1", make_chunk(0, 0.0, 1.0))
+
+    assert result.start_time == 3.0
+
+
+def test_stream_started_for_a_new_call_changes_nothing():
+    service = LiveChunkProcessingService(FakeFactory())
+    service.stream_started("call-1")
+
+    assert service.process_chunk("call-1", make_chunk(0, 0.0, 1.0)).start_time == 0.0
+
+
+# ---- Idle calls are forgotten ----
+
+
+def test_a_call_idle_for_long_is_forgotten_with_its_other_state():
+    now = [0.0]
+    forgotten: list[str] = []
+    factory = FakeFactory()
+    service = LiveChunkProcessingService(
+        factory, on_forget=forgotten.append, idle_seconds=600.0, clock=lambda: now[0]
+    )
+    service.process_chunk("old-call", make_chunk(0, 0.0, 1.0))
+
+    now[0] = 300.0
+    service.process_chunk("new-call", make_chunk(0, 0.0, 1.0))
+    assert forgotten == []
+
+    now[0] = 700.0
+    service.process_chunk("new-call", make_chunk(1, 1.0, 2.0))
+    assert forgotten == ["old-call"]
+
+    # A forgotten call that sends audio again starts afresh.
+    service.process_chunk("old-call", make_chunk(0, 0.0, 1.0))
+    assert factory.created == ["old-call", "new-call", "old-call"]
