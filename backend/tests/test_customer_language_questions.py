@@ -11,7 +11,7 @@ from app.core.constants import COMPLAINT_CATEGORIES
 from app.core.languages import is_written_in_script
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation_coverage import ConversationCoverage
-from app.domain.customer_language import customer_language
+from app.domain.customer_language import customer_language, main_indic_language
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
 from app.domain.utterance import SpeakerRole, Utterance
 from app.services.live_analysis_store import LiveAnalysisSnapshot, _deserialize, _serialize
@@ -85,6 +85,27 @@ def test_customer_speaking_only_english_gets_english_even_if_the_icr_does_not():
         _utterance(SpeakerRole.CUSTOMER, "en", start=1),
     )
     assert customer_language(utterances) == "en"
+
+
+def test_one_line_mislabelled_tamil_does_not_make_an_english_call_tamil():
+    # Seen in a test call: "Hi Arjun, my name is Rohit Kulkarni…" came back
+    # [en, ta]; every suggested question was then in Tamil.
+    utterances = (
+        _utterance(SpeakerRole.CUSTOMER, "en", "ta", start=0),
+        *(_utterance(SpeakerRole.CUSTOMER, "en", start=t) for t in range(1, 5)),
+    )
+    assert customer_language(utterances) == "en"
+    assert main_indic_language(utterances) is None
+
+
+def test_a_tamil_speaker_mixing_in_english_stays_tamil():
+    utterances = (
+        _utterance(SpeakerRole.CUSTOMER, "ta", "en", start=0),
+        _utterance(SpeakerRole.CUSTOMER, "ta", start=1),
+        _utterance(SpeakerRole.CUSTOMER, "en", start=2),
+        _utterance(SpeakerRole.CUSTOMER, "en", start=3),
+    )
+    assert customer_language(utterances) == "ta"
 
 
 def test_unknown_speakers_count_until_the_customer_is_known():
