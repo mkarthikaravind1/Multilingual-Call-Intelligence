@@ -1,7 +1,9 @@
 from dataclasses import dataclass, replace
 import logging
-from typing import Callable, Protocol
+import time
+from typing import Callable, Protocol, TypeVar
 
+from app.ai.llm.client import rate_limit_in
 from app.ai.sentiment.provider import SentimentResult
 from app.ai.summary.provider import PostCallSummaryRequest
 from app.domain.conversation import Conversation, ConversationStatus
@@ -51,6 +53,13 @@ class CallAnalysisResult:
     post_call_summary: PostCallSummary | None = None
     # None when the call has never escalated (or escalation is not wired).
     escalation: Escalation | None = None
+
+_T = TypeVar("_T")
+_RATE_LIMIT_ATTEMPTS = 3
+# Waits longer than this (a daily limit) are left to the repair job.
+_MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
+_DEFAULT_RATE_LIMIT_WAIT_SECONDS = 20.0
+
 
 def _customer_speech(conversation: Conversation) -> tuple[int, int]:
     """How much the customer (or a speaker not yet told apart) has said:
@@ -105,7 +114,10 @@ class CallWorkflowService:
         transcript_reviser: Callable[[Conversation], tuple[Utterance, ...] | None]
         | None = None,
         vehicle_model_resolver: Callable[[str], str | None] | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        # Waits out a short LLM rate limit during post-call processing.
+        self._sleep = sleep
         # The model of the caller's vehicle (from the CRM), so the estimate
         # uses that model's prices; None when it is not known.
         self._vehicle_model_resolver = vehicle_model_resolver
@@ -392,7 +404,9 @@ class CallWorkflowService:
             return None
 
         try:
-            analysis = self._analyze_and_save_coverage(conversation)
+            analysis = self._waiting_out_rate_limits(
+                call_id, lambda: self._analyze_and_save_coverage(conversation)
+            )
         except Exception:
             logger.exception("Final analysis failed for call %r", call_id)
             return None
@@ -400,15 +414,16 @@ class CallWorkflowService:
         self._close_out_complaints(call_id, analysis.coverage)
         self._assess_final_escalation(conversation, analysis)
 
+        request = PostCallSummaryRequest(
+            call_id=conversation.call_id,
+            conversation=conversation,
+            complaint_coverages=analysis.coverage.complaints,
+            sentiment=analysis.sentiment,
+            service_estimate=self._estimate_call(conversation),
+        )
         try:
-            summary = self._post_call_summary_service.generate_summary(
-                PostCallSummaryRequest(
-                    call_id=conversation.call_id,
-                    conversation=conversation,
-                    complaint_coverages=analysis.coverage.complaints,
-                    sentiment=analysis.sentiment,
-                    service_estimate=self._estimate_call(conversation),
-                )
+            summary = self._waiting_out_rate_limits(
+                call_id, lambda: self._post_call_summary_service.generate_summary(request)
             )
         except Exception:
             logger.exception("Post-call summary generation failed for call %r", call_id)
@@ -428,6 +443,31 @@ class CallWorkflowService:
         # Lets open live views pick up the summary.
         self._live_analysis.touch(call_id)
         return stored
+
+    def _waiting_out_rate_limits(self, call_id: str, step: Callable[[], _T]) -> _T:
+        """Run a post-call step, waiting and trying again (at most
+        _RATE_LIMIT_ATTEMPTS times) while the LLM is rate limited for a
+        short while: the call's last live analysis often used the minute's
+        tokens. A longer limit (e.g. the daily one) is left to the post-call
+        repair job."""
+        for attempt in range(1, _RATE_LIMIT_ATTEMPTS + 1):
+            try:
+                return step()
+            except Exception as exc:
+                limited = rate_limit_in(exc)
+                wait = None if limited is None else limited.retry_after_seconds
+                if wait is None and limited is not None:
+                    wait = _DEFAULT_RATE_LIMIT_WAIT_SECONDS
+                if wait is None or wait > _MAX_RATE_LIMIT_WAIT_SECONDS or attempt == _RATE_LIMIT_ATTEMPTS:
+                    raise
+                logger.info(
+                    "LLM rate limited during post-call processing of call %r; "
+                    "trying again in %.0f s",
+                    call_id,
+                    wait,
+                )
+                self._sleep(wait + 1.0)
+        raise AssertionError("unreachable")
 
     def _revise_transcript(self, conversation: Conversation) -> Conversation:
         """The completed call with its revised transcript, when there is

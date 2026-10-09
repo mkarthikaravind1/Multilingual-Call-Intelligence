@@ -2,7 +2,7 @@ import json
 import logging
 import re
 
-from app.ai.llm.client import LLMClient, LLMRequest
+from app.ai.llm.client import LLMClient, LLMRateLimitedError, LLMRequest
 from app.ai.summary.language_utils import extract_languages
 from app.ai.summary.provider import PostCallSummaryRequest, SummaryGenerationProvider
 from app.core.constants import COMPLAINT_CATEGORIES
@@ -59,6 +59,8 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
 
         try:
             response = self._llm_client.complete(LLMRequest(prompt=prompt))
+        except LLMRateLimitedError:
+            raise  # the caller waits and tries again
         except Exception:
             logger.exception(
                 "LLM completion failed while generating summary for call %s", request.call_id

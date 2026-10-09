@@ -1,12 +1,35 @@
+import re
 import time
 
-from groq import Groq
-from app.ai.llm.client import LLMClient, LLMRequest, LLMResponse
+from groq import Groq, RateLimitError
+from app.ai.llm.client import LLMClient, LLMRateLimitedError, LLMRequest, LLMResponse
 from app.core.config import settings
 from app.observability.metrics import PROVIDER_ERRORS, PROVIDER_REQUEST_DURATION
 
 class GroqClientError(Exception):
     pass
+
+
+class GroqRateLimitedError(GroqClientError, LLMRateLimitedError):
+    pass
+
+
+# "Please try again in 1m27.696s" / "in 1.37s" / "in 450ms"
+_TRY_AGAIN_IN = re.compile(r"try again in (?:(\d+)h)?(?:(\d+)m(?!s))?(?:([\d.]+)s)?(?:([\d.]+)ms)?")
+
+
+def _retry_after(exc: RateLimitError) -> float | None:
+    header = exc.response.headers.get("retry-after") if exc.response is not None else None
+    try:
+        if header is not None:
+            return float(header)
+    except ValueError:
+        pass
+    match = _TRY_AGAIN_IN.search(str(exc))
+    if match is None or not any(match.groups()):
+        return None
+    hours, minutes, seconds, millis = (float(g) if g else 0.0 for g in match.groups())
+    return hours * 3600 + minutes * 60 + seconds + millis / 1000
 
 class GroqLLMClient(LLMClient):
     def __init__(self, model: str | None = None, max_retries: int | None = None) -> None:
@@ -27,6 +50,11 @@ class GroqLLMClient(LLMClient):
                 messages=[{"role": "user", "content": request.prompt}],
                 **self._extra,
             )
+        except RateLimitError as exc:
+            PROVIDER_ERRORS.inc("llm")
+            raise GroqRateLimitedError(
+                f"Groq API call failed: {exc}", _retry_after(exc)
+            ) from exc
         except Exception as exc:
             PROVIDER_ERRORS.inc("llm")
             raise GroqClientError(f"Groq API call failed: {exc}") from exc
