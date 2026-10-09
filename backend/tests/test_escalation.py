@@ -252,10 +252,73 @@ def test_invalid_llm_output_is_discarded(text):
 def test_hybrid_adds_what_the_rules_miss():
     hybrid = HybridEscalationProvider(RuleBasedEscalationProvider(), LLMEscalationProvider(FakeLLM(LLM_SIGNAL)))
 
-    result = hybrid.assess(context((CUSTOMER, "Cancel it, I want a refund.")))
+    result = hybrid.assess(
+        context(
+            (CUSTOMER, "Cancel it, I want a refund."),
+            (CUSTOMER, "நுகர்வோர் மன்றத்துக்கு போவேன்"),
+        )
+    )
 
     assert types(result) == {EscalationSignalType.CANCELLATION, EscalationSignalType.LEGAL_THREAT}
     assert result.level is EscalationLevel.CRITICAL
+
+
+def _llm_signal(evidence) -> str:
+    return json.dumps(
+        {
+            "signals": [
+                {
+                    "type": "manager_request",
+                    "level": "high",
+                    "description": "Customer wants a manager.",
+                    "evidence": evidence,
+                }
+            ]
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        "நீங்கள அனுப்பினால் நீங்களின் புதிய அரசு இணக்கியனால்",  # made up (seen in a test call)
+        "I would like your manager to assist me.",  # a paraphrase, not what was said
+        "The customer seems frustrated and asks for a supervisor.",
+        None,
+        "",
+    ],
+)
+def test_llm_signals_without_a_real_quote_are_dropped(evidence):
+    llm = LLMEscalationProvider(FakeLLM(_llm_signal(evidence)))
+
+    result = llm.assess(context((CUSTOMER, "The car was late again and nobody called me.")))
+
+    assert result.signals == ()
+    assert result.level is EscalationLevel.NONE
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        "I want to speak to your manager right now",
+        '"I want to speak to your MANAGER right now!"',
+        "Customer: I want to speak to your manager",
+        "Sorry is not enough... speak to your manager right now",
+        "மேனேஜரை கூப்பிடுங்க",
+    ],
+)
+def test_llm_signals_quoting_the_call_are_kept(evidence):
+    llm = LLMEscalationProvider(FakeLLM(_llm_signal(evidence)))
+
+    result = llm.assess(
+        context(
+            (CUSTOMER, "Sorry is not enough. I want to speak to your manager right now."),
+            # Mixed audio sometimes labels the customer's words as the ICR's.
+            (ICR, "மேனேஜரை கூப்பிடுங்க, இப்போவே."),
+        )
+    )
+
+    assert types(result) == {EscalationSignalType.MANAGER_REQUEST}
 
 
 def test_hybrid_keeps_the_rules_when_the_llm_fails():

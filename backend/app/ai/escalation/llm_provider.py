@@ -4,6 +4,7 @@ only add signals to what the rules found."""
 
 import json
 import logging
+import re
 from typing import Any
 
 from app.ai.escalation.provider import EscalationContext, EscalationDetectionProvider
@@ -51,7 +52,7 @@ class LLMEscalationProvider(EscalationDetectionProvider):
         if not context.conversation.utterances:
             return EscalationAssessment(EscalationLevel.NONE)
         response = self._llm_client.complete(self._build_request(context))
-        signals = self._parse(response.text)
+        signals = _grounded(self._parse(response.text), context)
         return EscalationAssessment(level=combined_level(signals), signals=signals)
 
     @staticmethod
@@ -110,6 +111,48 @@ class LLMEscalationProvider(EscalationDetectionProvider):
             description=str(item["description"]).strip(),
             evidence=evidence.strip() if isinstance(evidence, str) and evidence.strip() else None,
         )
+
+
+# Quote fragments joined with an ellipsis are checked one by one.
+_ELLIPSIS = re.compile(r"\.\.\.|…")
+_SPEAKER_LABEL = re.compile(r"^\s*(customer|icr|unknown)\s*:", re.IGNORECASE)
+
+
+def _words(text: str) -> str:
+    """Lower-cased words and numbers only, single-spaced, any script."""
+    return " ".join(re.findall(r"\w+", text.casefold()))
+
+
+def _quoted_in(evidence: str, said: str) -> bool:
+    fragments = [
+        _words(_SPEAKER_LABEL.sub("", fragment)) for fragment in _ELLIPSIS.split(evidence)
+    ]
+    fragments = [fragment for fragment in fragments if fragment]
+    return bool(fragments) and all(f" {fragment} " in said for fragment in fragments)
+
+
+def _grounded(
+    signals: tuple[EscalationSignal, ...], context: EscalationContext
+) -> tuple[EscalationSignal, ...]:
+    """Only signals whose evidence is words actually said on the call. A
+    supervisor is alerted on these, and a model can invent a quote (a test
+    call got a critical "manager request" from made-up Tamil text). Any
+    speaker's words count: on mixed audio the customer's lines are
+    sometimes labelled as the ICR's."""
+    said = " " + " ".join(_words(u.transcript) for u in context.conversation.utterances) + " "
+    kept = []
+    for signal in signals:
+        if signal.evidence and _quoted_in(signal.evidence, said):
+            kept.append(signal)
+        else:
+            logger.warning(
+                "Dropping LLM escalation signal %s for call %r: its evidence is not "
+                "a quote from the call: %r",
+                signal.signal_type.value,
+                context.conversation.call_id,
+                signal.evidence,
+            )
+    return tuple(kept)
 
 
 class HybridEscalationProvider(EscalationDetectionProvider):
