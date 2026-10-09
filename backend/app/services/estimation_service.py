@@ -15,10 +15,15 @@ class EstimationService:
         provider: ServiceEstimationProvider,
         pricing: PricingSource | None = None,
         detector: ServiceDetectionProvider | None = None,
+        live_detector: ServiceDetectionProvider | None = None,
     ) -> None:
         self._provider = provider
         self._pricing = pricing_source(pricing or DEFAULT_PRICING_CONFIG)
         self._detector = detector or KeywordServiceDetector(self._pricing)
+        # During a call: the price-list keywords only, no LLM request per
+        # update. The detector above (LLM when configured) prices the call
+        # once it has ended.
+        self._live_detector = live_detector or KeywordServiceDetector(self._pricing)
 
     def estimate(self, issue: str) -> ServiceEstimate | None:
         if not isinstance(issue, str) or not issue.strip():
@@ -30,7 +35,11 @@ class EstimationService:
         return result
 
     def estimate_call(
-        self, utterances: Sequence[Utterance], vehicle_model: str | None = None
+        self,
+        utterances: Sequence[Utterance],
+        vehicle_model: str | None = None,
+        *,
+        live: bool = False,
     ) -> CallServiceEstimate | None:
         """Every service the call has needed so far, priced from the price
         list and added up. Reading the whole call, the estimate stays (and
@@ -38,11 +47,14 @@ class EstimationService:
 
         Prices are for vehicle_model (the caller's vehicle, from the CRM),
         else for the model named in the call; a service without a price for
-        that model gets its all-models price, marked approximate."""
+        that model gets its all-models price, marked approximate.
+
+        live: the call is still going; services are found from the price
+        list's keywords alone (no LLM request)."""
         if not utterances:
             return None
         pricing = self._pricing()
-        detection = self._detector.detect_call(utterances)
+        detection = (self._live_detector if live else self._detector).detect_call(utterances)
         model = (vehicle_model or "").strip() or detection.vehicle_model
         priced = [
             found for name in detection.services if (found := pricing.price_for(name, model))

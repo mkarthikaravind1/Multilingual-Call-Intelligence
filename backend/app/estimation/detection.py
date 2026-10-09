@@ -109,10 +109,9 @@ class LLMServiceDetector(ServiceDetectionProvider):
         try:
             response = self._llm_client.complete(LLMRequest(prompt=self._prompt(utterances)))
             return self._parse(response.text or "")
-        except Exception:
-            logger.warning(
-                "LLM service detection failed; using the price-list keywords.", exc_info=True
-            )
+        except Exception as exc:
+            # One line: while the LLM is rate limited this repeats.
+            logger.warning("LLM service detection failed (%s); using the price-list keywords.", exc)
             return self._fallback.detect_call(utterances)
 
     def _prompt(self, utterances: Sequence[Utterance]) -> str:

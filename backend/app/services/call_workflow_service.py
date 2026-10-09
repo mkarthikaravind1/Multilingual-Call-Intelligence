@@ -11,7 +11,7 @@ from app.domain.escalation import Escalation
 from app.domain.post_call_summary import PostCallSummary
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.service_estimate import CallServiceEstimate
-from app.domain.utterance import Utterance
+from app.domain.utterance import SpeakerRole, Utterance
 from app.services.call_service import CallService
 from app.services.conversation_analysis_service import (
     ConversationAnalysisResult,
@@ -51,6 +51,14 @@ class CallAnalysisResult:
     post_call_summary: PostCallSummary | None = None
     # None when the call has never escalated (or escalation is not wired).
     escalation: Escalation | None = None
+
+def _customer_speech(conversation: Conversation) -> tuple[int, int]:
+    """How much the customer (or a speaker not yet told apart) has said:
+    their lines and characters. It changes when they say more, including a
+    line that grows as live speech continues it."""
+    lines = [u.transcript for u in conversation.utterances if u.speaker_role != SpeakerRole.ICR]
+    return len(lines), sum(len(line) for line in lines)
+
 
 def _question_text(snapshot) -> str | None:
     """The question last suggested on this call (its English when it was
@@ -130,6 +138,9 @@ class CallWorkflowService:
         self._live_analysis = LiveAnalysisStore(
             live_state_store or InMemoryLiveStateStore(), live_analysis_ttl_seconds
         )
+        # call_id -> _customer_speech() at its last live analysis. Per
+        # instance: a call's stream (and so its live analysis) is on one.
+        self._analysed_customer_speech: dict[str, tuple[int, int]] = {}
 
     def process_utterance(
         self,
@@ -189,6 +200,14 @@ class CallWorkflowService:
         conversation = self._call_service.get_call(call_id)
         if conversation.status == ConversationStatus.COMPLETED:
             return None
+        speech = _customer_speech(conversation)
+        if speech == (0, 0) or speech == self._analysed_customer_speech.get(call_id):
+            # The customer has not spoken (more) since the last analysis:
+            # complaints, tone and escalation come from their words, so the
+            # 4-5 LLM requests would change nothing. The estimate (keywords,
+            # no LLM) still follows what the ICR booked or offered.
+            self._refresh_live_estimate(conversation)
+            return None
         try:
             result = self._analyze_and_store(
                 conversation, still_active=lambda: self._is_active(call_id)
@@ -201,11 +220,12 @@ class CallWorkflowService:
             # the rest of the analysis, so it is still brought up to date.
             self._refresh_live_estimate(conversation)
             raise
+        self._analysed_customer_speech[call_id] = speech
         self._record_learning(call_id, result)
         return result
 
     def _refresh_live_estimate(self, conversation: Conversation) -> None:
-        estimate = self._estimate_call(conversation)
+        estimate = self._estimate_call(conversation, live=True)
         previous = self._live_analysis.load(conversation.call_id)
         if estimate is None or (previous is not None and previous.service_estimate == estimate):
             return
@@ -286,6 +306,7 @@ class CallWorkflowService:
 
     def _forget_live_result(self, call_id: str) -> None:
         self._live_analysis.forget(call_id)
+        self._analysed_customer_speech.pop(call_id, None)
 
     def _analyze_active_call(
         self,
@@ -304,7 +325,7 @@ class CallWorkflowService:
             coverage=analysis.coverage,
             sentiment=analysis.sentiment,
             question_suggestion=suggestion,
-            service_estimate=self._estimate_call(conversation),
+            service_estimate=self._estimate_call(conversation, live=True),
         )
 
     def _assess_final_escalation(
@@ -515,12 +536,15 @@ class CallWorkflowService:
             logger.warning("Could not look up the vehicle model of call %r", call_id, exc_info=True)
             return None
 
-    def _estimate_call(self, conversation: Conversation) -> CallServiceEstimate | None:
+    def _estimate_call(
+        self, conversation: Conversation, *, live: bool = False
+    ) -> CallServiceEstimate | None:
         """Every service the call has needed so far, added up. A failure
-        here never stops the rest of the analysis."""
+        here never stops the rest of the analysis. live: from the price
+        list's keywords only (no LLM request on every update)."""
         try:
             return self._estimation_service.estimate_call(
-                conversation.utterances, self._vehicle_model(conversation.call_id)
+                conversation.utterances, self._vehicle_model(conversation.call_id), live=live
             )
         except Exception:
             logger.exception("Service estimate failed for call %r", conversation.call_id)

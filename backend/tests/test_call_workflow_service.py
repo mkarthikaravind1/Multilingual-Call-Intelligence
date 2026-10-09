@@ -421,6 +421,7 @@ def test_estimate_failure_does_not_stop_the_analysis():
             RuleBasedEstimationProvider(DEFAULT_PRICING_CONFIG),
             DEFAULT_PRICING_CONFIG,
             FailingDetector(DEFAULT_PRICING_CONFIG),
+            live_detector=FailingDetector(DEFAULT_PRICING_CONFIG),
         ),
         harness.post_call_summary_service,
     )
@@ -823,3 +824,63 @@ def test_live_transcript_stays_when_there_is_no_revision(outcome):
 
     assert harness.call_service.get_call(CALL_ID).utterances == (_utterance(0),)
     assert harness.summary_repository.get(CALL_ID) is not None
+
+
+# ---- Fewer LLM requests during a live call ----
+
+
+def _said(index: int, role: SpeakerRole, text: str) -> Utterance:
+    return Utterance(
+        utterance_id=f"s{index}",
+        transcript=text,
+        speaker_role=role,
+        languages=("en",),
+        start_time=float(index),
+        end_time=index + 0.5,
+    )
+
+
+def test_live_analysis_waits_for_the_customer_to_say_something():
+    harness = _build()
+    workflow = harness.workflow
+
+    workflow.record_utterance(CALL_ID, _said(0, SpeakerRole.ICR, "Good morning, how can I help?"))
+    assert workflow.analyze_latest_speech(CALL_ID) is None
+    assert harness.complaint_provider.calls == 0
+
+    workflow.record_utterance(CALL_ID, _said(1, SpeakerRole.CUSTOMER, "My car is late again."))
+    assert workflow.analyze_latest_speech(CALL_ID) is not None
+    assert harness.complaint_provider.calls == 1
+
+    # The customer's line growing (live speech continues it) is new speech.
+    workflow.record_utterance_update(
+        CALL_ID, _said(1, SpeakerRole.CUSTOMER, "My car is late again. Nobody called me.")
+    )
+    assert workflow.analyze_latest_speech(CALL_ID) is not None
+    assert harness.complaint_provider.calls == 2
+
+    # Only the ICR spoke since: nothing for the LLM to learn.
+    workflow.record_utterance(CALL_ID, _said(2, SpeakerRole.ICR, "Let me check that for you."))
+    assert workflow.analyze_latest_speech(CALL_ID) is None
+    assert (harness.complaint_provider.calls, harness.sentiment_provider.calls) == (2, 2)
+
+
+def test_the_live_estimate_uses_keywords_and_the_final_one_the_detector():
+    class CountingDetector(KeywordServiceDetector):
+        calls = 0
+
+        def detect_call(self, utterances):
+            CountingDetector.calls += 1
+            return super().detect_call(utterances)
+
+    service = EstimationService(
+        RuleBasedEstimationProvider(DEFAULT_PRICING_CONFIG),
+        DEFAULT_PRICING_CONFIG,
+        CountingDetector(DEFAULT_PRICING_CONFIG),
+    )
+    utterances = (_said(0, SpeakerRole.CUSTOMER, "I need an oil change."),)
+
+    assert service.estimate_call(utterances, live=True) is not None
+    assert CountingDetector.calls == 0
+    assert service.estimate_call(utterances) is not None
+    assert CountingDetector.calls == 1
