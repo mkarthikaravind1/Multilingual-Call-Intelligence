@@ -27,3 +27,32 @@ def test_reset_data_stops_without_confirmation(monkeypatch):
 
     with pytest.raises(SystemExit, match="Cancelled"):
         cli.main(["reset-data"])
+
+
+@pytest.mark.parametrize("email", ["sup@example.test", "sup@dealer.local", "not-an-email"])
+def test_create_user_refuses_emails_the_login_page_rejects(monkeypatch, email):
+    class NoUsers:
+        def create_user(self, *args):
+            pytest.fail("must not create the user")
+
+    monkeypatch.setattr(cli, "_service", NoUsers)
+    monkeypatch.setenv("TEST_PASSWORD", "a-long-test-password")
+
+    with pytest.raises(SystemExit, match="cannot be used to sign in"):
+        cli.main(["create-user", "--email", email, "--password-env", "TEST_PASSWORD"])
+
+
+def test_create_user_accepts_a_normal_email(monkeypatch, capsys):
+    created = []
+
+    class Users:
+        def create_user(self, email, password, role):
+            created.append(email)
+            return type("U", (), {"email": email, "role": role, "user_id": "u-1"})()
+
+    monkeypatch.setattr(cli, "_service", Users)
+    monkeypatch.setenv("TEST_PASSWORD", "a-long-test-password")
+
+    cli.main(["create-user", "--email", " sup@dealer.com ", "--password-env", "TEST_PASSWORD"])
+
+    assert created == ["sup@dealer.com"]

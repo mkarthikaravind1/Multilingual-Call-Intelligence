@@ -24,6 +24,7 @@ import getpass
 import os
 import sys
 
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import text
 
 from app.composition.database import build_production_repositories
@@ -40,6 +41,15 @@ from app.services.user_management_service import (
     UserManagementService,
     normalize_email,
 )
+
+
+def _login_email(value: str) -> str:
+    """The email, if the login page would accept it; else exit. Without
+    this, an account could be created that can never sign in."""
+    try:
+        return TypeAdapter(EmailStr).validate_python(value.strip())
+    except ValidationError as exc:
+        sys.exit(f"{value!r} cannot be used to sign in: {exc.errors()[0]['msg']}")
 
 
 def _password(args: argparse.Namespace) -> str:
@@ -131,7 +141,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "create-user":
-            user = service.create_user(args.email, _password(args), UserRole(args.role))
+            email = _login_email(args.email)
+            user = service.create_user(email, _password(args), UserRole(args.role))
             print(f"Created {user.role.value} {user.email} ({user.user_id}).")
         elif args.command == "reset-password":
             email = normalize_email(args.email)

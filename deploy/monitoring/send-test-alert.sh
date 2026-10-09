@@ -42,16 +42,26 @@ case "$severity" in
 esac
 
 # Alertmanager identifies an alert by its labels, so --resolve must be given
-# the same severity the alert was fired with.
+# the same severity the alert was fired with. Each run gets its own "run"
+# label: Alertmanager does not e-mail an alert it already reported in the
+# last repeat_interval (4 h), so re-firing identical labels would send
+# nothing. The run is remembered so --resolve clears the latest one.
+state_file="${TMPDIR:-/tmp}/call-intelligence-test-alert-$severity"
 timing=""
 if [ -n "$ends_at" ]; then
+  if ! run=$(cat "$state_file" 2>/dev/null) || [ -z "$run" ]; then
+    echo "No $severity test alert from this machine to resolve." >&2
+    exit 1
+  fi
   timing="\"endsAt\": \"$ends_at\","
+else
+  run="$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 
 payload=$(cat <<EOF
 [
   {
-    "labels": { "alertname": "TestAlert", "test": "true", "severity": "$severity" },
+    "labels": { "alertname": "TestAlert", "test": "true", "severity": "$severity", "run": "$run" },
     "annotations": {
       "summary": "Test alert: ignore this message",
       "description": "Sent by deploy/monitoring/send-test-alert.sh to check that alert e-mails arrive and look right. Nothing is wrong."
@@ -73,8 +83,10 @@ if ! curl --silent --show-error --fail \
 fi
 
 if [ -n "$ends_at" ]; then
+  rm -f "$state_file"
   echo "TestAlert marked resolved. The 'resolved' e-mail arrives within ~5 minutes (group_interval)."
 else
+  echo "$run" > "$state_file"
   echo "TestAlert ($severity) sent to $ALERTMANAGER_URL."
   echo "The e-mail arrives in about 30 s: http://localhost:8025"
 fi
