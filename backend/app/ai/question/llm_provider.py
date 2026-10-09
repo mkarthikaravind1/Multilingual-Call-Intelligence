@@ -20,6 +20,9 @@ _NO_CONVERSATION = "(no conversation available yet)"
 _GUARDRAILS = (
     "The question must directly address the target complaint category.",
     "Ask for information that is still missing; do not repeat anything the conversation already states.",
+    "Before you answer, check what the CUSTOMER has already said: never ask for a date, "
+    "amount, bill, part, vehicle detail or event they already gave. If nothing about the "
+    "target category is still missing, respond with null.",
     "The question is a suggestion for the ICR to ask the customer. Do not write as the ICR: "
     "no greetings, apologies, promises or statements on behalf of the company.",
     "Do not invent facts that are not present in the conversation.",
@@ -81,8 +84,11 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
 
     @staticmethod
     def _conversation_text(context: QuestionGenerationContext) -> str:
+        # Who said what, so the model can see what the customer already told.
         return "\n".join(
-            text for u in context.utterances if (text := u.transcript.strip())
+            f"{u.speaker_role.value}: {text}"
+            for u in context.utterances
+            if (text := u.transcript.strip())
         )
 
     def _build_request(self, context: QuestionGenerationContext) -> LLMRequest:

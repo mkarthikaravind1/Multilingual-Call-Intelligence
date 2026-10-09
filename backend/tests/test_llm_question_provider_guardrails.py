@@ -167,3 +167,14 @@ def test_prompt_contains_context_guardrails_and_json_contract():
     assert "Do not invent facts" in prompt
     assert "Do not ask about any other complaint category" in prompt
     assert "exactly: null" in prompt
+
+def test_prompt_shows_who_said_what_and_forbids_asking_for_given_facts():
+    # A test call asked "What is the current bill amount?" right after the
+    # customer said the bill was 14,000.
+    provider, client = _provider(_payload())
+
+    provider.generate(_context(("Now the bill says 14,000.",)))
+
+    prompt = client.complete.call_args.args[0].prompt
+    assert "CUSTOMER: Now the bill says 14,000." in prompt
+    assert "never ask for a date, amount, bill" in prompt
