@@ -119,8 +119,33 @@ def test_without_the_check_there_is_one_request():
 def test_the_setting_turns_the_check_on_and_off():
     for enabled in (True, False):
         llm = ScriptedLLM([NEW], answered=set())
-        settings = Settings(_env_file=None, question_answered_check=enabled)  # type: ignore[call-arg]
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None, question_answered_check=enabled, question_check_model=""
+        )
 
         create_question_provider(llm, settings).generate(_context())
 
         assert len(llm.prompts) == (2 if enabled else 1)
+
+
+def test_the_check_can_use_another_model():
+    writer = ScriptedLLM([NEW], answered=set())
+    checker = ScriptedLLM([], answered=set())
+
+    LLMQuestionProvider(writer, check_answered=True, check_client=checker).generate(_context())
+
+    assert len(writer.prompts) == 1
+    assert len(checker.prompts) == 1 and "Has the customer already given" in checker.prompts[0]
+
+
+def test_the_check_model_setting_builds_its_own_client(monkeypatch):
+    built = []
+    monkeypatch.setattr(
+        "app.composition.providers.create_llm_client",
+        lambda settings=None, model=None, max_retries=None: built.append(model) or ScriptedLLM([], set()),
+    )
+    settings = Settings(_env_file=None, question_check_model="openai/gpt-oss-120b")  # type: ignore[call-arg]
+
+    create_question_provider(ScriptedLLM([NEW], set()), settings)
+
+    assert built == ["openai/gpt-oss-120b"]

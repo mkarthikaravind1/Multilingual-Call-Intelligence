@@ -103,11 +103,20 @@ def create_question_provider(
     settings = settings or get_settings()
     if llm_client is None:
         llm_client = create_llm_client(settings)
+    # QUESTION_CHECK_MODEL picks the checking model (empty: the same client).
+    check_client = llm_client
+    check_model = settings.question_check_model.strip()
+    if settings.question_answered_check and check_model:
+        try:
+            check_client = create_llm_client(settings, model=check_model)
+        except UnsupportedProviderError as exc:
+            logger.warning("Checking suggested questions with the main LLM: %s", exc)
     # The fixed questions (translated) stand in when the LLM fails.
     return LLMQuestionProvider(
         llm_client,
         fallback=RuleBasedQuestionProvider(),
         check_answered=settings.question_answered_check,
+        check_client=check_client,
     )
 
 def _build_sarvam_asr(settings: Settings) -> ASRProvider:

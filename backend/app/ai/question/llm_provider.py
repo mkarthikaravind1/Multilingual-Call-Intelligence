@@ -96,9 +96,13 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
         llm_client: LLMClient,
         fallback: QuestionSuggestionProvider | None = None,
         check_answered: bool = False,
+        check_client: LLMClient | None = None,
     ) -> None:
         self._llm_client = llm_client
         self._fallback = fallback
+        # The model that checks suggestions (default: the one that writes
+        # them). A larger model judges "already said?" far more reliably.
+        self._check_client = check_client or llm_client
         # Each suggestion is checked against what the customer already said;
         # one asking for that is replaced once, else nothing is suggested.
         self._check_answered = check_answered
@@ -153,7 +157,7 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
         )
         try:
             data = json.loads(
-                _strip_code_fence(self._llm_client.complete(LLMRequest(prompt=prompt)).text)
+                _strip_code_fence(self._check_client.complete(LLMRequest(prompt=prompt)).text)
             )
             answered = data["already_answered"]
             if not isinstance(answered, bool):

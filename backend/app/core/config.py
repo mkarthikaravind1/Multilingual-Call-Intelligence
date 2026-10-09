@@ -197,6 +197,9 @@ class Settings(BaseSettings):
     # (one extra short LLM request per suggestion); one that asks for it is
     # replaced once, else nothing is suggested.
     question_answered_check: bool = True
+    # The model for that check (empty: GROQ_MODEL). On the test calls
+    # gpt-oss-120b judged 12/12 checks right where gpt-oss-20b missed some.
+    question_check_model: str = "openai/gpt-oss-120b"
     # Browser live-call WebSockets authenticate with a single-use ticket
     # (POST /api/v1/calls/{call_id}/live-token), never the access token.
     live_call_ws_token_ttl_seconds: int = 60
