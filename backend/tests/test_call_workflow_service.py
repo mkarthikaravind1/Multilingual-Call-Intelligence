@@ -884,3 +884,24 @@ def test_the_live_estimate_uses_keywords_and_the_final_one_the_detector():
     assert CountingDetector.calls == 0
     assert service.estimate_call(utterances) is not None
     assert CountingDetector.calls == 1
+
+
+def test_a_new_utterance_loads_the_call_once():
+    from app.ai.escalation.rule_based_provider import RuleBasedEscalationProvider
+    from app.services.escalation_repository import InMemoryEscalationRepository
+    from app.services.escalation_service import EscalationService
+
+    harness = _build()
+    harness.workflow._escalation_service = EscalationService(
+        InMemoryEscalationRepository(), RuleBasedEscalationProvider()
+    )
+    repository = harness.call_service._conversation_service._repository
+    loads = []
+    get = repository.get
+    repository.get = lambda call_id: loads.append(call_id) or get(call_id)
+
+    harness.workflow.process_utterance(CALL_ID, _utterance(0))
+
+    # Storing it loads the call; the escalation check and the analysis reuse
+    # that copy (each loaded it again before: 3 loads of the whole call).
+    assert len(loads) == 1

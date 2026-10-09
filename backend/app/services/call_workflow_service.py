@@ -160,8 +160,7 @@ class CallWorkflowService:
         utterance: Utterance,
     ) -> CallAnalysisResult:
         """Store the utterance and analyse the call, in one step."""
-        self.record_utterance(call_id, utterance)
-        conversation = self._call_service.get_call(call_id)
+        conversation = self.record_utterance(call_id, utterance)
         if conversation.status == ConversationStatus.COMPLETED:
             result = self._read_completed_analysis(conversation)
         else:
@@ -175,36 +174,36 @@ class CallWorkflowService:
         utterance: Utterance,
     ) -> CallAnalysisResult:
         """Update the latest utterance and analyse the call, in one step."""
-        self.record_utterance_update(call_id, utterance)
-        conversation = self._call_service.get_call(call_id)
+        conversation = self.record_utterance_update(call_id, utterance)
         result = self._analyze_and_store(conversation)
         self._record_learning(call_id, result)
         return result
 
-    def record_utterance(self, call_id: str, utterance: Utterance) -> None:
+    def record_utterance(self, call_id: str, utterance: Utterance) -> Conversation:
         """Store the utterance and let open live views show it at once,
-        before (and independently of) the slower AI analysis."""
-        self._call_service.add_utterance(call_id, utterance)
-        self._flag_what_was_said(call_id)
+        before (and independently of) the slower AI analysis. Returns the
+        call as stored, so callers need not load it again."""
+        conversation = self._call_service.add_utterance(call_id, utterance)
+        self._flag_what_was_said(conversation)
         self._live_analysis.touch(call_id)
+        return conversation
 
-    def record_utterance_update(self, call_id: str, utterance: Utterance) -> None:
+    def record_utterance_update(self, call_id: str, utterance: Utterance) -> Conversation:
         """Like record_utterance, for the call's latest utterance growing
         (same utterance_id) as live speech continues it."""
-        self._call_service.update_latest_utterance(call_id, utterance)
-        self._flag_what_was_said(call_id)
+        conversation = self._call_service.update_latest_utterance(call_id, utterance)
+        self._flag_what_was_said(conversation)
         self._live_analysis.touch(call_id)
+        return conversation
 
-    def _flag_what_was_said(self, call_id: str) -> None:
+    def _flag_what_was_said(self, conversation: Conversation) -> None:
         """A manager demand or a threat escalates at once, not only when the
         AI analysis (seconds behind, and dropped when the call ends) gets to it."""
         if self._escalation_service is None:
             return
         self._best_effort(
-            "Quick escalation check", call_id,
-            lambda: self._escalation_service.assess_what_was_said(
-                self._call_service.get_call(call_id)
-            ),
+            "Quick escalation check", conversation.call_id,
+            self._escalation_service.assess_what_was_said, conversation,
         )
 
     def analyze_latest_speech(self, call_id: str) -> CallAnalysisResult | None:
