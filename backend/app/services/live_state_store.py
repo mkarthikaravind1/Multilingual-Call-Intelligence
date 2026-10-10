@@ -31,6 +31,11 @@ class LiveStateStore(ABC):
         crashed holder never blocks others for good."""
         raise NotImplementedError
 
+    def renew_lock(self, name: str, token: str, ttl_seconds: float) -> bool:
+        """Keep the lock for another ttl_seconds if token still holds it.
+        False when it does not (it expired; someone else may have it)."""
+        raise NotImplementedError
+
     @abstractmethod
     def release_lock(self, name: str, token: str) -> None:
         """Release the lock if token still holds it."""
@@ -86,6 +91,13 @@ class InMemoryLiveStateStore(LiveStateStore):
             self._values[_lock_key(name)] = (token, self._clock() + ttl_seconds)
         return token
 
+    def renew_lock(self, name: str, token: str, ttl_seconds: float) -> bool:
+        with self._lock:
+            if self._live(_lock_key(name)) != token:
+                return False
+            self._values[_lock_key(name)] = (token, self._clock() + ttl_seconds)
+        return True
+
     def release_lock(self, name: str, token: str) -> None:
         with self._lock:
             if self._live(_lock_key(name)) == token:
@@ -124,6 +136,13 @@ _RELEASE_SCRIPT = (
 )
 
 
+# Extends the lock only if it still holds our token.
+_RENEW_SCRIPT = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then "
+    "return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
+)
+
+
 class RedisLiveStateStore(LiveStateStore):
     def __init__(self, client: RedisClient, key_prefix: str = "live_state") -> None:
         self._client = client
@@ -154,6 +173,12 @@ class RedisLiveStateStore(LiveStateStore):
             self._key(_lock_key(name)), token, ex=_seconds(ttl_seconds), nx=True
         )
         return token if taken else None
+
+    def renew_lock(self, name: str, token: str, ttl_seconds: float) -> bool:
+        renewed = self._client.eval(
+            _RENEW_SCRIPT, 1, self._key(_lock_key(name)), token, str(_seconds(ttl_seconds))
+        )
+        return bool(renewed)
 
     def release_lock(self, name: str, token: str) -> None:
         self._client.eval(_RELEASE_SCRIPT, 1, self._key(_lock_key(name)), token)

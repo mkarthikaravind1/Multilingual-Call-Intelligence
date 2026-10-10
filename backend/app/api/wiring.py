@@ -408,6 +408,9 @@ def build_api_services(
         max_attempts=settings.post_call_repair_max_attempts,
         scan_limit=settings.post_call_repair_scan_limit,
         background_interval_seconds=settings.post_call_repair_interval_seconds,
+        rate_limit_wait=workflow_service.post_call_rate_limit_wait,
+        rate_limit_retry_seconds=settings.post_call_repair_rate_limit_retry_seconds,
+        rate_limit_give_up_seconds=settings.post_call_repair_rate_limit_give_up_seconds,
     )
 
     # --- Telephony (Production Telephony) ---
@@ -548,6 +551,15 @@ def build_api_services(
         background_jobs=background_jobs,
         warm_up=warm_up_live_models if live_chunk_processing_service is not None else None,
         health_checks={"live_state": live_state_store.ping} if shared_live_state else {},
+    )
+    REGISTRY.register(
+        Gauge(
+            "background_job_overdue_intervals",
+            "Time since each background job's last run ended, in its own intervals "
+            "(about 1 when it runs on time; it keeps growing when the job hangs).",
+            ("name",),
+            lambda: {(name,): overdue for name, overdue in background_jobs.overdue_by().items()},
+        )
     )
     REGISTRY.register(
         Gauge(

@@ -165,7 +165,14 @@ class CustomerSummaryDeliveryService:
             return 0
         sent = 0
         now = time()
-        for delivery in self._repository.list_unfinished(_RETRY_BATCH):
+        # Only those that can still be tried: the ones that used up their
+        # attempts or their day would otherwise fill every batch.
+        retryable = self._repository.list_unfinished(
+            _RETRY_BATCH,
+            max_attempts=self._max_attempts,
+            created_after=now - RETRY_WINDOW_SECONDS,
+        )
+        for delivery in retryable:
             if not self._may_retry(delivery, now):
                 continue
             try:

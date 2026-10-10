@@ -144,6 +144,13 @@ doesn't finish (a crash, a provider outage), the repair sweep retries it:
 - once a call has been waiting `POST_CALL_REPAIR_MIN_AGE_SECONDS`,
 - with exponential backoff, up to `POST_CALL_REPAIR_MAX_ATTEMPTS` times.
 
+A call stopped by the LLM's rate limit does not use up an attempt. All
+repairs then wait until the LLM said the limit clears, at the latest
+`POST_CALL_REPAIR_RATE_LIMIT_RETRY_SECONDS` (default 3600), and a call is
+given up on once it has waited `POST_CALL_REPAIR_RATE_LIMIT_GIVE_UP_SECONDS`
+(default 86400). So calls made after the day's LLM quota is used get their
+summary when the quota returns.
+
 A Redis lock ensures that only one instance sweeps at a time. Supervisors
 and admins can see waiting calls and retry them under **Administration →
 Post-call processing**, or from a call's post-call analysis page.
@@ -210,6 +217,8 @@ your monitoring network. It includes:
 - `http_requests_total{method,route,status}` and `http_request_duration_seconds`;
 - `calls{status}`, `escalations_open{level}`, `complaints_open{kind}`;
 - `telephony_streams_open`, `post_call_unprocessed_calls`, `post_call_repairs_total{outcome}`.
+- `background_job_overdue_intervals{name}`: time since each background job's last
+  run ended, in its own intervals (about 1 when it runs on time).
 
 - `dependency_up{dependency}` (the `/health/ready` checks);
 - live calls: `live_audio_chunks_total{stream,outcome}`,
@@ -246,6 +255,7 @@ Alert rules (`deploy/monitoring/prometheus/alerts.yml`):
 | LiveChunksFailing / LiveTranscriptLagging | more than 20% of chunks fail / chunk-to-transcript p95 above 8 s |
 | PostCallProcessingStuck | calls without a post-call summary for 30 min |
 | PostCallRepairGaveUp | the repair sweep gave up on a call |
+| BackgroundJobNotRunning | a background job (repair, stale calls, summary texts) has not finished a run for 3 of its intervals, for 10 min |
 | CriticalEscalationOpen | a critical escalation is unacknowledged for 15 min |
 
 The thresholds are starting points. Tune them once you know real call

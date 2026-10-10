@@ -231,6 +231,11 @@ class Settings(BaseSettings):
     post_call_repair_min_age_seconds: float = 120.0
     post_call_repair_max_attempts: int = 5
     post_call_repair_scan_limit: int = 500
+    # A call stopped by the LLM's rate limit does not use up an attempt:
+    # it is tried again when the LLM said the limit clears, at the latest
+    # RETRY seconds later, and given up on after GIVE_UP seconds.
+    post_call_repair_rate_limit_retry_seconds: float = 3600.0
+    post_call_repair_rate_limit_give_up_seconds: float = 86400.0
     # Stale calls: a phone call whose hangup was never reported is
     # completed once its stream is closed and nothing was said for
     # STALE_CALL_IDLE_SECONDS. Interval 0 disables the sweep.

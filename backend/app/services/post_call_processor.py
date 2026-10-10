@@ -34,6 +34,8 @@ _RATE_LIMIT_ATTEMPTS = 3
 # Waits longer than this (a daily limit) are left to the repair job.
 _MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
 _DEFAULT_RATE_LIMIT_WAIT_SECONDS = 20.0
+# rate_limit_wait() when the LLM did not say how long its limit lasts.
+UNKNOWN_RATE_LIMIT_WAIT = float("inf")
 
 
 class PostCallProcessor:
@@ -85,6 +87,9 @@ class PostCallProcessor:
         self._live_analysis = live_analysis
         self._forget_live_result = forget_live_result
         self._estimate = estimate
+        # call_id -> how long the LLM asked to wait, for calls whose last
+        # processing was stopped by a rate limit (see rate_limit_wait).
+        self._rate_limit_waits: dict[str, float] = {}
 
     def process(self, call_id: str) -> PostCallSummary | None:
         """Generate, store and deliver the post-call summary once.
@@ -92,6 +97,7 @@ class PostCallProcessor:
         Safe to repeat: a stored summary is never regenerated. Failures are
         logged and leave the call COMPLETED.
         """
+        self._rate_limit_waits.pop(call_id, None)
         conversation = self._call_service.get_call(call_id)
         if conversation.status != ConversationStatus.COMPLETED:
             logger.warning("Skipping post-call processing for active call %r", call_id)
@@ -115,8 +121,9 @@ class PostCallProcessor:
             analysis = self._waiting_out_rate_limits(
                 call_id, lambda: self._analyze_and_save_coverage(conversation)
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Final analysis failed for call %r", call_id)
+            self._note_rate_limit(call_id, exc)
             return None
 
         self._close_out_complaints(call_id, analysis.coverage)
@@ -133,8 +140,9 @@ class PostCallProcessor:
             summary = self._waiting_out_rate_limits(
                 call_id, lambda: self._post_call_summary_service.generate_summary(request)
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Post-call summary generation failed for call %r", call_id)
+            self._note_rate_limit(call_id, exc)
             return None
 
         if summary is None:
@@ -151,6 +159,19 @@ class PostCallProcessor:
         # Lets open live views pick up the summary.
         self._live_analysis.touch(call_id)
         return stored
+
+    def rate_limit_wait(self, call_id: str) -> float | None:
+        """When the call's last processing here was stopped by an LLM rate
+        limit: how many seconds the LLM asked to wait
+        (UNKNOWN_RATE_LIMIT_WAIT if it did not say). None otherwise. The
+        repair job uses it to wait for the limit instead of giving up."""
+        return self._rate_limit_waits.get(call_id)
+
+    def _note_rate_limit(self, call_id: str, error: Exception) -> None:
+        limited = rate_limit_in(error)
+        if limited is not None:
+            wait = limited.retry_after_seconds
+            self._rate_limit_waits[call_id] = UNKNOWN_RATE_LIMIT_WAIT if wait is None else wait
 
     def _waiting_out_rate_limits(self, call_id: str, step: Callable[[], _T]) -> _T:
         """Run a post-call step, waiting and trying again (at most

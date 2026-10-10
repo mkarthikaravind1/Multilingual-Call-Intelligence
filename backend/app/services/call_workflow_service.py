@@ -372,6 +372,11 @@ class CallWorkflowService:
         the call COMPLETED."""
         return self._post_call.process(call_id)
 
+    def post_call_rate_limit_wait(self, call_id: str) -> float | None:
+        """Seconds the LLM asked to wait, when the call's last post-call
+        processing was stopped by a rate limit; None otherwise."""
+        return self._post_call.rate_limit_wait(call_id)
+
     def _track_complaints(self, coverage: ConversationCoverage) -> None:
         if self._complaint_lifecycle_service is None:
             return

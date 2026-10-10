@@ -797,6 +797,10 @@ def test_customer_summary_delivery_is_claimed_by_one_run_only(session_factory):
     assert repo.add_if_absent(failed) is True
     assert repo.add_if_absent(dataclasses.replace(failed, delivery_id="delivery-2")) is False
     assert repo.list_unfinished(10) == (failed,)
+    # Those that can never be retried are left out by the query itself.
+    assert repo.list_unfinished(10, max_attempts=1) == ()
+    assert repo.list_unfinished(10, max_attempts=2, created_after=-1.0) == (failed,)
+    assert repo.list_unfinished(10, created_after=failed.created_at) == ()
 
     assert repo.claim_retry("delivery-1", 1, 5.0) is True
     assert repo.claim_retry("delivery-1", 1, 6.0) is False

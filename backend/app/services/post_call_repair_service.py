@@ -6,6 +6,9 @@ Post-call processing is idempotent - a stored summary is never regenerated -
 so a retry only fills in what is missing. Retry bookkeeping lives in the
 shared live-state store and a lock keeps two instances from sweeping at
 the same time.
+
+A failure caused by an LLM rate limit is waited out rather than counted:
+a daily limit lasts far longer than the few attempts a broken call gets.
 """
 
 import logging
@@ -26,8 +29,12 @@ _LOCK_NAME = "post_call_repair"
 _LOCK_TTL_SECONDS = 15 * 60
 _STATE_TTL_SECONDS = 7 * 24 * 60 * 60
 _LAST_RUN_KEY = "repair:last_run"
+# Until when no call is attempted, because the LLM is rate limited.
+_PAUSED_UNTIL_KEY = "repair:rate_limited_until"
 _PAGE_SIZE = 100
 NO_SUMMARY_ERROR = "Post-call processing produced no summary; see the server logs."
+RATE_LIMITED_ERROR = "The LLM is rate limited; this call is tried again when the limit clears."
+RATE_LIMIT_GAVE_UP_ERROR = "The LLM stayed rate limited for too long; retry this call by hand."
 
 
 class CallNotRepairableError(ValueError):
@@ -68,7 +75,19 @@ class PostCallRepairService:
         scan_limit: int = 500,
         clock: Callable[[], float] = time.time,
         background_interval_seconds: float = 0.0,
+        rate_limit_wait: Callable[[str], float | None] | None = None,
+        rate_limit_retry_seconds: float = 3600.0,
+        rate_limit_give_up_seconds: float = 24 * 60 * 60.0,
     ) -> None:
+        # Seconds the LLM asked to wait when a call's processing was just
+        # stopped by its rate limit, else None (see
+        # CallWorkflowService.post_call_rate_limit_wait).
+        self._rate_limit_wait = rate_limit_wait
+        # While rate limited, calls are tried again when the LLM said the
+        # limit clears, at the latest this long after the last try...
+        self._rate_limit_retry_seconds = rate_limit_retry_seconds
+        # ...and given up on once a call has been waiting this long.
+        self._rate_limit_give_up_seconds = rate_limit_give_up_seconds
         # How often the background sweep runs; 0 when it is switched off.
         self.background_interval_seconds = background_interval_seconds
         self._call_service = call_service
@@ -98,7 +117,7 @@ class PostCallRepairService:
                 self._clock(), 0, 0, 0, 0, 0, skipped_reason="Another instance is already running it."
             )
         try:
-            return self._run()
+            return self._run(token)
         finally:
             self._store.release_lock(_LOCK_NAME, token)
 
@@ -109,19 +128,27 @@ class PostCallRepairService:
             raise CallNotRepairableError(f"Call {call_id!r} is still active.")
         state = self._state(call_id, self._clock())
         state["attempts"] = 0
+        state["rate_limited_since"] = None
         return self._attempt(call_id, state)
 
-    def _run(self) -> RepairRun:
+    def _run(self, lock_token: str) -> RepairRun:
         call_ids, scanned = self._unprocessed_calls()
         now = self._clock()
+        paused = self._paused()
         repaired = failed = gave_up = 0
         for call_id in call_ids:
             state = self._state(call_id, now)
             if state["attempts"] >= self._max_attempts:
                 gave_up += 1
                 continue
-            if not self._due(state, now):
+            if paused or not self._due(state, now):
                 continue
+            # One call can take minutes (LLM waits): keep the lock ours,
+            # and stop if it is not (it expired and another instance is
+            # sweeping now).
+            if not self._store.renew_lock(_LOCK_NAME, lock_token, _LOCK_TTL_SECONDS):
+                logger.warning("Post-call repair lost its lock; leaving the rest to the next sweep")
+                break
             if self._attempt(call_id, state) is not None:
                 repaired += 1
             else:
@@ -133,8 +160,18 @@ class PostCallRepairService:
                         call_id,
                         state["attempts"],
                     )
+                # Rate limited: the other calls would be refused too.
+                paused = self._paused()
 
-        run = RepairRun(now, scanned, len(call_ids), repaired, failed, gave_up)
+        run = RepairRun(
+            now,
+            scanned,
+            len(call_ids),
+            repaired,
+            failed,
+            gave_up,
+            skipped_reason="Waiting for the LLM rate limit to clear." if paused else None,
+        )
         self._store.set_json(_LAST_RUN_KEY, asdict(run))
         if repaired or failed:
             logger.info(
@@ -160,11 +197,43 @@ class PostCallRepairService:
             POST_CALL_REPAIRS.inc("repaired")
             self._store.delete(_state_key(call_id))
             logger.info("Post-call processing repaired for call %r", call_id)
-        else:
+            return summary
+
+        wait = None if self._rate_limit_wait is None else self._rate_limit_wait(call_id)
+        if wait is None:
             POST_CALL_REPAIRS.inc("failed")
             state["last_error"] = error
-            self._store.set_json(_state_key(call_id), state, ttl_seconds=_STATE_TTL_SECONDS)
-        return summary
+            state["rate_limited_since"] = None
+        else:
+            POST_CALL_REPAIRS.inc("rate_limited")
+            self._wait_for_rate_limit(call_id, state, wait)
+        self._store.set_json(_state_key(call_id), state, ttl_seconds=_STATE_TTL_SECONDS)
+        return None
+
+    def _wait_for_rate_limit(self, call_id: str, state: dict, wait: float) -> None:
+        """The attempt was refused by the LLM's rate limit: nothing is
+        wrong with the call, so it does not use up an attempt. Every
+        call waits until the limit should have cleared."""
+        now = self._clock()
+        since = state.get("rate_limited_since") or now
+        state["rate_limited_since"] = since
+        if now - since >= self._rate_limit_give_up_seconds:
+            state["attempts"] = self._max_attempts
+            state["last_error"] = RATE_LIMIT_GAVE_UP_ERROR
+            return
+        state["attempts"] -= 1
+        state["last_error"] = RATE_LIMITED_ERROR
+        pause = min(max(wait, 0.0), self._rate_limit_retry_seconds)
+        self._store.set_json(_PAUSED_UNTIL_KEY, now + pause, ttl_seconds=pause + 60.0)
+        logger.info(
+            "Post-call repair: the LLM is rate limited (call %r); trying again in %.0f s",
+            call_id,
+            pause,
+        )
+
+    def _paused(self) -> bool:
+        until = self._store.get_json(_PAUSED_UNTIL_KEY)
+        return isinstance(until, (int, float)) and self._clock() < until
 
     def _due(self, state: dict, now: float) -> bool:
         """Wait min_age after first noticing the call, then back off
@@ -179,7 +248,14 @@ class PostCallRepairService:
     def _state(self, call_id: str, now: float) -> dict:
         state = self._store.get_json(_state_key(call_id))
         if state is None:
-            state = {"first_seen_at": now, "attempts": 0, "last_attempt_at": None, "last_error": None}
+            state = {
+                "first_seen_at": now,
+                "attempts": 0,
+                "last_attempt_at": None,
+                "last_error": None,
+                # When the LLM's rate limit first stopped this call.
+                "rate_limited_since": None,
+            }
             self._store.set_json(_state_key(call_id), state, ttl_seconds=_STATE_TTL_SECONDS)
         return state
 

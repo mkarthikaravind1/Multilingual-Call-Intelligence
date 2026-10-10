@@ -88,13 +88,19 @@ class PostgresCustomerSummaryDeliveryRepository(CustomerSummaryDeliveryRepositor
             )
             return claimed.rowcount == 1
 
-    def list_unfinished(self, limit: int) -> tuple[CustomerSummaryDelivery, ...]:
+    def list_unfinished(
+        self, limit: int, max_attempts: int | None = None, created_after: float | None = None
+    ) -> tuple[CustomerSummaryDelivery, ...]:
+        query = select(CustomerSummaryDeliveryModel).where(
+            CustomerSummaryDeliveryModel.status.in_(_UNFINISHED)
+        )
+        if max_attempts is not None:
+            query = query.where(CustomerSummaryDeliveryModel.attempts < max_attempts)
+        if created_after is not None:
+            query = query.where(CustomerSummaryDeliveryModel.created_at > created_after)
         with self._session_factory() as session:
             models = session.scalars(
-                select(CustomerSummaryDeliveryModel)
-                .where(CustomerSummaryDeliveryModel.status.in_(_UNFINISHED))
-                .order_by(CustomerSummaryDeliveryModel.updated_at)
-                .limit(limit)
+                query.order_by(CustomerSummaryDeliveryModel.updated_at).limit(limit)
             ).all()
             return tuple(_to_domain(model) for model in models)
 

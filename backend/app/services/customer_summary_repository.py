@@ -27,8 +27,13 @@ class CustomerSummaryDeliveryRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def list_unfinished(self, limit: int) -> tuple[CustomerSummaryDelivery, ...]:
-        """Failed and queued deliveries, the longest untouched first."""
+    def list_unfinished(
+        self, limit: int, max_attempts: int | None = None, created_after: float | None = None
+    ) -> tuple[CustomerSummaryDelivery, ...]:
+        """Failed and queued deliveries, the longest untouched first.
+        max_attempts / created_after leave out those attempted that
+        often already, or created at or before that time: they can
+        never be tried again, and must not use up the limit."""
         raise NotImplementedError
 
     @abstractmethod
@@ -74,9 +79,17 @@ class InMemoryCustomerSummaryDeliveryRepository(CustomerSummaryDeliveryRepositor
             )
             return True
 
-    def list_unfinished(self, limit: int) -> tuple[CustomerSummaryDelivery, ...]:
+    def list_unfinished(
+        self, limit: int, max_attempts: int | None = None, created_after: float | None = None
+    ) -> tuple[CustomerSummaryDelivery, ...]:
         with self._lock:
-            unfinished = [d for d in self._deliveries.values() if d.status in _UNFINISHED]
+            unfinished = [
+                d
+                for d in self._deliveries.values()
+                if d.status in _UNFINISHED
+                and (max_attempts is None or d.attempts < max_attempts)
+                and (created_after is None or d.created_at > created_after)
+            ]
         return tuple(sorted(unfinished, key=lambda d: d.updated_at)[:limit])
 
     def get_by_call_id(self, call_id: str) -> tuple[CustomerSummaryDelivery, ...]:

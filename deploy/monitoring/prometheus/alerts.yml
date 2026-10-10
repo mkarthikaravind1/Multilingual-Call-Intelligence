@@ -127,6 +127,17 @@ groups:
           summary: "Post-call processing gave up on a call"
           description: "A call reached POST_CALL_REPAIR_MAX_ATTEMPTS. Retry it by hand under Administration → Post-call processing."
 
+  - name: background-jobs
+    rules:
+      - alert: BackgroundJobNotRunning
+        expr: background_job_overdue_intervals > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Background job {{ $labels.name }} has stopped running"
+          description: "Its last run ended {{ $value | humanize }} intervals ago on {{ $labels.instance }}; it should run every interval. It is hung or its thread died: check the backend logs and restart the backend. Until then calls it looks after are not repaired, completed or texted."
+
   - name: business
     rules:
       - alert: CriticalEscalationOpen
