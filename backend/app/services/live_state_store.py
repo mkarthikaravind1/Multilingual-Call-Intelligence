@@ -7,7 +7,7 @@ import json
 import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
 
@@ -15,6 +15,10 @@ class LiveStateStore(ABC):
     @abstractmethod
     def get_json(self, key: str) -> Any | None:
         raise NotImplementedError
+
+    def get_many_json(self, keys: Sequence[str]) -> list[Any | None]:
+        """The value of each key, in order; None where there is none."""
+        return [self.get_json(key) for key in keys]
 
     @abstractmethod
     def set_json(self, key: str, value: Any, ttl_seconds: float | None = None) -> None:
@@ -155,6 +159,18 @@ class RedisLiveStateStore(LiveStateStore):
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8")
         return json.loads(raw)
+
+    def get_many_json(self, keys: Sequence[str]) -> list[Any | None]:
+        # One round trip, where the client can (every real one).
+        mget = getattr(self._client, "mget", None)
+        if not keys or mget is None:
+            return super().get_many_json(keys)
+        values = []
+        for raw in mget([self._key(key) for key in keys]):
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            values.append(None if raw is None else json.loads(raw))
+        return values
 
     def set_json(self, key: str, value: Any, ttl_seconds: float | None = None) -> None:
         self._client.set(self._key(key), json.dumps(value), ex=_seconds(ttl_seconds))

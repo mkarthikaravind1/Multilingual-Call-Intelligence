@@ -31,7 +31,8 @@ class ConversationModel(Base):
     __tablename__ = "conversations"
 
     call_id: Mapped[str] = mapped_column(String, primary_key=True)
-    status: Mapped[str] = mapped_column(String, nullable=False)
+    # Indexed: the live view reads the calls in progress every few seconds.
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
     start_time: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     end_time: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Persistence-only: orders call history; not part of the domain model.

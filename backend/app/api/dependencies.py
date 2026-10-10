@@ -19,6 +19,7 @@ from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
 from app.services.escalation_service import EscalationService
 from app.services.background_jobs import BackgroundJobRunner
+from app.services.live_calls import LiveCallsBoard
 from app.services.live_state_store import LiveStateStore
 from app.services.location_service import LocationService
 from app.services.post_call_repair_service import PostCallRepairService
@@ -44,6 +45,8 @@ class ApiServices:
     call_service: CallService
     workflow_service: CallWorkflowService
     call_listing: CallListingQuery | None = None
+    # The supervisor's view of every call in progress.
+    live_calls: LiveCallsBoard | None = None
 
     learning: LearningManagementService | None = None
     auth: AuthService | None = None
@@ -241,6 +244,13 @@ def get_call_listing(connection: HTTPConnection) -> CallListingQuery:
     if listing is None:
         raise HTTPException(status_code=503, detail="The call list is not configured.")
     return listing
+
+
+def get_live_calls(connection: HTTPConnection) -> LiveCallsBoard:
+    board = connection.app.state.services.live_calls
+    if board is None:
+        raise HTTPException(status_code=503, detail="The live view is not configured.")
+    return board
 
 
 def get_call_service(connection: HTTPConnection) -> CallService:

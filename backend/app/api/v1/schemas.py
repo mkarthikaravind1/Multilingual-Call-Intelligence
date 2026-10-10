@@ -238,9 +238,17 @@ class LiveCallResponse(BaseModel):
 
 
 class LiveCallsResponse(BaseModel):
+    # One page of the calls matching the filters, most urgent first.
     items: list[LiveCallResponse]
-    # Active calls in all; items holds the most recent of them.
+    limit: int
+    offset: int
+    # Calls matching the filters, across all pages.
+    matching: int
+    # Over every call in progress, whatever the filters:
     total: int
+    with_alerts: int
+    negative_tone: int
+    escalated: int
     # The server's clock (epoch seconds), for showing durations.
     now: float
 

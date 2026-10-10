@@ -10,6 +10,7 @@ import type {
   CallRecordingDto,
   CompleteCallRequestDto,
   LiveCallsDto,
+  LiveCallsFilters,
   QuestionOutcomeChoice,
   QuestionOutcomeDto,
   LiveTokenResponseDto,
@@ -96,9 +97,14 @@ export class CallRestService {
     return apiClient.download(`/api/v1/calls/${encodeURIComponent(callId)}/recording/audio`)
   }
 
-  // Every active call, for the supervisor's live view.
-  getLiveCalls() {
-    return apiClient.get<LiveCallsDto>('/api/v1/live-calls')
+  // A page of the calls in progress, for the supervisor's live view.
+  getLiveCalls(limit: number, offset: number, filters: LiveCallsFilters = {}) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    if (filters.locationId) query.set('location_id', filters.locationId)
+    if (filters.executiveUserId) query.set('executive_user_id', filters.executiveUserId)
+    if (filters.sentiment) query.set('sentiment', filters.sentiment)
+    if (filters.alertsOnly) query.set('alerts_only', 'true')
+    return apiClient.get<LiveCallsDto>(`/api/v1/live-calls?${query}`)
   }
 
   listQuestionOutcomes(callId: string) {

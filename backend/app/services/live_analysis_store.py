@@ -16,6 +16,7 @@ nothing was stored, so callers fall back to what the database holds.
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -74,6 +75,25 @@ class LiveAnalysisStore:
         except (KeyError, TypeError, ValueError, ArithmeticError):
             logger.warning("Ignoring unreadable live analysis for call %r", call_id)
             return None
+
+    def load_many(self, call_ids: Sequence[str]) -> dict[str, LiveAnalysisSnapshot]:
+        """The latest live analysis of each of these calls that has one,
+        in one read."""
+        ids = list(call_ids)
+        try:
+            values = self._store.get_many_json([_analysis_key(call_id) for call_id in ids])
+        except Exception:
+            logger.exception("Could not read the live analysis of %d calls", len(ids))
+            return {}
+        found = {}
+        for call_id, raw in zip(ids, values):
+            if raw is None:
+                continue
+            try:
+                found[call_id] = _deserialize(raw)
+            except (KeyError, TypeError, ValueError, ArithmeticError):
+                logger.warning("Ignoring unreadable live analysis for call %r", call_id)
+        return found
 
     def forget(self, call_id: str) -> None:
         try:

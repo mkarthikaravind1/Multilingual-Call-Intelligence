@@ -11,6 +11,7 @@ from app.api.dependencies import (
     get_call_customer_service,
     get_call_listing,
     get_call_service,
+    get_live_calls,
     get_optional_call_customer_service,
     get_workflow_service,
 )
@@ -43,14 +44,15 @@ from app.api.v1.schemas import (
     StartCallRequest,
     UtteranceRequest,
 )
-from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import CallDirection, ConversationStatus
+from app.domain.sentiment import SentimentLabel
 from app.domain.user_repository import UserRepository
 from app.services.location_service import LocationService
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_listing import CallListFilters, CallListingQuery
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
+from app.services.live_calls import LiveCallFilters, LiveCallsBoard
 from app.api.security_dependencies import get_current_user, require_roles
 from app.domain.call_alert import QuestionOutcome
 from app.services.call_alerts import QuestionOutcomeRepository
@@ -64,8 +66,8 @@ stats_router = APIRouter(tags=["calls"])
 
 DEFAULT_PAGE_LIMIT = 20
 MAX_PAGE_LIMIT = 100
-# The live view shows this many active calls at most (the most recent).
-MAX_LIVE_CALLS = 100
+# The live view's page of calls.
+DEFAULT_LIVE_CALLS_LIMIT = 50
 _SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
 
 @router.get("", response_model=CallListResponse)
@@ -133,50 +135,59 @@ def get_call_directory(
 
 @stats_router.get("/live-calls", response_model=LiveCallsResponse)
 def list_live_calls(
-    listing: CallListingQuery = Depends(get_call_listing),
-    workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    limit: int = Query(DEFAULT_LIVE_CALLS_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
+    offset: int = Query(0, ge=0),
+    location_id: str | None = Query(None, max_length=64),
+    executive_user_id: str | None = Query(None, max_length=64),
+    sentiment: SentimentLabel | None = Query(None, description="Only calls with this tone."),
+    alerts_only: bool = Query(False, description="Only calls with a standing alert."),
+    board: LiveCallsBoard = Depends(get_live_calls),
     _: User = Depends(_SUPERVISORS),
 ) -> LiveCallsResponse:
-    """Every active call with where it stands now. Reads only: the AI
-    providers are never run from here."""
-    page = listing.search(
-        CallListFilters(statuses=frozenset({ConversationStatus.ACTIVE})), MAX_LIVE_CALLS, 0
+    """The calls in progress with where each stands now, most urgent
+    first, a page at a time. Reads only (see LiveCallsBoard): no AI
+    provider is run and nothing is written from here."""
+    page = board.page(
+        LiveCallFilters(
+            location_id=location_id,
+            executive_user_id=executive_user_id,
+            sentiment=sentiment,
+            alerts_only=alerts_only,
+        ),
+        limit,
+        offset,
     )
-    items = []
-    for call in page.items:
-        try:
-            # Some alerts become true just by time passing.
-            workflow_service.refresh_alerts(call.call_id)
-            analysis = workflow_service.analyze_call(call.call_id)
-        except Exception:
-            # e.g. the call completed and was cleared between the two reads.
-            continue
-        items.append(
+    return LiveCallsResponse(
+        items=[
             LiveCallResponse(
-                call_id=call.call_id,
-                start_time=call.start_time,
-                direction=call.direction,
-                location_name=call.location_name,
-                executive_name=call.executive_name,
-                caller_number=call.caller_number,
-                customer_name=call.customer_name,
-                utterance_count=call.utterance_count,
-                sentiment=None if analysis.sentiment is None else analysis.sentiment.label,
+                call_id=live.call.call_id,
+                start_time=live.call.start_time,
+                direction=live.call.direction,
+                location_name=live.call.location_name,
+                executive_name=live.call.executive_name,
+                caller_number=live.call.caller_number,
+                customer_name=live.call.customer_name,
+                utterance_count=live.call.utterance_count,
+                sentiment=live.sentiment,
                 complaints=[
                     ComplaintCoverageResponse.model_validate(complaint)
-                    for complaint in analysis.coverage.complaints
-                    if complaint.status is not ComplaintCoverageStatus.NOT_RAISED
+                    for complaint in live.complaints
                 ],
-                escalation_level=call.escalation_level,
-                escalation_status=call.escalation_status,
-                alerts=[
-                    CallAlertResponse.model_validate(alert)
-                    for alert in analysis.alerts
-                    if alert.is_open
-                ],
+                escalation_level=live.call.escalation_level,
+                escalation_status=live.call.escalation_status,
+                alerts=[CallAlertResponse.model_validate(alert) for alert in live.alerts],
             )
-        )
-    return LiveCallsResponse(items=items, total=page.total, now=time.time())
+            for live in page.items
+        ],
+        limit=limit,
+        offset=offset,
+        matching=page.matching,
+        total=page.total,
+        with_alerts=page.with_alerts,
+        negative_tone=page.negative_tone,
+        escalated=page.escalated,
+        now=page.now,
+    )
 
 
 @stats_router.get("/call-stats", response_model=CallStatsResponse)

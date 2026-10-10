@@ -10,7 +10,7 @@ import dataclasses
 import logging
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 
 from app.domain.call_alert import (
@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 AUDIO_CHUNKS_REMEMBERED = 6
 AUDIO_LINES_AVERAGED = 5
 _AUDIO_TTL_SECONDS = 4 * 3600.0
+# The subject of a poor-audio alert raised from the lines' transcription
+# confidence (the one raised from unrecognised speech has none). Kept
+# apart because only the second can be judged without the transcript.
+LOW_TRANSCRIPTION_CONFIDENCE = "transcription confidence"
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,18 @@ class CallAlertService:
             return 0
         return sum(1 for recognised in recent if not recognised)
 
+    def _unrecognised_chunks_of(self, call_ids: list[str]) -> dict[str, int]:
+        """_unrecognised_chunks for many calls, in one read."""
+        try:
+            values = self._live_state.get_many_json([_audio_key(c) for c in call_ids])
+        except Exception:
+            logger.exception("Could not read the audio quality of %d calls", len(call_ids))
+            return {}
+        return {
+            call_id: sum(1 for recognised in recent or [] if not recognised)
+            for call_id, recent in zip(call_ids, values)
+        }
+
     # --- The alerts ---
 
     def refresh(
@@ -135,24 +151,74 @@ class CallAlertService:
         ones, clear the ones that no longer hold. Returns all of them."""
         now = self._clock()
         call_id = conversation.call_id
-        true_now = self._conditions(conversation, coverage, now)
+        true_now = self._complaint_conditions(coverage, now)
+        true_now.update(self._poor_audio(conversation))
         stored = {
             (alert.alert_type, alert.subject): alert
             for alert in self._repository.list_for_calls([call_id]).get(call_id, ())
         }
+        self._settle(call_id, true_now, stored, now)
+        return tuple(sorted(stored.values(), key=lambda a: a.raised_at))
+
+    def sweep(
+        self, call_ids: Iterable[str], coverages: Mapping[str, ConversationCoverage]
+    ) -> set[str]:
+        """refresh() for many active calls at once, from what a few batched
+        reads give: their coverage (passed in) and their audio quality.
+        Some alerts become true just by time passing, or while nothing is
+        being transcribed, so no analysis would raise them. The transcript
+        is not read: an alert judged from it (LOW_TRANSCRIPTION_CONFIDENCE)
+        is left as it is. Returns the calls whose alerts changed."""
+        ids = list(call_ids)
+        if not ids:
+            return set()
+        now = self._clock()
+        stored_alerts = self._repository.list_for_calls(ids)
+        unrecognised = self._unrecognised_chunks_of(ids)
+        leave = {(CallAlertType.POOR_AUDIO, LOW_TRANSCRIPTION_CONFIDENCE)}
+        changed = set()
+        for call_id in ids:
+            true_now = self._complaint_conditions(coverages.get(call_id), now)
+            message = self._unrecognised_message(unrecognised.get(call_id, 0))
+            if message is not None:
+                true_now[CallAlertType.POOR_AUDIO, ""] = message
+            stored = {
+                (alert.alert_type, alert.subject): alert
+                for alert in stored_alerts.get(call_id, ())
+            }
+            if self._settle(call_id, true_now, stored, now, leave):
+                changed.add(call_id)
+        return changed
+
+    def _settle(
+        self,
+        call_id: str,
+        true_now: dict[tuple[CallAlertType, str], str],
+        stored: dict[tuple[CallAlertType, str], CallAlert],
+        now: float,
+        leave: Iterable[tuple[CallAlertType, str]] = (),
+    ) -> bool:
+        """Raise what is true and not standing, and clear what stands and is
+        no longer true (except `leave`), in `stored` and the repository.
+        True when anything changed."""
+        changed = False
         for key, message in true_now.items():
             alert = stored.get(key)
             if alert is None or not alert.is_open:
                 stored[key] = CallAlert(call_id, key[0], key[1], message, raised_at=now)
-                self._repository.save(stored[key])
             elif alert.message != message:
                 stored[key] = dataclasses.replace(alert, message=message)
-                self._repository.save(stored[key])
+            else:
+                continue
+            self._repository.save(stored[key])
+            changed = True
+        leave = set(leave)
         for key, alert in stored.items():
-            if alert.is_open and key not in true_now:
+            if alert.is_open and key not in true_now and key not in leave:
                 stored[key] = dataclasses.replace(alert, cleared_at=now)
                 self._repository.save(stored[key])
-        return tuple(sorted(stored.values(), key=lambda a: a.raised_at))
+                changed = True
+        return changed
 
     def list_for_call(self, call_id: str) -> tuple[CallAlert, ...]:
         return self._repository.list_for_calls([call_id]).get(call_id, ())
@@ -160,8 +226,8 @@ class CallAlertService:
     def list_for_calls(self, call_ids: Iterable[str]) -> dict[str, tuple[CallAlert, ...]]:
         return self._repository.list_for_calls(call_ids)
 
-    def _conditions(
-        self, conversation: Conversation, coverage: ConversationCoverage | None, now: float
+    def _complaint_conditions(
+        self, coverage: ConversationCoverage | None, now: float
     ) -> dict[tuple[CallAlertType, str], str]:
         rules = self._rules
         found: dict[tuple[CallAlertType, str], str] = {}
@@ -192,19 +258,21 @@ class CallAlertService:
                     f"The {category} complaint was detected with low confidence "
                     f"({round(complaint.confidence * 100)}%)."
                 )
-
-        audio = self._poor_audio(conversation)
-        if audio is not None:
-            found[CallAlertType.POOR_AUDIO, ""] = audio
         return found
 
-    def _poor_audio(self, conversation: Conversation) -> str | None:
-        unrecognised = self._unrecognised_chunks(conversation.call_id)
-        if unrecognised >= self._rules.unrecognised_chunks:
-            return (
-                f"Poor audio: nothing could be made of {unrecognised} of the last "
-                f"{AUDIO_CHUNKS_REMEMBERED} stretches of speech."
-            )
+    def _unrecognised_message(self, unrecognised: int) -> str | None:
+        if unrecognised < self._rules.unrecognised_chunks:
+            return None
+        return (
+            f"Poor audio: nothing could be made of {unrecognised} of the last "
+            f"{AUDIO_CHUNKS_REMEMBERED} stretches of speech."
+        )
+
+    def _poor_audio(self, conversation: Conversation) -> dict[tuple[CallAlertType, str], str]:
+        """At most one poor-audio alert: unrecognised speech first."""
+        message = self._unrecognised_message(self._unrecognised_chunks(conversation.call_id))
+        if message is not None:
+            return {(CallAlertType.POOR_AUDIO, ""): message}
         confidences = [
             u.confidence for u in conversation.utterances[-AUDIO_LINES_AVERAGED:]
             if u.confidence is not None
@@ -212,11 +280,13 @@ class CallAlertService:
         if len(confidences) >= 3:
             average = sum(confidences) / len(confidences)
             if average < self._rules.transcription_confidence_below:
-                return (
-                    f"Poor audio: the last lines were transcribed with low confidence "
-                    f"({round(average * 100)}%)."
-                )
-        return None
+                return {
+                    (CallAlertType.POOR_AUDIO, LOW_TRANSCRIPTION_CONFIDENCE): (
+                        f"Poor audio: the last lines were transcribed with low confidence "
+                        f"({round(average * 100)}%)."
+                    )
+                }
+        return {}
 
 
 def _audio_key(call_id: str) -> str:

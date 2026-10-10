@@ -244,10 +244,19 @@ real AI the ceiling is the provider's rate limit, not this setting.
   server.
 - The real speech recogniser, AI and PostgreSQL. Their speed and limits
   replace the stand-ins' 0.4 s and 1 s.
-- The Live Calls page beyond 100 calls: it lists at most 100 and reads each
-  one separately, which already took 2.3 s at 200 calls. It needs rework
-  before 500.
 - More than one backend process.
+
+**The Live Calls page was reworked for 500 calls after this test** (the
+figures in the table are the old page's; it took 2.3 s at 200 calls and
+listed at most 100). It now makes the same four reads however many calls
+are in progress, loads no transcript, writes nothing, and shows 50 calls a
+page, most urgent first, with filters by location, executive, tone and
+alert. Many open pages share one read every `LIVE_CALLS_CACHE_SECONDS`
+(default 2). Alerts are kept up to date in the background every
+`LIVE_ALERT_SWEEP_SECONDS` (default 10). Tests show the number of reads is
+the same for 5 and for 500 calls; the page's real load time at 500 calls
+on your PostgreSQL and Redis has not been measured (SRD: under 3 s). Apply
+migration 0020 (an index the page's query uses).
 
 ## 9. In the SRD and not built
 
@@ -269,6 +278,6 @@ real AI the ceiling is the provider's rate limit, not this setting.
   cause in different words stays in separate groups.
 - **PDF exports** print only Latin script; use Excel or CSV when names are
   in Tamil or another Indian script.
-- **"Not asked about" alerts** are checked when a call is analysed or the
-  Live Calls page is open, so on the executive's own screen they can be up
-  to 30 seconds late at the standard speed.
+- **Alerts** (not asked about, poor audio) are checked when a call is
+  analysed and by a background sweep every `LIVE_ALERT_SWEEP_SECONDS`
+  (default 10), so they can be up to 10 seconds late on any screen.

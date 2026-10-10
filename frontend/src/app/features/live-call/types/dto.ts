@@ -149,11 +149,28 @@ export interface LiveCallDto {
 }
 
 export interface LiveCallsDto {
+  // One page of the calls matching the filters, most urgent first.
   items: LiveCallDto[]
-  // Active calls in all; items holds the most recent of them.
+  limit: number
+  offset: number
+  // Calls matching the filters, across all pages.
+  matching: number
+  // Over every call in progress, whatever the filters:
   total: number
+  with_alerts: number
+  negative_tone: number
+  escalated: number
   // The server's clock (epoch seconds).
   now: number
+}
+
+// Every filter is optional.
+export interface LiveCallsFilters {
+  locationId?: string
+  executiveUserId?: string
+  // A tone label, e.g. FRUSTRATED.
+  sentiment?: string
+  alertsOnly?: boolean
 }
 
 export interface SentimentDto {

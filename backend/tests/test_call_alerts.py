@@ -38,6 +38,7 @@ from app.infrastructure.database.repositories.conversation_coverage_repository i
 )
 from app.security.jwt import create_access_token
 from app.services.call_alerts import (
+    LOW_TRANSCRIPTION_CONFIDENCE,
     AlertRules,
     CallAlertService,
     InMemoryCallAlertRepository,
@@ -201,7 +202,7 @@ def test_low_transcription_confidence_is_poor_audio_when_the_recogniser_gives_on
     assert service.refresh(_call(0.3, 0.2), None) == ()  # too few lines to judge
     alerts = service.refresh(_call(0.9, 0.9, 0.9, 0.5, 0.5, 0.6, 0.5, 0.4), None)
 
-    assert _standing(alerts) == {(AUDIO, "")}
+    assert _standing(alerts) == {(AUDIO, LOW_TRANSCRIPTION_CONFIDENCE)}
     assert "low confidence (50%)" in alerts[0].message
 
 

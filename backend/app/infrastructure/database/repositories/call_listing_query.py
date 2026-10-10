@@ -152,31 +152,75 @@ class PostgresCallListingQuery(CallListingQuery):
                 .offset(offset)
             ).all()
 
-        return CallListPage(
-            items=tuple(
-                CallListItem(
-                    call_id=row.call_id,
-                    status=ConversationStatus(row.status),
-                    start_time=row.start_time,
-                    end_time=row.end_time,
-                    utterance_count=row.utterance_count,
-                    caller_number=row.caller_number,
-                    customer_name=row.customer_name,
-                    vehicle_registration=row.vehicle_registration,
-                    escalation_level=None if row.level is None else EscalationLevel(row.level),
-                    escalation_status=(
-                        None
-                        if row.escalation_status is None
-                        else EscalationStatus(row.escalation_status)
-                    ),
-                    complaints_resolved_at=row.resolved_at,
-                    direction=None if row.direction is None else CallDirection(row.direction),
-                    location_id=row.location_id,
-                    location_name=row.location_name,
-                    executive_user_id=row.executive_user_id,
-                    executive_name=row.executive_name,
-                )
-                for row in rows
-            ),
-            total=total,
+        return CallListPage(items=tuple(_item(row) for row in rows), total=total)
+
+    def active_calls(self, limit: int) -> tuple[CallListItem, ...]:
+        # Read every few seconds by the live view, so it does only what
+        # that needs: the calls in progress (found by the status index),
+        # with each one's lines counted through the utterance call index.
+        # search() counts the lines of every call ever made, and works out
+        # when complaints were resolved, before it filters.
+        conversation = ConversationModel
+        customer = CallCustomerModel
+        escalation = EscalationModel
+        location = LocationModel
+        executive = UserModel
+        utterance_count = (
+            select(func.count())
+            .where(UtteranceModel.call_id == conversation.call_id)
+            .correlate(conversation)
+            .scalar_subquery()
         )
+        query = (
+            select(
+                conversation.call_id,
+                conversation.status,
+                conversation.start_time,
+                conversation.end_time,
+                utterance_count.label("utterance_count"),
+                customer.caller_number,
+                customer.customer_name,
+                customer.vehicle_registration,
+                escalation.level,
+                escalation.status.label("escalation_status"),
+                conversation.direction,
+                conversation.location_id,
+                location.name.label("location_name"),
+                conversation.executive_user_id,
+                func.coalesce(executive.display_name, executive.email).label("executive_name"),
+            )
+            .outerjoin(location, location.location_id == conversation.location_id)
+            .outerjoin(executive, executive.user_id == conversation.executive_user_id)
+            .outerjoin(customer, customer.call_id == conversation.call_id)
+            .outerjoin(escalation, escalation.call_id == conversation.call_id)
+            .where(conversation.status == ConversationStatus.ACTIVE.value)
+            .order_by(conversation.created_at.desc(), conversation.call_id)
+            .limit(limit)
+        )
+        with self._session_factory() as session:
+            rows = session.execute(query).all()
+        return tuple(_item(row) for row in rows)
+
+
+def _item(row) -> CallListItem:
+    return CallListItem(
+        call_id=row.call_id,
+        status=ConversationStatus(row.status),
+        start_time=row.start_time,
+        end_time=row.end_time,
+        utterance_count=row.utterance_count,
+        caller_number=row.caller_number,
+        customer_name=row.customer_name,
+        vehicle_registration=row.vehicle_registration,
+        escalation_level=None if row.level is None else EscalationLevel(row.level),
+        escalation_status=(
+            None if row.escalation_status is None else EscalationStatus(row.escalation_status)
+        ),
+        # Not part of the live view's read.
+        complaints_resolved_at=getattr(row, "resolved_at", None),
+        direction=None if row.direction is None else CallDirection(row.direction),
+        location_id=row.location_id,
+        location_name=row.location_name,
+        executive_user_id=row.executive_user_id,
+        executive_name=row.executive_name,
+    )

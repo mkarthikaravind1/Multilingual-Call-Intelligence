@@ -123,6 +123,8 @@ from app.domain.conversation import ConversationStatus
 from app.observability.metrics import REGISTRY, Gauge
 from app.services.background_jobs import BackgroundJobRunner, PeriodicJob
 from app.services.live_analysis_scheduler import LiveAnalysisScheduler
+from app.services.live_analysis_store import LiveAnalysisStore
+from app.services.live_calls import LiveAlertSweeper, LiveCallsBoard
 from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
 from app.services.post_call_repair_service import PostCallRepairService
 from app.services.stale_call_service import StaleCallSweeper
@@ -392,6 +394,25 @@ def build_api_services(
 
     recording_archive = _build_recording_archive(settings, recording_repository)
 
+    # --- The supervisor's view of the calls in progress ---
+    # The same keys the workflow writes each call's live analysis under.
+    live_analysis_store = LiveAnalysisStore(live_state_store, settings.live_analysis_ttl_seconds)
+    live_calls = LiveCallsBoard(
+        call_listing_query,
+        coverage_repository,
+        live_analysis_store,
+        alert_service,
+        cache_seconds=settings.live_calls_cache_seconds,
+    )
+    live_alert_sweeper = LiveAlertSweeper(
+        call_listing_query,
+        coverage_repository,
+        alert_service,
+        live_analysis_store,
+        live_state_store,
+        settings.live_alert_sweep_seconds,
+    )
+
     # --- After the call, telephony and the background jobs ---
     post_call_repair_service = _build_post_call_repair_service(
         settings, call_service, workflow_service, post_call_summary_repository, live_state_store
@@ -409,6 +430,7 @@ def build_api_services(
         post_call_summary_repository,
         customer_contact_resolver,
         recording_archive,
+        live_alert_sweeper,
     )
     telephony_provider = _optional(
         lambda: create_telephony_provider(settings), "Telephony provider is not available"
@@ -424,6 +446,7 @@ def build_api_services(
     services = ApiServices(
         call_service=call_service,
         call_listing=call_listing_query,
+        live_calls=live_calls,
         workflow_service=workflow_service,
         learning=learning_service
         or build_learning_management_service(
@@ -698,6 +721,7 @@ def _build_background_jobs(
     post_call_summary_repository: PostCallSummaryRepository,
     customer_contact_resolver: Callable[[str], CustomerContact | None],
     recording_archive: "RecordingArchive | None" = None,
+    live_alert_sweeper: LiveAlertSweeper | None = None,
 ) -> BackgroundJobRunner:
     """The periodic jobs; one with interval 0 is not run."""
     stale_call_sweeper = StaleCallSweeper(
@@ -733,6 +757,11 @@ def _build_background_jobs(
                 "recording_retention",
                 settings.recording_retention_sweep_seconds if recording_archive else 0.0,
                 lambda: recording_archive.purge_expired(),
+            ),
+            PeriodicJob(
+                "live_alert_sweep",
+                settings.live_alert_sweep_seconds if live_alert_sweeper else 0.0,
+                lambda: live_alert_sweeper.run(),
             ),
         ]
     )

@@ -100,6 +100,12 @@ class CallListingQuery(ABC):
         """Matching calls, newest-created first."""
         raise NotImplementedError
 
+    def active_calls(self, limit: int) -> tuple[CallListItem, ...]:
+        """The calls in progress, newest first, for the live view (read
+        every few seconds). complaints_resolved_at is not filled in."""
+        active = CallListFilters(statuses=frozenset({ConversationStatus.ACTIVE}))
+        return self.search(active, limit, 0).items
+
 
 def complaints_resolved_at(
     records: Iterable[ComplaintLifecycleRecord],

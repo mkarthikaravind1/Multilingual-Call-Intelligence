@@ -1,4 +1,7 @@
-from sqlalchemy.orm import Session, sessionmaker
+from collections.abc import Iterable
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.domain.complaint_coverage import ComplaintCoverage, ComplaintCoverageStatus
 from app.domain.conversation_coverage import ConversationCoverage
@@ -51,3 +54,15 @@ class PostgresConversationCoverageRepository(ConversationCoverageRepository):
         with self._session_factory() as session:
             model = session.get(ConversationCoverageModel, call_id)
             return None if model is None else _to_domain(model)
+
+    def get_many(self, call_ids: Iterable[str]) -> dict[str, ConversationCoverage]:
+        ids = list(call_ids)
+        if not ids:
+            return {}
+        with self._session_factory() as session:
+            models = session.scalars(
+                select(ConversationCoverageModel)
+                .where(ConversationCoverageModel.call_id.in_(ids))
+                .options(selectinload(ConversationCoverageModel.complaints))
+            ).all()
+            return {model.call_id: _to_domain(model) for model in models}

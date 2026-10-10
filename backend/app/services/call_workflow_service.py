@@ -313,14 +313,6 @@ class CallWorkflowService:
             or ()
         )
 
-    def refresh_alerts(self, call_id: str) -> tuple[CallAlert, ...]:
-        """Bring an active call's alerts up to now (some become true just
-        by time passing). A completed call keeps the alerts it ended with."""
-        conversation = self._call_service.get_call(call_id)
-        if conversation.status == ConversationStatus.COMPLETED:
-            return self._alerts(call_id)
-        return self._refresh_alerts(conversation, self._coverage_repository.get(call_id))
-
     def _alerts(self, call_id: str) -> tuple[CallAlert, ...]:
         if self._alert_service is None:
             return ()

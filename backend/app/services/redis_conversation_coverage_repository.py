@@ -1,10 +1,15 @@
 import json
+import logging
+from collections.abc import Iterable
 
 from app.core.config import Settings, get_settings
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation_coverage import ConversationCoverage
 from app.infrastructure.cache.redis_client import RedisLike, build_redis_client
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class RedisConversationCoverageError(Exception):
@@ -15,7 +20,13 @@ def _serialize(coverage: ConversationCoverage) -> dict:
     return {
         "call_id": coverage.call_id,
         "complaints": [
-            {"category": c.category, "status": c.status.value}
+            {
+                "category": c.category,
+                "status": c.status.value,
+                # The on-screen alerts are judged from these two.
+                "confidence": c.confidence,
+                "detected_at": c.detected_at,
+            }
             for c in coverage.complaints
         ],
     }
@@ -26,6 +37,9 @@ def _deserialize(data: dict) -> ConversationCoverage:
     for item in data["complaints"]:
         complaint = coverage.add(item["category"])
         complaint.status = ComplaintCoverageStatus(item["status"])
+        # Absent from entries written before these were stored.
+        complaint.confidence = item.get("confidence")
+        complaint.detected_at = item.get("detected_at")
     return coverage
 
 
@@ -74,6 +88,28 @@ class RedisConversationCoverageRepository(ConversationCoverageRepository):
             raise RedisConversationCoverageError(
                 f"Corrupt conversation coverage data for call {call_id!r}."
             ) from exc
+
+    def get_many(self, call_ids: Iterable[str]) -> dict[str, ConversationCoverage]:
+        ids = list(call_ids)
+        mget = getattr(self._client, "mget", None)
+        if not ids or mget is None:
+            return super().get_many(ids)
+        try:
+            values = mget([self._key(call_id) for call_id in ids])
+        except Exception as exc:
+            raise RedisConversationCoverageError(
+                f"Redis read failed for {len(ids)} calls."
+            ) from exc
+        found = {}
+        for call_id, raw in zip(ids, values):
+            if raw is None:
+                continue
+            try:
+                found[call_id] = _deserialize(json.loads(raw))
+            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                # One unreadable entry must not hide the other calls.
+                logger.warning("Ignoring corrupt conversation coverage for call %r", call_id)
+        return found
 
     def _key(self, call_id: str) -> str:
         return f"{self._key_prefix}:{call_id}"
