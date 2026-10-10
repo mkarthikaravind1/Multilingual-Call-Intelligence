@@ -205,8 +205,8 @@ def test_response_contains_complaint_coverage():
     assert event["coverage"] == {
         "call_id": CALL_ID,
         "complaints": [
-            {"category": "Turnaround Time", "status": "detected"},
-            {"category": "Communication", "status": "detected"},
+            {"category": "Turnaround Time", "status": "detected", "confidence": 0.93},
+            {"category": "Communication", "status": "detected", "confidence": 0.87},
         ],
     }
 

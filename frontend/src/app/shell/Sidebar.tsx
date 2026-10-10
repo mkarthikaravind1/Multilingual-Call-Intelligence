@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
 ]
 
 const supervisorNavItems: NavItem[] = [
+  { to: '/live-calls', label: 'Live Calls', icon: 'live-calls' },
   { to: '/escalations', label: 'Escalations', icon: 'escalations' },
   { to: '/reports', label: 'Reports', icon: 'reports' },
 ]

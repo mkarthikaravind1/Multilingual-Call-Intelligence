@@ -1,3 +1,6 @@
+import time
+from collections.abc import Callable
+
 from app.ai.complaint.provider import ComplaintDetectionProvider
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import Conversation
@@ -12,9 +15,11 @@ class ComplaintAnalysisService:
         self,
         provider: ComplaintDetectionProvider,
         learning: ComponentLearning | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._provider = provider
         self._learning = learning
+        self._clock = clock
 
     def analyze(
         self, conversation: Conversation, coverage: ConversationCoverage
@@ -54,6 +59,10 @@ class ComplaintAnalysisService:
             # complaint has already progressed and must be left as it is.
             if complaint.status is ComplaintCoverageStatus.NOT_RAISED:
                 complaint.detect()
+                complaint.detected_at = self._clock()
+            confidence = getattr(detection, "confidence", None)
+            if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+                complaint.confidence = float(confidence)
             # Once the ICR has asked about it, it stays probed.
             if (
                 getattr(detection, "probed", False)

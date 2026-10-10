@@ -104,6 +104,9 @@ class Figures:
     negative_calls: int
     csat: float | None
     serious_escalations: int
+    # Suggested questions the executive accepted, and skipped.
+    questions_accepted: int = 0
+    questions_skipped: int = 0
 
 
 @dataclass(frozen=True)
@@ -271,4 +274,6 @@ def _figures(items: list[CallFigures]) -> Figures:
         serious_escalations=sum(
             1 for item in items if item.call.escalation_level in _SERIOUS_ESCALATIONS
         ),
+        questions_accepted=sum(item.call.questions_accepted for item in items),
+        questions_skipped=sum(item.call.questions_skipped for item in items),
     )

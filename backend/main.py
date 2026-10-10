@@ -68,6 +68,8 @@ def build_app():
         price_list_repository=repositories.price_list,
         location_repository=repositories.location,
         report_source=repositories.report_source,
+        call_alert_repository=repositories.call_alert,
+        question_outcome_repository=repositories.question_outcome,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),
     )
     services = dataclasses.replace(

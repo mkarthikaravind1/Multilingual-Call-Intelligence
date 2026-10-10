@@ -17,6 +17,11 @@ class ComplaintCoverageStatus(str, Enum):
 class ComplaintCoverage:
     category: str
     status: ComplaintCoverageStatus = ComplaintCoverageStatus.NOT_RAISED
+    # How sure the detector was (0 to 1), at its latest detection; None
+    # when it gave none (or for complaints from before this was kept).
+    confidence: float | None = None
+    # When the complaint was first detected (epoch seconds).
+    detected_at: float | None = None
 
     def __post_init__(self) -> None:
         require_category_name(self.category)

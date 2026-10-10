@@ -79,6 +79,9 @@ export interface FiguresDto {
   // 1 to 5.
   csat: number | null
   serious_escalations: number
+  // Suggested questions the executive accepted, and skipped.
+  questions_accepted: number
+  questions_skipped: number
 }
 
 export interface PerformanceReportDto {

@@ -86,6 +86,56 @@ export interface ComplaintCoverageDto {
 export interface ComplaintDto {
   category: string
   status: string
+  // How sure the detector was (0 to 1); null when not recorded.
+  confidence?: number | null
+}
+
+// An on-screen alert on a call: uncovered_category, high_severity_category,
+// low_confidence or poor_audio.
+export interface CallAlertDto {
+  alert_type: string
+  // The complaint category it is about; "" for the call itself.
+  subject: string
+  message: string
+  raised_at: number
+  // null while the alert stands.
+  cleared_at: number | null
+}
+
+export type QuestionOutcomeChoice = 'accepted' | 'skipped'
+
+export interface QuestionOutcomeDto {
+  question: string
+  target_category: string
+  outcome: QuestionOutcomeChoice
+  created_at: number
+}
+
+// An active call, as the supervisor's live view shows it.
+export interface LiveCallDto {
+  call_id: string
+  start_time: number
+  direction: CallDirection | null
+  location_name: string | null
+  executive_name: string | null
+  caller_number: string | null
+  customer_name: string | null
+  utterance_count: number
+  // The customer's tone at the latest analysis; null before the first.
+  sentiment: string | null
+  complaints: ComplaintDto[]
+  escalation_level: EscalationLevel | null
+  escalation_status: EscalationStatus | null
+  // Standing alerts only.
+  alerts: CallAlertDto[]
+}
+
+export interface LiveCallsDto {
+  items: LiveCallDto[]
+  // Active calls in all; items holds the most recent of them.
+  total: number
+  // The server's clock (epoch seconds).
+  now: number
 }
 
 export interface SentimentDto {
@@ -188,6 +238,8 @@ export interface CallAnalysisResponseDto {
   post_call_summary?: PostCallSummaryDto | null
   // null while the call has not escalated
   escalation?: EscalationDto | null
+  // Standing and cleared, oldest first.
+  alerts?: CallAlertDto[]
 }
 
 export interface CompleteCallRequestDto {

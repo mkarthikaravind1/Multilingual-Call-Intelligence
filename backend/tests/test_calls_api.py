@@ -211,8 +211,8 @@ def test_response_includes_complaint_coverage():
     assert body["coverage"] == {
         "call_id": CALL_ID,
         "complaints": [
-            {"category": "Turnaround Time", "status": "detected"},
-            {"category": "Communication", "status": "detected"},
+            {"category": "Turnaround Time", "status": "detected", "confidence": 0.93},
+            {"category": "Communication", "status": "detected", "confidence": 0.87},
         ],
     }
 
@@ -267,7 +267,7 @@ def test_get_analysis_returns_analysis_for_existing_call():
     assert body["call_id"] == CALL_ID
     assert body["sentiment"]["label"] == "NEGATIVE"
     assert body["coverage"]["complaints"] == [
-        {"category": "Turnaround Time", "status": "detected"}
+        {"category": "Turnaround Time", "status": "detected", "confidence": 0.93}
     ]
 
 def test_complete_call():

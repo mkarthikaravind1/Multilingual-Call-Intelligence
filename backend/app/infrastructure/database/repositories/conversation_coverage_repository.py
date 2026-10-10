@@ -16,6 +16,8 @@ def _to_domain(model: ConversationCoverageModel) -> ConversationCoverage:
         # ComplaintCoverage's transition methods only allow forward moves, so
         # restore the persisted status directly instead of replaying transitions.
         complaint.status = ComplaintCoverageStatus(complaint_model.status)
+        complaint.confidence = complaint_model.confidence
+        complaint.detected_at = complaint_model.detected_at
     return coverage
 
 
@@ -40,6 +42,8 @@ class PostgresConversationCoverageRepository(ConversationCoverageRepository):
                     call_id=coverage.call_id, category=complaint.category
                 )
                 row.status = complaint.status.value
+                row.confidence = complaint.confidence
+                row.detected_at = complaint.detected_at
                 complaints.append(row)
             model.complaints = complaints
 

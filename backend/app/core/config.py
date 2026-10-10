@@ -203,6 +203,19 @@ class Settings(BaseSettings):
     # escalation, estimate) starts at most this often; speech in between is
     # covered by the next run. Each run makes several LLM calls. 0 = no limit.
     live_analysis_min_interval_seconds: float = 30.0
+    # On-screen alerts on live calls (see app.services.call_alerts).
+    # A complaint not asked about this long after it was detected.
+    alert_uncovered_after_seconds: float = 60.0
+    # Categories that always alert, comma-separated (any category with
+    # "safety" in its name does too).
+    alert_high_severity_categories: str = "Hygiene"
+    # A complaint detected with less confidence than this (0 to 1).
+    alert_low_confidence_below: float = 0.6
+    # Poor audio: this many of the last 6 stretches of speech could not be
+    # transcribed, or the last lines' average transcription confidence
+    # (when the recogniser gives one) is below the second value.
+    alert_poor_audio_unrecognised_chunks: int = 3
+    alert_poor_audio_confidence_below: float = 0.6
     # "combined": during a call, complaints, sentiment and escalation come
     # from one LLM request (each part asked separately if its answer is
     # unusable); "separate": three requests. The final analysis after the

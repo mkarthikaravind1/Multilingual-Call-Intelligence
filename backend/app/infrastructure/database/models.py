@@ -93,6 +93,8 @@ class ComplaintCoverageModel(Base):
     )
     category: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    detected_at: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     conversation_coverage: Mapped["ConversationCoverageModel"] = relationship(
         back_populates="complaints"
@@ -321,6 +323,31 @@ class UserModel(Base):
     dial_target: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
 
     __table_args__ = (Index("ix_users_email", "email"),)
+
+
+class CallAlertModel(Base):
+    # One row per call, type and subject (see CallAlert). No foreign key,
+    # like the other per-call records.
+    __tablename__ = "call_alerts"
+
+    call_id: Mapped[str] = mapped_column(String, primary_key=True)
+    alert_type: Mapped[str] = mapped_column(String, primary_key=True)
+    subject: Mapped[str] = mapped_column(String, primary_key=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    raised_at: Mapped[float] = mapped_column(Float, nullable=False)
+    cleared_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class QuestionOutcomeModel(Base):
+    # One row per call and suggested question (see QuestionOutcome).
+    __tablename__ = "question_outcomes"
+
+    call_id: Mapped[str] = mapped_column(String, primary_key=True)
+    question: Mapped[str] = mapped_column(Text, primary_key=True)
+    target_category: Mapped[str] = mapped_column(String, nullable=False)
+    outcome: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False)
 
 
 class LocationModel(Base):

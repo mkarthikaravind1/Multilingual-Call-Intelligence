@@ -21,6 +21,7 @@ from app.domain.conversation import CallDirection
 from app.domain.escalation import EscalationLevel
 from app.domain.location import LocationRepository
 from app.domain.user_repository import UserRepository
+from app.services.call_alerts import QuestionOutcomeRepository, count_outcomes
 from app.services.call_customer_repository import CallCustomerRepository
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
 from app.services.escalation_repository import EscalationRepository
@@ -105,6 +106,9 @@ class ReportCall:
     customer_key: str | None = None
     # None: the call never escalated.
     escalation_level: EscalationLevel | None = None
+    # Suggested questions the executive accepted, and skipped.
+    questions_accepted: int = 0
+    questions_skipped: int = 0
 
 
 def customer_key(customer_id: str | None, caller_number: str | None) -> str | None:
@@ -469,7 +473,9 @@ class InMemoryReportSource(ReportSource):
         complaints: ComplaintLifecycleRepository | None = None,
         call_customers: CallCustomerRepository | None = None,
         escalations: EscalationRepository | None = None,
+        question_outcomes: QuestionOutcomeRepository | None = None,
     ) -> None:
+        self._question_outcomes = question_outcomes
         self._complaints = complaints
         self._call_customers = call_customers
         self._escalations = escalations
@@ -512,8 +518,17 @@ class InMemoryReportSource(ReportSource):
             escalation = (
                 None if self._escalations is None else self._escalations.get(conversation.call_id)
             )
+            accepted, skipped = count_outcomes(
+                    ()
+                    if self._question_outcomes is None
+                    else self._question_outcomes.list_for_calls([conversation.call_id]).get(
+                        conversation.call_id, ()
+                    )
+                )
             matching.append(
                 ReportCall(
+                    questions_accepted=accepted,
+                    questions_skipped=skipped,
                     customer_key=(
                         None if link is None else customer_key(link.customer_id, link.caller_number)
                     ),

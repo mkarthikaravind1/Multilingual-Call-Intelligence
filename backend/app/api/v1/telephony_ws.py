@@ -24,6 +24,7 @@ from app.api.v1.live import AUTH_FAILED_CLOSE_CODE, CALL_NOT_FOUND_CLOSE_CODE
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.conversation import ConversationAlreadyCompletedError, ConversationStatus
 from app.services.audio_chunking_service import AudioChunk
+from app.services.call_alerts import CallAlertService
 from app.services.call_recording_store import CallRecording, CallRecordingStore
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
@@ -204,7 +205,12 @@ class _StreamSession:
         # Chunks are processed in order on a worker, off the receive loop: one
         # chunk can take longer to process than the websocket keepalive allows,
         # and a socket that stops reading gets dropped mid-call.
-        self._worker = _ChunkWorker(call_id, call_service, live_chunk_processing_service)
+        self._worker = _ChunkWorker(
+            call_id,
+            call_service,
+            live_chunk_processing_service,
+            getattr(websocket.app.state.services, "alert_service", None),
+        )
         # The stream's audio encoding, from its "start" event.
         self._encoding: str | None = None
         # The call's audio, transcribed again in full after the call (see
@@ -406,8 +412,10 @@ class _ChunkWorker:
         call_id: str,
         call_service: CallService,
         live_chunk_processing_service: LiveChunkProcessingService,
+        alert_service: CallAlertService | None = None,
     ) -> None:
         self.call_id = call_id
+        self._alert_service = alert_service
         self._call_service = call_service
         self._live_chunk_processing_service = live_chunk_processing_service
         self._queue: asyncio.Queue[
@@ -457,6 +465,7 @@ class _ChunkWorker:
                     self._live_chunk_processing_service,
                     is_final,
                     track,
+                    self._alert_service,
                 )
             except Exception:
                 logger.exception("Live pipeline processing failed for call %r", self.call_id)
@@ -504,6 +513,18 @@ def _flush(
     worker.submit(chunk, is_final, track)
 
 
+def _note_audio(
+    alert_service: CallAlertService | None,
+    call_id: str,
+    chunk: BufferedAudioChunk,
+    recognised: bool,
+) -> None:
+    """Tell the alerts how the audio is doing. Only stretches someone
+    spoke in count: silence that transcribes to nothing is not poor audio."""
+    if alert_service is not None and chunk.has_speech:
+        alert_service.note_audio(call_id, recognised)
+
+
 async def _process_chunk(
     call_id: str,
     chunk: BufferedAudioChunk,
@@ -512,6 +533,7 @@ async def _process_chunk(
     live_chunk_processing_service: LiveChunkProcessingService | None,
     is_final: bool,
     track: str | None = None,
+    alert_service: CallAlertService | None = None,
 ) -> None:
     if live_chunk_processing_service is None:
         logger.error(
@@ -562,6 +584,7 @@ async def _process_chunk(
         LIVE_CHUNKS.inc(stream, "dropped")
         return
     except NoSpeechDetected:
+        _note_audio(alert_service, call_id, chunk, recognised=False)
         logger.info(
             "No speech in %.1fs of audio (call time %.1f-%.1fs) for call %r",
             chunk.duration,
@@ -575,6 +598,7 @@ async def _process_chunk(
         logger.exception("Live pipeline processing failed for call %r", call_id)
         LIVE_CHUNKS.inc(stream, "failed")
         return
+    _note_audio(alert_service, call_id, chunk, recognised=True)
     LIVE_CHUNKS.inc(stream, "transcribed")
     LIVE_CHUNK_DURATION.observe(time.monotonic() - started, stream)
     logger.info(

@@ -138,6 +138,14 @@ from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.domain.location import InMemoryLocationRepository, LocationRepository
 from app.services.call_routing_service import CallRoutingService
 from app.services.location_service import LocationService
+from app.services.call_alerts import (
+    AlertRules,
+    CallAlertRepository,
+    CallAlertService,
+    InMemoryCallAlertRepository,
+    InMemoryQuestionOutcomeRepository,
+    QuestionOutcomeRepository,
+)
 from app.services.performance import PerformanceService
 from app.services.reporting import (
     MAX_REPORT_CALLS,
@@ -182,6 +190,8 @@ def build_api_services(
     price_list_repository: PriceListRepository | None = None,
     location_repository: LocationRepository | None = None,
     report_source: ReportSource | None = None,
+    call_alert_repository: CallAlertRepository | None = None,
+    question_outcome_repository: QuestionOutcomeRepository | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -218,6 +228,15 @@ def build_api_services(
     )
 
     location_repository = location_repository or InMemoryLocationRepository()
+    question_outcome_repository = (
+        question_outcome_repository or InMemoryQuestionOutcomeRepository()
+    )
+    # --- On-screen alerts on live calls ---
+    alert_service = CallAlertService(
+        call_alert_repository or InMemoryCallAlertRepository(),
+        live_state_store,
+        AlertRules.from_settings(settings),
+    )
 
     call_service = CallService(ConversationService(conversation_repository))
     auth_service, user_management_service = _build_user_services(
@@ -299,6 +318,7 @@ def build_api_services(
             complaint_lifecycle_repository,
             call_customer_repository,
             escalation_repository,
+            question_outcome_repository,
         ),
         location_repository,
         user_repository,
@@ -365,6 +385,7 @@ def build_api_services(
         live_analysis_ttl_seconds=settings.live_analysis_ttl_seconds,
         transcript_reviser=transcript_reviser,
         vehicle_model_resolver=call_customer_service.resolve_vehicle_model,
+        alert_service=alert_service,
     )
 
     # --- After the call, telephony and the background jobs ---
@@ -443,6 +464,8 @@ def build_api_services(
         location_service=location_service,
         report_service=report_service,
         performance_service=performance_service,
+        alert_service=alert_service,
+        question_outcome_repository=question_outcome_repository,
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
         background_jobs=background_jobs,

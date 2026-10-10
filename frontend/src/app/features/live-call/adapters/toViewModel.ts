@@ -87,6 +87,7 @@ export function toComplaintViewModel(
   return {
     category: complaint.category,
     status: complaint.status,
+    confidence: complaint.confidence ?? null,
   }
 }
 
@@ -223,5 +224,12 @@ export function toCallAnalysisViewModel(
     postCallSummary: analysis.post_call_summary
       ? toPostCallSummaryViewModel(analysis.post_call_summary)
       : null,
+
+    alerts: (analysis.alerts ?? []).map((alert) => ({
+      alertType: alert.alert_type,
+      subject: alert.subject,
+      message: alert.message,
+      clearedAt: alert.cleared_at,
+    })),
   }
 }

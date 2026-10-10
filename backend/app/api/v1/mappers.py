@@ -1,4 +1,5 @@
 from app.api.v1.schemas import (
+    CallAlertResponse,
     CallAnalysisResponse,
     CallListResponse,
     CallResponse,
@@ -83,4 +84,5 @@ def to_analysis_response(
             if result.escalation is not None
             else None
         ),
+        alerts=[CallAlertResponse.model_validate(alert) for alert in result.alerts],
     )

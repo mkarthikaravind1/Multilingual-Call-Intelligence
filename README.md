@@ -552,6 +552,7 @@ With the backend running, interactive OpenAPI docs are at
 | Escalations | `GET /escalations`, `POST /escalations/{call_id}/acknowledge`, `/resolve` |
 | Learning | `/learning/candidates` (+ approve/reject), `/learning/patterns`, `/learning/evidence`, `/learning/calls/{id}/observations`, `/learning/calls/{id}/feedback`, `/learning/improvements` |
 | Admin | `/admin/users`, `/admin/locations`, `/admin/post-call` (+ repair/retry) |
+| Live view and alerts | `GET /live-calls` (every active call with tone, complaints, escalation and standing alerts; supervisors and admins), `GET/POST /calls/{id}/question-outcomes` (a suggested question accepted or skipped). A call's analysis carries its alerts (complaint not asked about, severe category, low confidence, poor audio; thresholds are the `ALERT_*` settings) and each complaint's confidence. On screen only: nothing is sent. |
 | Reports | `GET /reports/complaints` (category totals, trend by day or week, category by location, root causes), `GET /reports/complaints/export?format=csv\|xlsx\|pdf`; filters: dates, location, executive, category, tone, direction. Supervisors and admins. `GET /reports/performance` (+ `/export?format=csv\|xlsx`): estimates by fixed rules (coverage score, First Call Resolution, repeat complaints, churn risk, CSAT) overall and per executive; the rules are in `app/services/performance.py` and on the page. |
 | Test calls | `/test-calls` (disabled in production) |
 | Ops (no prefix) | `/health/live`, `/health/ready`, `/metrics` |

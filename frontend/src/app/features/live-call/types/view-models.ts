@@ -17,6 +17,16 @@ export interface TranscriptTurnViewModel {
 export interface ComplaintViewModel {
   category: string
   status: string
+  // 0 to 1; null when not recorded.
+  confidence: number | null
+}
+
+export interface CallAlertViewModel {
+  alertType: string
+  subject: string
+  message: string
+  // null while the alert stands.
+  clearedAt: number | null
 }
 
 export interface SentimentViewModel {
@@ -127,4 +137,5 @@ export interface CallAnalysisViewModel {
   serviceEstimate: ServiceEstimateViewModel | null
   postCallSummary: PostCallSummaryViewModel | null
   escalation: EscalationViewModel | null
+  alerts: CallAlertViewModel[]
 }

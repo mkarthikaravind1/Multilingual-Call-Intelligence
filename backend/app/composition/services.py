@@ -28,6 +28,7 @@ from app.services.audio_processing_pipeline import (
 )
 from app.domain.conversation import Conversation
 from app.domain.utterance import Utterance
+from app.services.call_alerts import CallAlertService
 from app.services.call_service import CallService
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
@@ -266,6 +267,7 @@ def build_call_workflow_service(
     live_analysis_ttl_seconds: float = DEFAULT_LIVE_ANALYSIS_TTL_SECONDS,
     transcript_reviser: Callable[[Conversation], tuple[Utterance, ...] | None] | None = None,
     vehicle_model_resolver: Callable[[str], str | None] | None = None,
+    alert_service: CallAlertService | None = None,
 ) -> CallWorkflowService:
     """The one place the call workflow is put together.
 
@@ -331,6 +333,7 @@ def build_call_workflow_service(
         live_analysis_ttl_seconds=live_analysis_ttl_seconds,
         transcript_reviser=transcript_reviser,
         vehicle_model_resolver=vehicle_model_resolver,
+        alert_service=alert_service,
     )
 
 def build_audio_processing_pipeline(

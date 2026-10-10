@@ -8,6 +8,7 @@ export type NavIconName =
   | 'complaints'
   | 'price-list'
   | 'reports'
+  | 'live-calls'
   | 'menu'
   | 'collapse-panel'
   | 'close'
@@ -30,6 +31,8 @@ const PATHS: Record<NavIconName, string[]> = {
   complaints: ['M4 5h16v11H9l-5 4z', 'M8.5 9.5h7', 'M8.5 12.5h4'],
   // A price tag.
   'price-list': ['M3 12V4h8l10 10-8 8z', 'M7.5 8.5h.01'],
+  // A screen with a signal on it.
+  'live-calls': ['M3 5h18v11H3z', 'M8 20h8', 'M12 16v4', 'M7 11h2l1.5-3 2.5 5 1.5-2h2.5'],
   // A bar chart.
   reports: ['M4 20h16', 'M7 20v-6', 'M12 20V6', 'M17 20v-9'],
   menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],

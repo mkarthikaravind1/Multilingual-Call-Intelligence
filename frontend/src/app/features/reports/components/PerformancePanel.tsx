@@ -241,6 +241,7 @@ export function PerformancePanel({ filters, fileLabel }: PerformancePanelProps) 
                     <th scope="col">Negative or worse</th>
                     <th scope="col">High churn risk</th>
                     <th scope="col">High or critical escalations</th>
+                    <th scope="col">Questions accepted / skipped</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -264,6 +265,9 @@ export function PerformancePanel({ filters, fileLabel }: PerformancePanelProps) 
                       </td>
                       <td>{figures.churn_high}</td>
                       <td>{figures.serious_escalations}</td>
+                      <td>
+                        {figures.questions_accepted} / {figures.questions_skipped}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

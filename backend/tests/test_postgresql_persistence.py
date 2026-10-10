@@ -150,6 +150,8 @@ def test_schema_creates_all_expected_tables(engine):
         "emerging_complaint_candidates",
         "price_list_versions",
         "locations",
+        "call_alerts",
+        "question_outcomes",
     }
 
 

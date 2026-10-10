@@ -177,6 +177,8 @@ class FiguresResponse(_Response):
     # 1.0 to 5.0.
     csat: float | None
     serious_escalations: int
+    questions_accepted: int
+    questions_skipped: int
 
 
 class ExecutiveFiguresResponse(_Response):

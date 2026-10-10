@@ -9,6 +9,7 @@ import { useKeepSessionAlive } from '../auth/useKeepSessionAlive'
 import type { EscalationViewModel } from '../features/escalation/types/view-models'
 import { callRestService } from '../features/live-call/services/callRestService'
 import { CallHeader } from '../features/live-call/components/CallHeader'
+import { AlertsPanel } from '../features/live-call/components/AlertsPanel'
 import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
 import { NextQuestionPanel } from '../features/live-call/components/NextQuestionPanel'
 import { ServiceEstimatePanel } from '../features/live-call/components/ServiceEstimatePanel'
@@ -165,10 +166,17 @@ export function LiveCallPage() {
             </div>
 
             <aside className="live-call__side-column">
+              <AlertsPanel
+                alerts={liveCall.analysis?.alerts ?? []}
+                isCallActive={liveCall.call.status.toLowerCase() === 'active'}
+              />
+
               <NextQuestionPanel
                 suggestion={
                   liveCall.analysis?.questionSuggestion ?? null
                 }
+                callId={callId}
+                isCallActive={liveCall.call.status.toLowerCase() === 'active'}
               />
 
               <ComplaintPanel

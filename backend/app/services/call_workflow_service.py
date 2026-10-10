@@ -13,6 +13,8 @@ from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.service_estimate import CallServiceEstimate
 from app.domain.utterance import SpeakerRole, Utterance
 from app.services.best_effort import best_effort
+from app.domain.call_alert import CallAlert
+from app.services.call_alerts import CallAlertService
 from app.services.call_service import CallService
 from app.services.conversation_analysis_service import (
     ConversationAnalysisResult,
@@ -53,6 +55,8 @@ class CallAnalysisResult:
     post_call_summary: PostCallSummary | None = None
     # None when the call has never escalated (or escalation is not wired).
     escalation: Escalation | None = None
+    # The call's alerts, standing and cleared (see CallAlertService).
+    alerts: tuple[CallAlert, ...] = ()
 
 
 def _customer_speech(conversation: Conversation) -> tuple[int, int]:
@@ -117,7 +121,9 @@ class CallWorkflowService:
         | None = None,
         vehicle_model_resolver: Callable[[str], str | None] | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        alert_service: CallAlertService | None = None,
     ) -> None:
+        self._alert_service = alert_service
         # The model of the caller's vehicle (from the CRM), so the estimate
         # uses that model's prices; None when it is not known.
         self._vehicle_model_resolver = vehicle_model_resolver
@@ -283,6 +289,7 @@ class CallWorkflowService:
                     llm_signals=llm_escalation_signals,
                 ),
             )
+        result = replace(result, alerts=self._refresh_alerts(conversation, result.coverage))
         self._live_analysis.save(
             call_id,
             LiveAnalysisSnapshot(
@@ -292,6 +299,35 @@ class CallWorkflowService:
             ),
         )
         return result
+
+    def _refresh_alerts(
+        self, conversation: Conversation, coverage: ConversationCoverage | None
+    ) -> tuple[CallAlert, ...]:
+        if self._alert_service is None:
+            return ()
+        return (
+            best_effort(
+                "Refreshing the alerts", conversation.call_id,
+                self._alert_service.refresh, conversation, coverage,
+            )
+            or ()
+        )
+
+    def refresh_alerts(self, call_id: str) -> tuple[CallAlert, ...]:
+        """Bring an active call's alerts up to now (some become true just
+        by time passing). A completed call keeps the alerts it ended with."""
+        conversation = self._call_service.get_call(call_id)
+        if conversation.status == ConversationStatus.COMPLETED:
+            return self._alerts(call_id)
+        return self._refresh_alerts(conversation, self._coverage_repository.get(call_id))
+
+    def _alerts(self, call_id: str) -> tuple[CallAlert, ...]:
+        if self._alert_service is None:
+            return ()
+        return (
+            best_effort("Reading the alerts", call_id, self._alert_service.list_for_call, call_id)
+            or ()
+        )
 
     def _record_learning(self, call_id: str, result: CallAnalysisResult) -> None:
         if self._learning_recorder is None:
@@ -323,6 +359,7 @@ class CallWorkflowService:
             question_suggestion=None if latest is None else latest.question_suggestion,
             service_estimate=None if latest is None else latest.service_estimate,
             escalation=self._stored_escalation(call_id),
+            alerts=self._alerts(call_id),
         )
 
     def live_revision(self, call_id: str) -> str | None:
@@ -428,6 +465,7 @@ class CallWorkflowService:
             service_estimate=None if summary is None else summary.service_estimate,
             post_call_summary=summary,
             escalation=self._stored_escalation(conversation.call_id),
+            alerts=self._alerts(conversation.call_id),
         )
 
     def _vehicle_model(self, call_id: str) -> str | None:

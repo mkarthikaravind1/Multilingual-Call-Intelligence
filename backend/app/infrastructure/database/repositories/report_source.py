@@ -15,6 +15,7 @@ from app.infrastructure.database.models import (
     ConversationModel,
     LocationModel,
     PostCallSummaryModel,
+    QuestionOutcomeModel,
     UserModel,
 )
 from app.services.reporting import (
@@ -96,6 +97,16 @@ class PostgresReportSource(ReportSource):
                 ).all()
             }
 
+            outcomes: dict[str, dict[str, int]] = defaultdict(dict)
+            for call_id, choice, count in session.execute(
+                select(
+                    QuestionOutcomeModel.call_id, QuestionOutcomeModel.outcome, func.count()
+                )
+                .join(page, page.c.call_id == QuestionOutcomeModel.call_id)
+                .group_by(QuestionOutcomeModel.call_id, QuestionOutcomeModel.outcome)
+            ).all():
+                outcomes[call_id][choice] = count
+
         by_call: dict[str, list[tuple[str, str, bool]]] = defaultdict(list)
         for call_id, category, status in raised:
             by_call[call_id].append(
@@ -126,6 +137,8 @@ class PostgresReportSource(ReportSource):
                         for category, status, probed in by_call.get(row.call_id, ())
                     ),
                     customer_key=customer_key(row.customer_id, row.caller_number),
+                    questions_accepted=outcomes[row.call_id].get("accepted", 0),
+                    questions_skipped=outcomes[row.call_id].get("skipped", 0),
                     escalation_level=(
                         None
                         if row.escalation_level is None

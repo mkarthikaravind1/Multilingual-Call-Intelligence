@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 from app.ai.sentiment.provider import SentimentLabel
+from app.domain.call_alert import CallAlertType, QuestionOutcomeChoice
 from app.domain.call_customer import CustomerMatchStatus
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.customer_contact import ConsentStatus, MessagingChannel
@@ -189,6 +190,59 @@ class CallStatsResponse(BaseModel):
 class ComplaintCoverageResponse(_Response):
     category: str
     status: ComplaintCoverageStatus
+    # How sure the detector was (0 to 1); null when not recorded.
+    confidence: float | None = None
+
+
+class CallAlertResponse(_Response):
+    alert_type: CallAlertType
+    # The complaint category the alert is about; "" for the call itself.
+    subject: str
+    message: str
+    raised_at: float
+    # null while the alert stands.
+    cleared_at: float | None
+
+
+class QuestionOutcomeRequest(_Request):
+    question: str = Field(min_length=1, max_length=2000)
+    target_category: str = Field(min_length=1, max_length=100)
+    outcome: QuestionOutcomeChoice
+
+
+class QuestionOutcomeResponse(_Response):
+    question: str
+    target_category: str
+    outcome: QuestionOutcomeChoice
+    created_at: float
+
+
+class LiveCallResponse(BaseModel):
+    """An active call, as the supervisor's live view shows it."""
+
+    call_id: str
+    start_time: float
+    direction: CallDirection | None
+    location_name: str | None
+    executive_name: str | None
+    caller_number: str | None
+    customer_name: str | None
+    utterance_count: int
+    # The customer's tone at the latest analysis; null before the first.
+    sentiment: SentimentLabel | None
+    complaints: list[ComplaintCoverageResponse]
+    escalation_level: EscalationLevel | None
+    escalation_status: EscalationStatus | None
+    # Standing alerts only.
+    alerts: list[CallAlertResponse]
+
+
+class LiveCallsResponse(BaseModel):
+    items: list[LiveCallResponse]
+    # Active calls in all; items holds the most recent of them.
+    total: int
+    # The server's clock (epoch seconds), for showing durations.
+    now: float
 
 class CoverageResponse(_Response):
     call_id: str
@@ -288,6 +342,8 @@ class CallAnalysisResponse(_Response):
     post_call_summary: PostCallSummaryResponse | None = None
     # null while the call has not escalated
     escalation: "EscalationResponse | None" = None
+    # The call's alerts, standing and cleared, oldest first.
+    alerts: list[CallAlertResponse] = []
 
 
 class EscalationSignalResponse(_Response):

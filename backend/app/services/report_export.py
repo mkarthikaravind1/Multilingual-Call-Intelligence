@@ -62,6 +62,8 @@ _SCORECARD_COLUMNS = (
     "Churn risk medium",
     "Churn risk low",
     "High or critical escalations",
+    "Suggested questions accepted",
+    "Suggested questions skipped",
 )
 
 
@@ -85,6 +87,8 @@ def _scorecard_row(name: str, figures: Figures) -> list:
         figures.churn_medium,
         figures.churn_low,
         figures.serious_escalations,
+        figures.questions_accepted,
+        figures.questions_skipped,
     ]
 
 

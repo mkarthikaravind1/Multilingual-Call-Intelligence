@@ -8,6 +8,9 @@ import type {
   CallResponseDto,
   CallStatsResponseDto,
   CompleteCallRequestDto,
+  LiveCallsDto,
+  QuestionOutcomeChoice,
+  QuestionOutcomeDto,
   LiveTokenResponseDto,
   UtteranceRequestDto,
 } from '../types/dto'
@@ -78,6 +81,30 @@ export class CallRestService {
     if (filters.direction) query.set('direction', filters.direction)
     return apiClient.get<CallListResponseDto>(
       `/api/v1/calls?${query.toString()}`,
+    )
+  }
+
+  // Every active call, for the supervisor's live view.
+  getLiveCalls() {
+    return apiClient.get<LiveCallsDto>('/api/v1/live-calls')
+  }
+
+  listQuestionOutcomes(callId: string) {
+    return apiClient.get<QuestionOutcomeDto[]>(
+      `/api/v1/calls/${encodeURIComponent(callId)}/question-outcomes`,
+    )
+  }
+
+  // The executive accepted (will ask) or skipped a suggested question.
+  recordQuestionOutcome(
+    callId: string,
+    question: string,
+    targetCategory: string,
+    outcome: QuestionOutcomeChoice,
+  ) {
+    return apiClient.post<QuestionOutcomeDto>(
+      `/api/v1/calls/${encodeURIComponent(callId)}/question-outcomes`,
+      { question, target_category: targetCategory, outcome },
     )
   }
 

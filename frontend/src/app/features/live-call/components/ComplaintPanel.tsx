@@ -45,7 +45,14 @@ export function ComplaintPanel({
                   {complaint.category}
                 </span>
 
-                <ComplaintStatusBadge status={complaint.status} />
+                <span className="live-call__complaint-state">
+                  {complaint.confidence != null && (
+                    <small title="How sure the detection is">
+                      {Math.round(complaint.confidence * 100)}% sure
+                    </small>
+                  )}
+                  <ComplaintStatusBadge status={complaint.status} />
+                </span>
               </div>
             ),
           )}

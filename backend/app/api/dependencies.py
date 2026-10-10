@@ -9,6 +9,7 @@ from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.login_throttle import LoginThrottle
+from app.services.call_alerts import CallAlertService, QuestionOutcomeRepository
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_recording_store import CallRecordingStore
 from app.services.call_listing import CallListingQuery
@@ -68,6 +69,8 @@ class ApiServices:
     location_service: LocationService | None = None
     report_service: ReportService | None = None
     performance_service: PerformanceService | None = None
+    alert_service: CallAlertService | None = None
+    question_outcome_repository: QuestionOutcomeRepository | None = None
     price_list_service: PriceListService | None = None
     background_jobs: BackgroundJobRunner | None = None
     # Loads slow models (e.g. diarization) in the background at startup.
@@ -109,6 +112,17 @@ def get_performance_service(connection: HTTPConnection) -> PerformanceService:
     if service is None:
         raise HTTPException(status_code=503, detail="Reports are not configured.")
     return service
+
+
+def get_alert_service(connection: HTTPConnection) -> CallAlertService | None:
+    return connection.app.state.services.alert_service
+
+
+def get_question_outcome_repository(connection: HTTPConnection) -> QuestionOutcomeRepository:
+    repository = connection.app.state.services.question_outcome_repository
+    if repository is None:
+        raise HTTPException(status_code=503, detail="Question outcomes are not configured.")
+    return repository
 
 
 def get_price_list_service(connection: HTTPConnection) -> PriceListService:

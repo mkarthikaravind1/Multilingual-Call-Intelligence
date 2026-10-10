@@ -3,6 +3,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.dependencies import (
+    get_question_outcome_repository,
     get_location_service,
     get_user_repository,
     get_call_customer_service,
@@ -19,7 +20,13 @@ from app.api.v1.mappers import (
     to_utterance,
 )
 from app.api.v1.schemas import (
+    CallAlertResponse,
     CallAnalysisResponse,
+    ComplaintCoverageResponse,
+    LiveCallResponse,
+    LiveCallsResponse,
+    QuestionOutcomeRequest,
+    QuestionOutcomeResponse,
     CallCustomerResponse,
     CallDirectoryEntry,
     CallDirectoryResponse,
@@ -34,6 +41,7 @@ from app.api.v1.schemas import (
     StartCallRequest,
     UtteranceRequest,
 )
+from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import CallDirection, ConversationStatus
 from app.domain.user_repository import UserRepository
 from app.services.location_service import LocationService
@@ -41,7 +49,9 @@ from app.services.call_customer_service import CallCustomerService
 from app.services.call_listing import CallListFilters, CallListingQuery
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
-from app.api.security_dependencies import get_current_user
+from app.api.security_dependencies import get_current_user, require_roles
+from app.domain.call_alert import QuestionOutcome
+from app.services.call_alerts import QuestionOutcomeRepository
 from app.domain.user import User, UserRole
 
 
@@ -51,6 +61,9 @@ stats_router = APIRouter(tags=["calls"])
 
 DEFAULT_PAGE_LIMIT = 20
 MAX_PAGE_LIMIT = 100
+# The live view shows this many active calls at most (the most recent).
+MAX_LIVE_CALLS = 100
+_SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
 
 @router.get("", response_model=CallListResponse)
 def list_calls(
@@ -113,6 +126,54 @@ def get_call_directory(
             key=lambda entry: entry.name.casefold(),
         ),
     )
+
+
+@stats_router.get("/live-calls", response_model=LiveCallsResponse)
+def list_live_calls(
+    listing: CallListingQuery = Depends(get_call_listing),
+    workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    _: User = Depends(_SUPERVISORS),
+) -> LiveCallsResponse:
+    """Every active call with where it stands now. Reads only: the AI
+    providers are never run from here."""
+    page = listing.search(
+        CallListFilters(statuses=frozenset({ConversationStatus.ACTIVE})), MAX_LIVE_CALLS, 0
+    )
+    items = []
+    for call in page.items:
+        try:
+            # Some alerts become true just by time passing.
+            workflow_service.refresh_alerts(call.call_id)
+            analysis = workflow_service.analyze_call(call.call_id)
+        except Exception:
+            # e.g. the call completed and was cleared between the two reads.
+            continue
+        items.append(
+            LiveCallResponse(
+                call_id=call.call_id,
+                start_time=call.start_time,
+                direction=call.direction,
+                location_name=call.location_name,
+                executive_name=call.executive_name,
+                caller_number=call.caller_number,
+                customer_name=call.customer_name,
+                utterance_count=call.utterance_count,
+                sentiment=None if analysis.sentiment is None else analysis.sentiment.label,
+                complaints=[
+                    ComplaintCoverageResponse.model_validate(complaint)
+                    for complaint in analysis.coverage.complaints
+                    if complaint.status is not ComplaintCoverageStatus.NOT_RAISED
+                ],
+                escalation_level=call.escalation_level,
+                escalation_status=call.escalation_status,
+                alerts=[
+                    CallAlertResponse.model_validate(alert)
+                    for alert in analysis.alerts
+                    if alert.is_open
+                ],
+            )
+        )
+    return LiveCallsResponse(items=items, total=page.total, now=time.time())
 
 
 @stats_router.get("/call-stats", response_model=CallStatsResponse)
@@ -256,3 +317,39 @@ def complete_call(
     end_time = time.time() if payload.end_time is None else payload.end_time
     completion = workflow_service.complete_call(call_id, end_time)
     return to_call_response(completion.conversation)
+
+@router.get("/{call_id}/question-outcomes", response_model=list[QuestionOutcomeResponse])
+def list_question_outcomes(
+    call_id: str,
+    call_service: CallService = Depends(get_call_service),
+    outcomes: QuestionOutcomeRepository = Depends(get_question_outcome_repository),
+    _: User = Depends(get_current_user),
+) -> list[QuestionOutcomeResponse]:
+    call_service.get_call(call_id)  # 404 for an unknown call
+    return [
+        QuestionOutcomeResponse.model_validate(outcome)
+        for outcome in outcomes.list_for_calls([call_id]).get(call_id, ())
+    ]
+
+
+@router.post("/{call_id}/question-outcomes", response_model=QuestionOutcomeResponse)
+def record_question_outcome(
+    call_id: str,
+    payload: QuestionOutcomeRequest,
+    call_service: CallService = Depends(get_call_service),
+    outcomes: QuestionOutcomeRepository = Depends(get_question_outcome_repository),
+    user: User = Depends(get_current_user),
+) -> QuestionOutcomeResponse:
+    """The executive accepted (will ask) or skipped a suggested question.
+    Choosing again for the same question replaces the earlier choice."""
+    call_service.get_call(call_id)  # 404 for an unknown call
+    outcome = QuestionOutcome(
+        call_id=call_id,
+        question=payload.question.strip(),
+        target_category=payload.target_category.strip(),
+        outcome=payload.outcome,
+        user_id=user.user_id,
+        created_at=time.time(),
+    )
+    outcomes.save(outcome)
+    return QuestionOutcomeResponse.model_validate(outcome)
