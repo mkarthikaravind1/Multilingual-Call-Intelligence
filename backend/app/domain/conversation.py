@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from app.domain.utterance import Utterance
 
@@ -114,6 +114,25 @@ class Conversation:
     @property
     def duration(self) -> float | None:
         return None if self.end_time is None else self.end_time - self.start_time
+
+    def rate_utterances(self, ratings) -> int:
+        """Give lines their tone (UtteranceSentiment each). A line that is
+        gone, or whose words have changed since it was rated, is skipped.
+        Allowed in any status: a completed call's lines are rated after it.
+        Returns how many lines were rated."""
+        by_id = {rating.utterance_id: rating for rating in ratings}
+        rated = 0
+        for index, utterance in enumerate(self._utterances):
+            rating = by_id.get(utterance.utterance_id)
+            if rating is None or rating.transcript != utterance.transcript:
+                continue
+            self._utterances[index] = replace(
+                utterance,
+                sentiment=rating.label,
+                sentiment_confidence=rating.confidence,
+            )
+            rated += 1
+        return rated
 
     def assign(self, executive_user_id: str, location_id: str | None = None) -> None:
         """Record who took the call, e.g. once a ringing phone call is

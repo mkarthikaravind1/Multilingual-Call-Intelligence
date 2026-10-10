@@ -467,6 +467,8 @@ def test_call_observations_list_ai_outputs_with_correction_options(loop):
         "POSITIVE",
         "NEUTRAL",
         "NEGATIVE",
+        "FRUSTRATED",
+        "ESCALATING",
     ]
     assert by_component["next_question"]["correction_options"] == []
 

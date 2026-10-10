@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from app.domain.sentiment import SentimentLabel
 from app.core.constants import SUPPORTED_LANGUAGES
 
 class SpeakerRole(str, Enum):
@@ -17,6 +18,10 @@ class Utterance:
     start_time: float
     end_time: float
     confidence: float | None = None
+    # The speaker's tone on this line, once the analysis has rated it
+    # (customer lines only); None until then.
+    sentiment: SentimentLabel | None = None
+    sentiment_confidence: float | None = None
 
     def __post_init__(self) -> None:
         if not self.utterance_id.strip():
@@ -40,6 +45,11 @@ class Utterance:
 
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
             raise ValueError("confidence must be between 0.0 and 1.0.")
+
+        if self.sentiment_confidence is not None and not (
+            0.0 <= self.sentiment_confidence <= 1.0
+        ):
+            raise ValueError("sentiment_confidence must be between 0.0 and 1.0.")
 
     @property
     def duration(self) -> float:

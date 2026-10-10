@@ -53,6 +53,13 @@
   --chart-series-other: #898781;
   --chart-grid: #e3e8ee;
   --chart-axis: #b9c4d0;
+  /* The tone of a line of a call, mildest to strongest. Always shown with
+     its name; never the only sign of the tone. */
+  --tone-positive: #0ca30c;
+  --tone-neutral: #898781;
+  --tone-negative: #e0a000;
+  --tone-frustrated: #ec835a;
+  --tone-escalating: #d03b3b;
   --chart-heat-1: #cde2fb;
   --chart-heat-2: #9ec5f4;
   --chart-heat-3: #6da7ec;

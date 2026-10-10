@@ -104,6 +104,15 @@ class ConversationService:
             self._repository.save(conversation)
             return conversation
 
+    def rate_utterances(self, call_id: str, ratings) -> Conversation:
+        """Store the tone of the lines an analysis rated (see
+        Conversation.rate_utterances)."""
+        with self._lock_for(call_id):
+            conversation = self.get_conversation(call_id)
+            if conversation.rate_utterances(ratings):
+                self._repository.save(conversation)
+            return conversation
+
     def complete_conversation(self, call_id: str, end_time: float) -> ConversationCompletion:
         # ACTIVE -> COMPLETED happens once; repeats return the call unchanged,
         # keeping the original end_time.

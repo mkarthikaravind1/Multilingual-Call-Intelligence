@@ -14,7 +14,12 @@ export interface UtteranceRequestDto {
   confidence?: number | null
 }
 
-export type UtteranceDto = UtteranceRequestDto
+export interface UtteranceDto extends UtteranceRequestDto {
+  // The speaker's tone on this line (POSITIVE, NEUTRAL, NEGATIVE,
+  // FRUSTRATED or ESCALATING); null until the analysis has rated it.
+  sentiment?: string | null
+  sentiment_confidence?: number | null
+}
 
 export interface CallSummaryDto {
   call_id: string

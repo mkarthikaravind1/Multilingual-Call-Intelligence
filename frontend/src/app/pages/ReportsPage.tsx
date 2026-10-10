@@ -33,6 +33,8 @@ const SENTIMENTS: Array<{ id: ReportSentiment; name: string }> = [
   { id: 'POSITIVE', name: 'Positive' },
   { id: 'NEUTRAL', name: 'Neutral' },
   { id: 'NEGATIVE', name: 'Negative' },
+  { id: 'FRUSTRATED', name: 'Frustrated' },
+  { id: 'ESCALATING', name: 'Escalating' },
 ]
 const DIRECTIONS = [
   { id: 'inbound', name: 'Incoming' },

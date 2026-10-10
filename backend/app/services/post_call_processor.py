@@ -227,6 +227,12 @@ class PostCallProcessor:
 
         analysis = self._analysis_service.analyze(conversation, coverage, live=False)
         self._coverage_repository.save(analysis.coverage)
+        lines = getattr(analysis.sentiment, "lines", ())
+        if lines:
+            best_effort(
+                "Storing line tones", conversation.call_id,
+                self._call_service.rate_utterances, conversation.call_id, lines,
+            )
         return analysis
 
     def _close_out_complaints(self, call_id: str, coverage: ConversationCoverage) -> None:

@@ -18,7 +18,7 @@ from app.ai.complaint.provider import ComplaintDetectionResult
 from app.ai.escalation.llm_provider import LLMEscalationProvider
 from app.ai.escalation.provider import EscalationContext
 from app.ai.llm.client import LLMClient, LLMRequest
-from app.ai.sentiment.llm_provider import LLMSentimentProvider
+from app.ai.sentiment.llm_provider import LLMSentimentProvider, lines_to_rate, transcript_for
 from app.ai.sentiment.provider import SentimentResult
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
@@ -83,7 +83,7 @@ class LLMLiveAnalysisProvider:
             escalation = self._escalation.parse_signals(data.get("escalation"), context)
         return LiveAnalysis(
             complaints=self._complaints.parse_items(data.get("complaints"), allowed),
-            sentiment=self._sentiment.parse_object(data.get("sentiment")),
+            sentiment=self._sentiment.parse_object(data.get("sentiment"), conversation),
             escalation_signals=escalation,
         )
 
@@ -93,9 +93,8 @@ class LLMLiveAnalysisProvider:
         complaint_task: str,
         sentiment_guidance: tuple[RuntimeImprovementContext, ...],
     ) -> LLMRequest:
-        transcript = "\n".join(
-            f"{u.speaker_role.value}: {u.transcript.strip()}" for u in conversation.utterances
-        )
+        # Numbered when the sentiment task rates individual lines.
+        transcript = transcript_for(conversation, lines_to_rate(conversation))
         keys = '"complaints", "sentiment"'
         escalation_task = ""
         if self._escalation is not None:
@@ -114,7 +113,7 @@ class LLMLiveAnalysisProvider:
             "TASK 1 - complaints. Identify the complaints the customer has raised.\n\n"
             f"{complaint_task}\n\n"
             "TASK 2 - sentiment. Determine the overall sentiment of the conversation.\n\n"
-            f"{self._sentiment.task_instructions(sentiment_guidance)}\n\n"
+            f"{self._sentiment.task_instructions(sentiment_guidance, conversation)}\n\n"
             f"{escalation_task}"
             f"Respond with ONLY one JSON object with the keys {keys} (each answer in the "
             "shape given in its task) and nothing else (no markdown, no commentary). "

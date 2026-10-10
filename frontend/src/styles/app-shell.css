@@ -3126,3 +3126,112 @@
     gap: var(--space-1);
   }
 }
+
+/* The tone of each transcript line, and the tone over the call. */
+.tone-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone-color, var(--tone-neutral));
+}
+
+.tone-dot--positive,
+.live-call__turn--tone-positive,
+.tone-timeline__bar--positive { --tone-color: var(--tone-positive); }
+.tone-dot--neutral,
+.live-call__turn--tone-neutral,
+.tone-timeline__bar--neutral { --tone-color: var(--tone-neutral); }
+.tone-dot--negative,
+.live-call__turn--tone-negative,
+.tone-timeline__bar--negative { --tone-color: var(--tone-negative); }
+.tone-dot--frustrated,
+.live-call__turn--tone-frustrated,
+.tone-timeline__bar--frustrated { --tone-color: var(--tone-frustrated); }
+.tone-dot--escalating,
+.live-call__turn--tone-escalating,
+.tone-timeline__bar--escalating { --tone-color: var(--tone-escalating); }
+
+/* A rated line's left edge takes its tone's colour. */
+.live-call__turn[class*='live-call__turn--tone-'] {
+  border-left: 4px solid var(--tone-color);
+}
+
+.live-call__turn-tone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.tone-timeline {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.tone-timeline__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.tone-timeline__heading .panel__label {
+  margin: 0;
+}
+
+.tone-timeline__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+}
+
+.tone-timeline__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tone-timeline__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 40px;
+  margin: 0;
+  padding: 0 0 1px;
+  border-bottom: 1px solid var(--chart-axis);
+  list-style: none;
+}
+
+.tone-timeline__bar {
+  flex: 1 1 0;
+  max-width: 28px;
+  min-width: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--tone-color);
+}
+
+.tone-timeline__bar--positive { height: 20%; }
+.tone-timeline__bar--neutral { height: 40%; }
+.tone-timeline__bar--negative { height: 60%; }
+.tone-timeline__bar--frustrated { height: 80%; }
+.tone-timeline__bar--escalating { height: 100%; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

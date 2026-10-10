@@ -72,6 +72,14 @@ def _question_text(snapshot) -> str | None:
     return suggestion.question_en or suggestion.question
 
 
+def rate_lines(call_service: CallService, call_id: str, sentiment) -> None:
+    """Store the tone of the lines the analysis rated. Line tones are
+    extra: failing to store them never fails the analysis."""
+    lines = getattr(sentiment, "lines", ())
+    if lines:
+        best_effort("Storing line tones", call_id, call_service.rate_utterances, call_id, lines)
+
+
 class LearningRecordingError(Exception):
     pass
 
@@ -402,6 +410,7 @@ class CallWorkflowService:
         if still_active is not None and not still_active():
             raise _CallCompletedDuringAnalysis(conversation.call_id)
         self._coverage_repository.save(analysis.coverage)
+        rate_lines(self._call_service, conversation.call_id, analysis.sentiment)
         return analysis
 
     def _read_completed_analysis(self, conversation: Conversation) -> CallAnalysisResult:

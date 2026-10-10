@@ -139,6 +139,11 @@ Each call has a speaker session (`ROLE_PROVIDER=session`) that holds who is
 the ICR and who is the customer. A role, once decided, is locked for the
 rest of the call, and the session is shared between instances (Redis).
 
+- **Tone per line.** The sentiment request (the combined live request, or the
+  separate one) also rates each customer line that has no tone yet: positive,
+  neutral, negative, frustrated or escalating. Lines are numbered in the prompt
+  rather than sent twice. The transcript shows the tone on each line and how it
+  moved over the call; a line that live speech continues is rated again.
 - **Separate tracks (production).** With `PLIVO_ICR_DIAL_TARGETS` set, the
   answer XML streams both sides of the call (`audioTrack="both"`) and then
   dials the ICR. The caller's track (inbound) is the customer and the other

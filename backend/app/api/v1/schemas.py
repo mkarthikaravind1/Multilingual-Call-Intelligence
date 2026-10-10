@@ -120,6 +120,10 @@ class UtteranceResponse(_Response):
     start_time: float
     end_time: float
     confidence: float | None
+    # The speaker's tone on this line; null until the analysis has rated
+    # it (customer lines only).
+    sentiment: SentimentLabel | None = None
+    sentiment_confidence: float | None = None
 
 class CallResponse(_Response):
     call_id: str

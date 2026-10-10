@@ -10,6 +10,8 @@ export interface TranscriptTurnViewModel {
   startTime: number
   endTime: number
   confidence: number | null
+  // The speaker's tone on this line; null until it is rated.
+  sentiment: string | null
 }
 
 export interface ComplaintViewModel {

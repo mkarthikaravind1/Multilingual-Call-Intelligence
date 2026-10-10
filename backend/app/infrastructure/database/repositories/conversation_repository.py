@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from app.domain.sentiment import SentimentLabel
 from app.domain.conversation import (
     CallDirection,
     Conversation,
@@ -22,6 +23,8 @@ def _utterance_to_domain(model: UtteranceModel) -> Utterance:
         start_time=model.start_time,
         end_time=model.end_time,
         confidence=model.confidence,
+        sentiment=None if model.sentiment is None else SentimentLabel(model.sentiment),
+        sentiment_confidence=model.sentiment_confidence,
     )
 
 
@@ -50,6 +53,8 @@ def _write_utterance(model: UtteranceModel, utterance: Utterance) -> UtteranceMo
     model.start_time = utterance.start_time
     model.end_time = utterance.end_time
     model.confidence = utterance.confidence
+    model.sentiment = None if utterance.sentiment is None else utterance.sentiment.value
+    model.sentiment_confidence = utterance.sentiment_confidence
     return model
 
 

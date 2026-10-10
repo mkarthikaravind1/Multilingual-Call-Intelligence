@@ -2,7 +2,7 @@ import { apiClient } from '../../../api/client'
 import type { CallDirection } from '../../live-call/types/dto'
 
 export type ReportBucket = 'day' | 'week'
-export type ReportSentiment = 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE'
+export type ReportSentiment = 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | 'FRUSTRATED' | 'ESCALATING'
 export type ReportExportFormat = 'csv' | 'xlsx' | 'pdf'
 
 // Calls started in [startedFrom, startedTo) (epoch seconds); the rest are

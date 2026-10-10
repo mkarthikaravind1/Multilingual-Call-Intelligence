@@ -69,6 +69,9 @@ class CallService:
     ) -> Conversation:
         return self._conversation_service.replace_transcript(call_id, utterances)
 
+    def rate_utterances(self, call_id: str, ratings) -> Conversation:
+        return self._conversation_service.rate_utterances(call_id, ratings)
+
     def end_call(
         self,
         call_id: str,

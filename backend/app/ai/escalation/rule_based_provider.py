@@ -181,7 +181,7 @@ class RuleBasedEscalationProvider(EscalationDetectionProvider):
         sentiment = context.sentiment
         if (
             sentiment is None
-            or sentiment.label is not SentimentLabel.NEGATIVE
+            or not sentiment.label.is_negative
             or sentiment.confidence < NEGATIVE_TONE_MIN_CONFIDENCE
         ):
             return []
@@ -190,7 +190,7 @@ class RuleBasedEscalationProvider(EscalationDetectionProvider):
                 signal_type=EscalationSignalType.NEGATIVE_TONE,
                 level=EscalationLevel.WATCH,
                 description=(
-                    f"Customer's tone is clearly negative "
+                    f"Customer's tone is clearly {sentiment.label.value.lower()} "
                     f"({round(sentiment.confidence * 100)}% confidence)."
                 ),
                 evidence=_evidence(sentiment.evidence),

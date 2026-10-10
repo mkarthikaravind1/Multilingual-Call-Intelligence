@@ -62,6 +62,9 @@ class UtteranceModel(Base):
     start_time: Mapped[float] = mapped_column(Float, nullable=False)
     end_time: Mapped[float] = mapped_column(Float, nullable=False)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The line's tone (a SentimentLabel); NULL until it is rated.
+    sentiment: Mapped[str | None] = mapped_column(String, nullable=True)
+    sentiment_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     conversation: Mapped["ConversationModel"] = relationship(back_populates="utterances")
 

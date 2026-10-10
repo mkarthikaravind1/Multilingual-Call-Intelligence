@@ -1,15 +1,31 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
 
 from app.domain.conversation import Conversation
 from app.domain.runtime_improvement_context import RuntimeImprovementContext
+from app.domain.sentiment import SentimentLabel
 
 
-class SentimentLabel(str, Enum):
-    POSITIVE = "POSITIVE"
-    NEUTRAL = "NEUTRAL"
-    NEGATIVE = "NEGATIVE"
+@dataclass(frozen=True)
+class UtteranceSentiment:
+    """The tone of one line of the call."""
+
+    utterance_id: str
+    label: SentimentLabel
+    confidence: float
+    # The line as it was when rated: a line that has changed since (live
+    # speech continued it) is rated again rather than given this tone.
+    transcript: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.label, SentimentLabel):
+            raise TypeError(f"label must be a SentimentLabel, got {type(self.label).__name__}.")
+        if isinstance(self.confidence, bool) or not isinstance(self.confidence, (int, float)):
+            raise TypeError(
+                f"confidence must be a number, got {type(self.confidence).__name__}."
+            )
+        if not (0.0 <= self.confidence <= 1.0):
+            raise ValueError("confidence must be between 0.0 and 1.0.")
 
 
 @dataclass(frozen=True)
@@ -17,6 +33,8 @@ class SentimentResult:
     label: SentimentLabel
     confidence: float
     evidence: str
+    # The tone of individual lines, when the provider rated any.
+    lines: tuple[UtteranceSentiment, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.label, SentimentLabel):

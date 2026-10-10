@@ -38,6 +38,7 @@ export function toTranscriptTurnViewModel(
     startTime: utterance.start_time,
     endTime: utterance.end_time,
     confidence: utterance.confidence ?? null,
+    sentiment: utterance.sentiment ?? null,
   }
 }
 

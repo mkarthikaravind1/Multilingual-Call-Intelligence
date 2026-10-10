@@ -1,4 +1,7 @@
+import { humanizeLabel } from '../../../format/text'
 import { formatElapsedSeconds } from '../../../format/time'
+import { lineToneKey } from '../../../format/tone'
+import { ToneTimeline } from './ToneTimeline'
 
 import type {
   TranscriptTurnViewModel,
@@ -59,12 +62,16 @@ export function TranscriptPanel({
           </span>
         </div>
       ) : (
+        <>
+        <ToneTimeline transcript={transcript} />
         <div className="live-call__transcript-list">
-          {transcript.map((turn) => (
+          {transcript.map((turn) => {
+            const tone = lineToneKey(turn.sentiment)
+            return (
             <article
               className={`live-call__turn live-call__turn--${roleLabel(
                 turn.speakerRole,
-              ).toLowerCase()}`}
+              ).toLowerCase()}${tone ? ` live-call__turn--tone-${tone}` : ''}`}
               key={turn.utteranceId}
             >
               <div className="live-call__turn-meta">
@@ -88,14 +95,23 @@ export function TranscriptPanel({
                     turn.startTime,
                   )}
                 </span>
+
+                {tone && (
+                  <span className="live-call__turn-tone">
+                    <span className={`tone-dot tone-dot--${tone}`} aria-hidden="true" />
+                    {humanizeLabel(tone)}
+                  </span>
+                )}
               </div>
 
               <p>
                 {turn.transcript}
               </p>
             </article>
-          ))}
+            )
+          })}
         </div>
+        </>
       )}
     </section>
   )
