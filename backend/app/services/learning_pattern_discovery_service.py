@@ -2,23 +2,38 @@ from app.domain.learning_evidence import LearningEvidence
 from app.domain.learning_pattern import LearningPattern
 from app.services.learning_evidence_service import LearningEvidenceService
 from app.services.learning_signal_filter_service import LearningSignalFilterService
-from app.services.pattern_discovery_service import PatternDiscoveryService
+from app.services.pattern_discovery_service import (
+    OutputCalls,
+    PatternDiscoveryService,
+    PatternRules,
+)
 
 
 class LearningPatternDiscoveryService:
     """Reads stored evidence, keeps only improvement signals, and delegates
-    grouping to the existing PatternDiscoveryService unchanged."""
+    grouping to PatternDiscoveryService."""
 
     def __init__(
         self,
         evidence_service: LearningEvidenceService,
         signal_filter: LearningSignalFilterService | None = None,
+        rules: PatternRules | None = None,
     ) -> None:
         self._evidence_service = evidence_service
         self._signal_filter = signal_filter or LearningSignalFilterService()
+        self.rules = rules or PatternRules()
 
     def signals(self) -> list[LearningEvidence]:
-        return self._signal_filter.filter(self._evidence_service.list_all())
+        # Only judged evidence can be a signal; the (far larger) record of
+        # what the AI said is not read at all.
+        return self._signal_filter.filter(self._evidence_service.list_judged())
+
+    def output_calls(self) -> OutputCalls:
+        """On how many calls the AI gave each output: what a pattern's
+        corrections are compared with."""
+        return self._evidence_service.prediction_calls()
 
     def discover(self) -> list[LearningPattern]:
-        return PatternDiscoveryService(self.signals()).discover_patterns()
+        return PatternDiscoveryService(
+            self.signals(), self.rules, self.output_calls()
+        ).discover_patterns()

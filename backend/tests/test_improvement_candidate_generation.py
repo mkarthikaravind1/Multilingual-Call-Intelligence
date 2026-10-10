@@ -20,6 +20,11 @@ from app.services.learning_candidate_generation_service import (
     DEFAULT_CANDIDATE_CONFIDENCE,
     LearningCandidateGenerationService,
 )
+from app.services.pattern_discovery_service import PatternRules
+
+# These tests are about what happens once corrections form a pattern, not
+# about how many it takes (see test_learning_loop_safety.py): two will do.
+TWO_IS_ENOUGH = PatternRules(min_occurrences=2, min_calls=1, min_correction_rate=0.0)
 
 
 def make_pattern(
@@ -40,7 +45,9 @@ def make_pattern(
 
 
 def build(**kwargs):
-    return LearningCandidateGenerationService(ImprovementCandidateService(), **kwargs)
+    return LearningCandidateGenerationService(
+        ImprovementCandidateService(), rules=TWO_IS_ENOUGH, **kwargs
+    )
 
 
 def test_pattern_generates_pending_candidate():
@@ -246,7 +253,7 @@ def test_refresh_updates_the_pending_candidate_with_new_evidence():
     assert refreshed.created_at == original.created_at
     assert refreshed.occurrence_count == 3
     assert set(refreshed.evidence) == {"e1", "e2", "e3"}
-    assert "3 times" in refreshed.description
+    assert "on 3 calls" in refreshed.description
 
 
 @pytest.mark.parametrize(

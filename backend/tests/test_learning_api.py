@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from app.ai.complaint.provider import ComplaintDetectionProvider, ComplaintDetectionResult
+from app.core.config import Settings
 from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.sentiment.provider import (
     SentimentAnalysisProvider,
@@ -48,6 +49,11 @@ from app.services.call_customer_repository import InMemoryCallCustomerRepository
 from app.services.call_customer_service import CallCustomerService
 from app.domain.user_repository import InMemoryUserRepository
 from app.security.jwt import create_access_token
+from app.services.pattern_discovery_service import PatternRules
+
+# These tests are about what happens once corrections form a pattern, not
+# about how many it takes (see test_learning_loop_safety.py): two will do.
+TWO_IS_ENOUGH = PatternRules(min_occurrences=2, min_calls=1, min_correction_rate=0.0)
 
 BASE = "/api/v1/learning"
 DESC = "AI predicted complaint_detection 'Cost' and human corrected it to 'Other'."
@@ -88,7 +94,9 @@ def build(candidates=(), evidence=(), call_customer_service=None):
         candidate_repository.save(candidate)
     for record in evidence:
         evidence_repository.save(record)
-    learning = build_learning_management_service(evidence_repository, candidate_repository)
+    learning = build_learning_management_service(
+        evidence_repository, candidate_repository, pattern_rules=TWO_IS_ENOUGH
+    )
     services = ApiServices(
         call_service=build_call_service(),
         workflow_service=None,  # type: ignore[arg-type]
@@ -392,7 +400,15 @@ def _client_for(app, role: UserRole) -> TestClient:
 def loop():
     complaint_provider = LoopComplaintProvider()
     services = build_api_services(
-        complaint_provider, LoopSentimentProvider(), LoopQuestionProvider()
+        complaint_provider,
+        LoopSentimentProvider(),
+        LoopQuestionProvider(),
+        Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            learning_pattern_min_corrections=TWO_IS_ENOUGH.min_occurrences,
+            learning_pattern_min_calls=TWO_IS_ENOUGH.min_calls,
+            learning_pattern_min_correction_rate=TWO_IS_ENOUGH.min_correction_rate,
+        ),
     )
     app = create_app(services)
     return SimpleNamespace(
@@ -642,7 +658,7 @@ def test_failed_activation_leaves_the_candidate_pending():
     evidence_service = LearningEvidenceService(InMemoryLearningEvidenceRepository())
     service = LearningManagementService(
         evidence_service,
-        LearningPatternDiscoveryService(evidence_service),
+        LearningPatternDiscoveryService(evidence_service, rules=TWO_IS_ENOUGH),
         candidate_repository,
         LearningHumanReviewService(HumanReviewService(), candidate_repository),
         application_service=ImprovementApplicationService(FailingImprovements()),

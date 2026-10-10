@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.api.dependencies import (
     get_call_service,
@@ -14,6 +14,8 @@ from app.api.v1.learning_schemas import (
     LearningFeedbackResponse,
     LearningPatternResponse,
 )
+from app.ai.learning_guidance import guidance_text
+from app.domain.improvement_effectiveness import ImprovementEffect, ImprovementEffectMeasure
 from app.domain.learning_feedback import FeedbackSource
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
@@ -26,6 +28,10 @@ from app.api.security_dependencies import get_current_user, require_roles
 from app.domain.user import User, UserRole
 
 router = APIRouter(prefix="/learning", tags=["learning"])
+
+# The evidence list grows by several records per call.
+EVIDENCE_PAGE_SIZE = 500
+MAX_EVIDENCE_PAGE_SIZE = 2000
 
 @router.get("/candidates", response_model=list[LearningCandidateResponse])
 def list_candidates(
@@ -72,14 +78,20 @@ def list_patterns(
 
 @router.get("/evidence", response_model=list[LearningEvidenceResponse])
 def list_evidence(
+    response: Response,
+    limit: int = Query(EVIDENCE_PAGE_SIZE, ge=1, le=MAX_EVIDENCE_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     service: LearningManagementService = Depends(get_learning_service),
     call_customer_service: CallCustomerService | None = Depends(
         get_optional_call_customer_service
     ),
     _: User = Depends(get_current_user),
 ) -> list[LearningEvidenceResponse]:
-    """Each record carries its call's stored customer name and vehicle."""
-    evidence = service.list_evidence()
+    """Newest first, a page at a time; the X-Total-Count header has the
+    number of records in all. Each record carries its call's stored
+    customer name and vehicle."""
+    evidence = service.list_evidence(limit, offset)
+    response.headers["X-Total-Count"] = str(service.count_evidence())
     links = (
         call_customer_service.stored_links({e.call_id for e in evidence})
         if call_customer_service is not None
@@ -137,6 +149,7 @@ def submit_feedback(
         source=(
             FeedbackSource.ICR if user.role is UserRole.ICR else FeedbackSource.SUPERVISOR
         ),
+        created_by=user.user_id,
     )
     return LearningFeedbackResponse.model_validate(feedback)
 
@@ -184,11 +197,12 @@ def _to_observation_response(item: CallObservation) -> CallObservationResponse:
 
 def _to_improvement_response(item: ImprovementOverview) -> ActiveImprovementResponse:
     improvement = item.improvement
+    effect = item.effect or ImprovementEffectMeasure(ImprovementEffect.NOT_ENOUGH_DATA)
     return ActiveImprovementResponse(
         improvement_id=improvement.improvement_id,
         candidate_id=improvement.candidate_id,
         component=improvement.component,
-        guidance=improvement.specification.current_behavior,
+        guidance=guidance_text(improvement.specification),
         proposed_behavior=improvement.specification.proposed_behavior,
         status=improvement.status,
         activated_at=improvement.activated_at,
@@ -196,4 +210,9 @@ def _to_improvement_response(item: ImprovementOverview) -> ActiveImprovementResp
         usage_count=item.effectiveness.usage_count,
         feedback_count=item.effectiveness.evidence_count,
         effectiveness_status=item.effectiveness.status,
+        effect=effect.effect,
+        outputs_before=effect.outputs_before,
+        corrections_before=effect.corrections_before,
+        outputs_after=effect.outputs_after,
+        corrections_after=effect.corrections_after,
     )

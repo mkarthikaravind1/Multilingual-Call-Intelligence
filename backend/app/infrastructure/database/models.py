@@ -145,6 +145,7 @@ class LearningFeedbackModel(Base):
     original_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (
         Index("ix_learning_feedback_observation_id", "observation_id"),

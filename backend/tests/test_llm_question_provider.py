@@ -133,8 +133,8 @@ def test_approved_guidance_from_learning_context_is_added_to_the_prompt():
                 component=LearningComponent.NEXT_QUESTION,
                 specification=ImprovementSpecification(
                     component=LearningComponent.NEXT_QUESTION,
-                    current_behavior=guidance,
-                    proposed_behavior="Ask about the cause of the delay.",
+                    current_behavior="Reviewers corrected it on 2 calls.",
+                    proposed_behavior=guidance,
                     reason="Recurred 2 times.",
                 ),
             ),

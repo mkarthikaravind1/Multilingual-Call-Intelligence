@@ -42,6 +42,7 @@ class LearningFeedbackService:
         original_value: str | None = None,
         source: FeedbackSource = FeedbackSource.ICR,
         notes: str | None = None,
+        created_by: str | None = None,
     ) -> LearningFeedback:
         _require_call_id(call_id)
 
@@ -61,6 +62,7 @@ class LearningFeedbackService:
             original_value=original_value,
             source=source,
             notes=notes,
+            created_by=created_by,
         )
 
         observation = self._observation_service.get(observation_id)

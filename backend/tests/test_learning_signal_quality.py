@@ -37,6 +37,11 @@ from app.services.learning_pattern_discovery_service import (
 )
 from app.services.learning_signal_filter_service import LearningSignalFilterService
 from app.services.post_call_summary_service import PostCallSummaryService
+from app.services.pattern_discovery_service import PatternRules
+
+# These tests are about what happens once corrections form a pattern, not
+# about how many it takes (see test_learning_loop_safety.py): two will do.
+TWO_IS_ENOUGH = PatternRules(min_occurrences=2, min_calls=1, min_correction_rate=0.0)
 
 FILTER = LearningSignalFilterService()
 
@@ -68,7 +73,7 @@ def discovery_for(*records: LearningEvidence):
     for record in records:
         repository.save(record)
     evidence_service = LearningEvidenceService(repository)
-    return LearningPatternDiscoveryService(evidence_service), repository
+    return LearningPatternDiscoveryService(evidence_service, rules=TWO_IS_ENOUGH), repository
 
 
 def test_prediction_without_expected_value_is_not_a_signal():
@@ -225,7 +230,9 @@ def test_generated_correction_evidence_forms_pattern_across_calls():
         )
         generation.generate(observation, feedback)
 
-    discovery = LearningPatternDiscoveryService(LearningEvidenceService(repository))
+    discovery = LearningPatternDiscoveryService(
+        LearningEvidenceService(repository), rules=TWO_IS_ENOUGH
+    )
 
     patterns = discovery.discover()
 
@@ -280,7 +287,9 @@ def test_real_call_predictions_are_stored_but_form_no_patterns():
             ),
         )
 
-    discovery = LearningPatternDiscoveryService(LearningEvidenceService(repository))
+    discovery = LearningPatternDiscoveryService(
+        LearningEvidenceService(repository), rules=TWO_IS_ENOUGH
+    )
 
     assert len(repository.list_all()) == 6
     assert all(e.evidence_type is EvidenceType.AI_PREDICTION for e in repository.list_all())

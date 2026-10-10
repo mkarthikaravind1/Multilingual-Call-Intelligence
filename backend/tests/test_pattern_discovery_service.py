@@ -7,6 +7,11 @@ from app.domain.learning_evidence import (
 )
 from app.domain.learning_pattern import LearningPattern
 from app.services.pattern_discovery_service import PatternDiscoveryService
+from app.services.pattern_discovery_service import PatternRules
+
+# These tests are about what happens once corrections form a pattern, not
+# about how many it takes (see test_learning_loop_safety.py): two will do.
+TWO_IS_ENOUGH = PatternRules(min_occurrences=2, min_calls=1, min_correction_rate=0.0)
 
 
 COMPONENT_A = LearningComponent.COMPLAINT_DETECTION
@@ -43,7 +48,7 @@ def test_repeated_evidence_creates_a_learning_pattern():
         _make_evidence("evidence-2"),
     ]
 
-    service = PatternDiscoveryService(evidence)
+    service = PatternDiscoveryService(evidence, TWO_IS_ENOUGH)
     patterns = service.discover_patterns()
 
     assert len(patterns) == 1
@@ -54,7 +59,7 @@ def test_repeated_evidence_creates_a_learning_pattern():
 def test_single_evidence_does_not_create_a_pattern():
     evidence = [_make_evidence("evidence-1")]
 
-    service = PatternDiscoveryService(evidence)
+    service = PatternDiscoveryService(evidence, TWO_IS_ENOUGH)
     patterns = service.discover_patterns()
 
     assert patterns == []
@@ -84,7 +89,7 @@ def test_multiple_components_create_separate_patterns():
         ),
     ]
 
-    service = PatternDiscoveryService(evidence)
+    service = PatternDiscoveryService(evidence, TWO_IS_ENOUGH)
     patterns = service.discover_patterns()
 
     assert len(patterns) == 2
@@ -101,7 +106,7 @@ def test_occurrence_count_is_correct():
         _make_evidence("evidence-3"),
     ]
 
-    service = PatternDiscoveryService(evidence)
+    service = PatternDiscoveryService(evidence, TWO_IS_ENOUGH)
     patterns = service.discover_patterns()
 
     assert len(patterns) == 1
@@ -115,7 +120,7 @@ def test_evidence_ids_are_correct():
         _make_evidence("evidence-3"),
     ]
 
-    service = PatternDiscoveryService(evidence)
+    service = PatternDiscoveryService(evidence, TWO_IS_ENOUGH)
     patterns = service.discover_patterns()
 
     assert len(patterns) == 1
@@ -146,7 +151,7 @@ def test_different_descriptions_are_not_incorrectly_grouped():
         ),
     ]
 
-    service = PatternDiscoveryService(evidence)
+    service = PatternDiscoveryService(evidence, TWO_IS_ENOUGH)
     patterns = service.discover_patterns()
 
     assert patterns == []
@@ -181,7 +186,7 @@ def test_multiple_repeated_groups_produce_multiple_patterns():
         ),
     ]
 
-    service = PatternDiscoveryService(evidence)
+    service = PatternDiscoveryService(evidence, TWO_IS_ENOUGH)
     patterns = service.discover_patterns()
 
     assert len(patterns) == 2

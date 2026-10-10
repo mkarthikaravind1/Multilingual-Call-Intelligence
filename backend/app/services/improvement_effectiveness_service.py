@@ -2,7 +2,11 @@ import hashlib
 import time
 from collections.abc import Callable
 
+from collections.abc import Collection
+
 from app.domain.improvement_effectiveness import (
+    ImprovementEffect,
+    ImprovementEffectMeasure,
     ImprovementEffectivenessResult,
     ImprovementEffectivenessStatus,
 )
@@ -12,6 +16,7 @@ from app.domain.improvement_usage_repository import (
 )
 from app.domain.learning_evidence import (
     EvidenceType,
+    LearningComponent,
     LearningEvidence,
 )
 from app.domain.learning_evidence_repository import (
@@ -37,6 +42,12 @@ class ImprovementUsageRecordingError(Exception):
 class ImprovementEffectivenessService:
 
     MIN_EVIDENCE_FOR_EVALUATION = 2
+    # The effect is judged once the AI gave the output on this many
+    # calls since the improvement went live...
+    MIN_OUTPUTS_AFTER = 5
+    # ...and counts as better or worse when the share corrected moved
+    # by at least this much.
+    MIN_RATE_CHANGE = 0.10
 
     def __init__(
         self,
@@ -115,7 +126,7 @@ class ImprovementEffectivenessService:
 
         evidence = tuple(
             item
-            for item in self._evidence_repository.list_all()
+            for item in self._evidence_repository.list_judged()
             if item.call_id in call_ids
             and item.component in components
             and item.evidence_type in _FEEDBACK_EVIDENCE_TYPES
@@ -146,6 +157,72 @@ class ImprovementEffectivenessService:
             evidence_count=len(evidence),
             status=status,
             observed_outcomes=observed_outcomes,
+        )
+
+    def measure_effect(
+        self,
+        component: LearningComponent,
+        evidence_ids: Collection[str],
+        activated_at: float,
+        deactivated_at: float | None = None,
+    ) -> ImprovementEffectMeasure:
+        """Whether reviewers correct the output less often since the
+        improvement went live. evidence_ids: the corrections it was
+        made from, which say which output it is about.
+
+        Only outputs a reviewer looked at can be corrected, so this is a
+        signal for a supervisor to weigh, not a measurement of accuracy."""
+        sources = (self._evidence_repository.get(evidence_id) for evidence_id in evidence_ids)
+        outputs = {
+            source.actual_value
+            for source in sources
+            if source is not None and source.actual_value is not None
+        }
+        records = self._evidence_repository.list_for_outputs(component, outputs)
+
+        # One output per call; a correction belongs to the time the AI
+        # gave the output, not the (later) time it was reviewed.
+        given_at: dict[tuple[str, str], float] = {}
+        for record in records:
+            if record.evidence_type is EvidenceType.AI_PREDICTION:
+                key = (record.call_id, record.actual_value or "")
+                given_at[key] = min(given_at.get(key, record.created_at), record.created_at)
+        corrected: set[tuple[str, str]] = set()
+        for record in records:
+            if record.evidence_type is EvidenceType.HUMAN_CORRECTION:
+                key = (record.call_id, record.actual_value or "")
+                given_at.setdefault(key, record.created_at)
+                corrected.add(key)
+
+        def live(at: float) -> bool | None:
+            if at < activated_at:
+                return False
+            return True if deactivated_at is None or at < deactivated_at else None
+
+        counts = {False: [0, 0], True: [0, 0]}  # live? -> [outputs, corrections]
+        for key, at in given_at.items():
+            period = live(at)
+            if period is None:
+                continue
+            counts[period][0] += 1
+            counts[period][1] += key in corrected
+        (outputs_before, corrections_before), (outputs_after, corrections_after) = (
+            counts[False],
+            counts[True],
+        )
+
+        if outputs_before == 0 or outputs_after < self.MIN_OUTPUTS_AFTER:
+            effect = ImprovementEffect.NOT_ENOUGH_DATA
+        else:
+            change = corrections_after / outputs_after - corrections_before / outputs_before
+            if change <= -self.MIN_RATE_CHANGE:
+                effect = ImprovementEffect.BETTER
+            elif change >= self.MIN_RATE_CHANGE:
+                effect = ImprovementEffect.WORSE
+            else:
+                effect = ImprovementEffect.NO_CHANGE
+        return ImprovementEffectMeasure(
+            effect, outputs_before, corrections_before, outputs_after, corrections_after
         )
 
     @staticmethod

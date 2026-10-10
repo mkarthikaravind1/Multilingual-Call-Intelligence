@@ -12,11 +12,21 @@ import { EmergingComplaintsPanel } from '../features/complaints/components/Emerg
 import { LEARNING_COMPONENTS } from '../features/ai-improvement/types/dto'
 import type {
   ActiveImprovementDto,
+  ImprovementEffect,
   LearningCandidateDto,
   LearningComponent,
   LearningEvidenceDto,
   LearningPatternDto,
 } from '../features/ai-improvement/types/dto'
+
+// How often reviewers corrected the output since the improvement went live,
+// compared with before.
+const EFFECT_LABELS: Record<ImprovementEffect, string> = {
+  not_enough_data: 'Effect: not enough calls yet',
+  better: 'Effect: corrected less often',
+  no_change: 'Effect: no change',
+  worse: 'Effect: corrected more often',
+}
 
 // "Customer Name(Vehicle Number)", or as much of it as is known.
 function evidenceCaller(item: LearningEvidenceDto): string {
@@ -373,12 +383,18 @@ export function AiImprovementCenterPage() {
                         <span className={`badge${isActive ? ' badge--active' : ''}`}>
                           {humanizeLabel(improvement.status)}
                         </span>
+                        <span className="badge">{EFFECT_LABELS[improvement.effect]}</span>
                       </div>
 
                       <p>{improvement.guidance}</p>
 
                       <div className="list-card__facts">
                         <span>Used on {improvement.usage_count} AI output(s)</span>
+                        <span>
+                          Corrected before: {improvement.corrections_before} of{' '}
+                          {improvement.outputs_before} call(s); since it went live:{' '}
+                          {improvement.corrections_after} of {improvement.outputs_after}
+                        </span>
                         <span>
                           Feedback on calls where it was used: {improvement.feedback_count}
                         </span>

@@ -48,6 +48,7 @@ from app.services.learning_candidate_generation_service import (
     LearningCandidateGenerationService,
 )
 from app.services.learning_feedback_service import LearningFeedbackService
+from app.services.pattern_discovery_service import PatternRules
 
 def build_learning_management_service(
     evidence_repository: LearningEvidenceRepository | None = None,
@@ -57,6 +58,7 @@ def build_learning_management_service(
     active_improvement_repository: ActiveImprovementRepository | None = None,
     usage_repository: ImprovementUsageRepository | None = None,
     complaint_categories: Callable[[], Sequence[str]] | None = None,
+    pattern_rules: PatternRules | None = None,
 ) -> LearningManagementService:
     """The whole learning loop. Pass the same repositories the runtime uses
     (notably active_improvement_repository) so approvals reach live calls."""
@@ -73,14 +75,14 @@ def build_learning_management_service(
     observation_service = LearningObservationService(observation_repository)
     return LearningManagementService(
         evidence_service,
-        LearningPatternDiscoveryService(evidence_service),
+        LearningPatternDiscoveryService(evidence_service, rules=pattern_rules),
         candidate_repository,
         LearningHumanReviewService(HumanReviewService(), candidate_repository),
         observation_service=observation_service,
         feedback_service=LearningFeedbackService(feedback_repository, observation_service),
         evidence_generation=LearningEvidenceGenerationService(evidence_service),
         candidate_generation=LearningCandidateGenerationService(
-            ImprovementCandidateService(), repository=candidate_repository
+            ImprovementCandidateService(), repository=candidate_repository, rules=pattern_rules
         ),
         application_service=ImprovementApplicationService(active_improvement_repository),
         effectiveness_service=build_improvement_effectiveness_service(

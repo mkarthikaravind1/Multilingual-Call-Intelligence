@@ -9,8 +9,9 @@ from app.domain.learning_evidence import LearningEvidence
 from app.domain.learning_pattern import LearningPattern
 from app.services.improvement_candidate_service import ImprovementCandidateService
 from app.services.pattern_discovery_service import (
-    MIN_OCCURRENCES_FOR_PATTERN,
+    OutputCalls,
     PatternDiscoveryService,
+    PatternRules,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,10 @@ class LearningCandidateGenerationService:
         candidate_service: ImprovementCandidateService,
         confidence_provider: Callable[[LearningPattern], float] = _default_confidence,
         repository: ImprovementCandidateRepository | None = None,
+        rules: PatternRules | None = None,
     ) -> None:
+        # When matching corrections are worth proposing to a reviewer.
+        self._rules = rules or PatternRules()
         self._candidate_service = candidate_service
         self._confidence_provider = confidence_provider
         self._repository = repository
@@ -45,8 +49,12 @@ class LearningCandidateGenerationService:
             for pattern in patterns
         ]
 
-    def refresh(self, signals: Sequence[LearningEvidence]) -> list[ImprovementCandidate]:
+    def refresh(
+        self, signals: Sequence[LearningEvidence], output_calls: OutputCalls | None = None
+    ) -> list[ImprovementCandidate]:
         """Bring the stored candidates in line with the patterns in `signals`.
+        output_calls: on how many calls the AI gave each output, which a
+        pattern's corrections are compared with (None: not compared).
 
         A pattern keeps at most one PENDING_REVIEW candidate, refreshed as new
         evidence arrives. Evidence already covered by a reviewed (approved or
@@ -61,9 +69,14 @@ class LearningCandidateGenerationService:
         with self._refresh_lock:
             candidates = self._repository.list_all()
             changed: list[ImprovementCandidate] = []
-            for pattern in PatternDiscoveryService(signals).discover_patterns():
+            patterns = PatternDiscoveryService(
+                signals, self._rules, output_calls
+            ).discover_patterns()
+            for pattern in patterns:
                 try:
-                    candidate = self._refresh_pattern(pattern, signals, candidates)
+                    candidate = self._refresh_pattern(
+                        pattern, signals, candidates, output_calls
+                    )
                 except ValueError:
                     # e.g. a component with no improvement type; never fatal.
                     logger.exception(
@@ -80,6 +93,7 @@ class LearningCandidateGenerationService:
         pattern: LearningPattern,
         signals: Sequence[LearningEvidence],
         candidates: Sequence[ImprovementCandidate],
+        output_calls: OutputCalls | None = None,
     ) -> ImprovementCandidate | None:
         pattern_ids = set(pattern.evidence_ids)
         related = [c for c in candidates if pattern_ids.intersection(c.evidence)]
@@ -94,16 +108,20 @@ class LearningCandidateGenerationService:
             for evidence_id in c.evidence
         }
         fresh_ids = pattern_ids - reviewed_ids
-        if len(fresh_ids) < MIN_OCCURRENCES_FOR_PATTERN:
+        if len(fresh_ids) < self._rules.min_occurrences:
             return None
         if pending is not None and set(pending.evidence) == fresh_ids:
             return None
 
         # Rebuild the pattern from the unreviewed evidence only, so its
-        # description and count describe what the reviewer has not yet seen.
-        fresh_pattern = PatternDiscoveryService(
-            [e for e in signals if e.evidence_id in fresh_ids]
-        ).discover_patterns()[0]
+        # description and count describe what the reviewer has not yet
+        # seen. That evidence has to meet the rules by itself.
+        fresh_patterns = PatternDiscoveryService(
+            [e for e in signals if e.evidence_id in fresh_ids], self._rules, output_calls
+        ).discover_patterns()
+        if not fresh_patterns:
+            return None
+        fresh_pattern = fresh_patterns[0]
         proposal = ImprovementCandidateService().create_candidate(
             fresh_pattern, confidence=self._confidence_provider(fresh_pattern)
         )

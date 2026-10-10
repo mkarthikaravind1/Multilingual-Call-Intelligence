@@ -227,15 +227,28 @@ flowchart LR
 3. **Pattern discovery**: evidence is grouped into recurring error patterns,
    filtered for signal quality.
 4. **Improvement candidate**: a pattern with enough support becomes a
-   candidate with a concrete specification.
+   candidate with a concrete specification. Enough means at least 3
+   matching corrections, from at least 2 different calls, making up at
+   least 30% of the calls on which the AI gave that output
+   (`LEARNING_PATTERN_MIN_CORRECTIONS`, `LEARNING_PATTERN_MIN_CALLS`,
+   `LEARNING_PATTERN_MIN_CORRECTION_RATE`). The candidate shows that share.
 5. **Human review**: supervisors approve or reject candidates in the AI
    Improvement Center. Nothing changes without approval.
 6. **Active improvement**: approval activates the improvement (it can be
    deactivated later).
-7. **Runtime usage**: active improvements are passed as guidance to the
-   complaint, sentiment and question providers, and each use is recorded.
-8. **Effectiveness measurement**: later evidence on calls that used an
-   improvement shows whether it helped.
+7. **Runtime usage**: each active improvement adds one instruction to the
+   complaint, sentiment or question provider (for example: report a
+   category only when the customer clearly raises it, with how often
+   reviewers corrected it), and each use is recorded.
+8. **Effectiveness measurement**: for the output an improvement is about,
+   the share of calls reviewers corrected before it went live is compared
+   with the share since: corrected less often, no change, or corrected
+   more often (once the AI gave that output on 5 calls since). Only
+   reviewed outputs can be corrected, so it is a signal for the
+   supervisor, who decides whether to deactivate; nothing is switched off
+   automatically.
+
+Each piece of feedback records the user who gave it.
 
 The AI Improvement Center also hosts emerging-complaint review:
 discovery finds themes recurring across calls that match no known

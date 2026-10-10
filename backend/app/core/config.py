@@ -223,6 +223,13 @@ class Settings(BaseSettings):
     # Telephony media streams must present a signed per-call token.
     telephony_stream_auth_required: bool = True
     telephony_stream_token_ttl_seconds: int = 3600
+    # Learning loop: corrections are proposed to a reviewer as an
+    # improvement once at least MIN_CORRECTIONS of them match, from at
+    # least MIN_CALLS different calls, and they make up at least
+    # MIN_CORRECTION_RATE of the calls on which the AI gave that output.
+    learning_pattern_min_corrections: int = 3
+    learning_pattern_min_calls: int = 2
+    learning_pattern_min_correction_rate: float = 0.3
     # Post-call repair: retries completed calls whose summary was never
     # produced. 0 disables the background sweep (manual retry still works).
     post_call_repair_interval_seconds: float = 300.0

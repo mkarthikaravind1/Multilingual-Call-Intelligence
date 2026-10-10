@@ -267,8 +267,8 @@ def _learning_context() -> RuntimeImprovementContext:
         component=LearningComponent.COMPLAINT_DETECTION,
         specification=ImprovementSpecification(
             component=LearningComponent.COMPLAINT_DETECTION,
-            current_behavior=GUIDANCE,
-            proposed_behavior="Tell the two apart.",
+            current_behavior="Reviewers corrected it on 3 calls.",
+            proposed_behavior=GUIDANCE,
             reason="Recurred 3 times.",
         ),
     )

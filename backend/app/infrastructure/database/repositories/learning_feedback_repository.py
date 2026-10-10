@@ -18,6 +18,7 @@ def _to_domain(model: LearningFeedbackModel) -> LearningFeedback:
         original_value=model.original_value,
         source=FeedbackSource(model.source),
         notes=model.notes,
+        created_by=model.created_by,
     )
 
 
@@ -33,6 +34,7 @@ def _to_model(feedback: LearningFeedback) -> LearningFeedbackModel:
         original_value=feedback.original_value,
         source=feedback.source.value,
         notes=feedback.notes,
+        created_by=feedback.created_by,
     )
 
 

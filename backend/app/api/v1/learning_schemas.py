@@ -4,7 +4,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.active_improvement import ActiveImprovementStatus
 from app.domain.improvement_candidate import ImprovementReviewStatus, ImprovementType
-from app.domain.improvement_effectiveness import ImprovementEffectivenessStatus
+from app.domain.improvement_effectiveness import (
+    ImprovementEffect,
+    ImprovementEffectivenessStatus,
+)
 from app.domain.learning_evidence import EvidenceType, LearningComponent
 from app.domain.learning_feedback import FeedbackSource, FeedbackType
 
@@ -71,6 +74,8 @@ class LearningFeedbackResponse(_Response):
     source: FeedbackSource
     notes: str | None
     created_at: float
+    # The user who gave it; null for feedback from before this was recorded.
+    created_by: str | None = None
 
 
 class CallObservationResponse(BaseModel):
@@ -90,7 +95,7 @@ class ActiveImprovementResponse(BaseModel):
     improvement_id: str
     candidate_id: str
     component: LearningComponent
-    # What reviewers corrected, as given to the AI at runtime.
+    # The line this improvement adds to the AI's instructions.
     guidance: str
     proposed_behavior: str
     status: ActiveImprovementStatus
@@ -99,3 +104,10 @@ class ActiveImprovementResponse(BaseModel):
     usage_count: int
     feedback_count: int
     effectiveness_status: ImprovementEffectivenessStatus
+    # Whether reviewers correct the output less often since it went live:
+    # calls on which the AI gave it, and on how many it was corrected.
+    effect: ImprovementEffect = ImprovementEffect.NOT_ENOUGH_DATA
+    outputs_before: int = 0
+    corrections_before: int = 0
+    outputs_after: int = 0
+    corrections_after: int = 0

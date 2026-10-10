@@ -54,6 +54,7 @@ from app.services.sentiment_analysis_service import SentimentAnalysisService
 from app.services.telephony_call_service import TelephonyCallService
 from app.composition.learning import build_learning_management_service
 from app.services.learning_management_service import LearningManagementService
+from app.services.pattern_discovery_service import PatternRules
 from app.composition.learning import build_learning_call_recorder
 from app.domain.learning_evidence_repository import (
     InMemoryLearningEvidenceRepository,
@@ -519,6 +520,11 @@ def build_api_services(
             active_improvement_repository=active_improvement_repository,
             usage_repository=usage_repository,
             complaint_categories=complaint_category_catalog.names,
+            pattern_rules=PatternRules(
+                min_occurrences=settings.learning_pattern_min_corrections,
+                min_calls=settings.learning_pattern_min_calls,
+                min_correction_rate=settings.learning_pattern_min_correction_rate,
+            ),
         ),
         auth=auth_service,
         login_throttle=LoginThrottle(

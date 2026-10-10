@@ -160,8 +160,8 @@ def test_approved_guidance_is_added_after_the_rules():
         component=LearningComponent.SENTIMENT_ANALYSIS,
         specification=ImprovementSpecification(
             component=LearningComponent.SENTIMENT_ANALYSIS,
-            current_behavior=GUIDANCE,
-            proposed_behavior="Weigh unresolved delays as negative.",
+            current_behavior="Reviewers corrected it on 2 calls.",
+            proposed_behavior=GUIDANCE,
             reason="Recurred 2 times.",
         ),
     )

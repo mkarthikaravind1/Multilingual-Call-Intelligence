@@ -104,6 +104,8 @@ export type ImprovementEffectivenessStatus =
   | 'not_enough_evidence'
   | 'evidence_available'
 
+export type ImprovementEffect = 'not_enough_data' | 'better' | 'no_change' | 'worse'
+
 export interface ActiveImprovementDto {
   improvement_id: string
   candidate_id: string
@@ -116,6 +118,12 @@ export interface ActiveImprovementDto {
   usage_count: number
   feedback_count: number
   effectiveness_status: ImprovementEffectivenessStatus
+  // Whether reviewers correct this output less often since it went live.
+  effect: ImprovementEffect
+  outputs_before: number
+  corrections_before: number
+  outputs_after: number
+  corrections_after: number
 }
 
 export interface LearningEvidenceDto {

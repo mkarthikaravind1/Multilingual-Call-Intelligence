@@ -26,6 +26,9 @@ class LearningFeedback:
     original_value: str | None = None
     source: FeedbackSource = FeedbackSource.ICR
     notes: str | None = None
+    # The user who gave it (user_id); None for feedback from before this
+    # was recorded, or from the system.
+    created_by: str | None = None
 
     def __post_init__(self) -> None:
         if not self.feedback_id.strip():

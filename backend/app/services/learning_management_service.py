@@ -10,7 +10,10 @@ from app.core.constants import COMPLAINT_CATEGORIES
 from app.domain.active_improvement import ActiveImprovement
 from app.domain.improvement_candidate import ImprovementCandidate
 from app.domain.improvement_candidate_repository import ImprovementCandidateRepository
-from app.domain.improvement_effectiveness import ImprovementEffectivenessResult
+from app.domain.improvement_effectiveness import (
+    ImprovementEffectivenessResult,
+    ImprovementEffectMeasure,
+)
 from app.domain.learning_evidence import LearningComponent, LearningEvidence
 from app.domain.learning_feedback import FeedbackSource, FeedbackType, LearningFeedback
 from app.domain.learning_observation import LearningObservation
@@ -88,6 +91,8 @@ class CallObservation:
 class ImprovementOverview:
     improvement: ActiveImprovement
     effectiveness: ImprovementEffectivenessResult
+    # Whether reviewers correct the output less often since it went live.
+    effect: ImprovementEffectMeasure | None = None
 
 
 class LearningManagementService:
@@ -181,8 +186,16 @@ class LearningManagementService:
     def list_patterns(self) -> list[LearningPattern]:
         return self._pattern_discovery.discover()
 
-    def list_evidence(self) -> tuple[LearningEvidence, ...]:
-        return self._evidence_service.list_all()
+    def list_evidence(
+        self, limit: int | None = None, offset: int = 0
+    ) -> tuple[LearningEvidence, ...]:
+        """With a limit: that many, newest first. Without: all of it."""
+        if limit is None:
+            return self._evidence_service.list_all()
+        return self._evidence_service.list_page(limit, offset)
+
+    def count_evidence(self) -> int:
+        return self._evidence_service.count()
 
     # --- Feedback on a call's AI output ---
 
@@ -219,9 +232,11 @@ class LearningManagementService:
         outcome: str | None = None,
         notes: str | None = None,
         source: FeedbackSource = FeedbackSource.ICR,
+        created_by: str | None = None,
     ) -> LearningFeedback:
         """Record one human judgement of an AI output, turn it into learning
-        evidence and refresh the improvement candidates it may support."""
+        evidence and refresh the improvement candidates it may support.
+        created_by: the user giving it."""
         observation_service = self._require(self._observation_service, "observations")
         feedback_service = self._require(self._feedback_service, "feedback")
         evidence_generation = self._require(self._evidence_generation, "evidence")
@@ -256,6 +271,7 @@ class LearningManagementService:
                 original_value=observation.predicted_value,
                 source=source,
                 notes=notes,
+                created_by=created_by,
             )
         evidence_generation.generate(observation, feedback)
         self._refresh_candidates()
@@ -267,7 +283,9 @@ class LearningManagementService:
         if self._candidate_generation is None:
             return
         try:
-            self._candidate_generation.refresh(self._pattern_discovery.signals())
+            self._candidate_generation.refresh(
+                self._pattern_discovery.signals(), self._pattern_discovery.output_calls()
+            )
         except Exception:
             logger.exception("Refreshing improvement candidates failed")
 
@@ -280,6 +298,7 @@ class LearningManagementService:
             ImprovementOverview(
                 improvement=improvement,
                 effectiveness=effectiveness_service.evaluate(improvement.improvement_id),
+                effect=self._effect(improvement),
             )
             for improvement in sorted(
                 application_service.list_all(),
@@ -295,7 +314,26 @@ class LearningManagementService:
         return ImprovementOverview(
             improvement=improvement,
             effectiveness=effectiveness_service.evaluate(improvement_id),
+            effect=self._effect(improvement),
         )
+
+    def _effect(self, improvement: ActiveImprovement) -> ImprovementEffectMeasure | None:
+        if self._effectiveness_service is None:
+            return None
+        try:
+            candidate = self._candidate_repository.get(improvement.candidate_id)
+            return self._effectiveness_service.measure_effect(
+                improvement.component,
+                () if candidate is None else candidate.evidence,
+                improvement.activated_at,
+                improvement.deactivated_at,
+            )
+        except Exception:
+            # A figure for the reviewer; never a reason to hide the list.
+            logger.exception(
+                "Measuring the effect of improvement %r failed", improvement.improvement_id
+            )
+            return None
 
     @staticmethod
     def _require(collaborator, name: str):

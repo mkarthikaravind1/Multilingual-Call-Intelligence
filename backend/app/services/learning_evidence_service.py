@@ -53,3 +53,18 @@ class LearningEvidenceService:
 
     def list_all(self) -> tuple[LearningEvidence, ...]:
         return self._repository.list_all()
+
+    def list_page(self, limit: int, offset: int = 0) -> tuple[LearningEvidence, ...]:
+        """Evidence, newest first."""
+        return self._repository.list_page(limit, offset)
+
+    def count(self) -> int:
+        return self._repository.count()
+
+    def list_judged(self) -> tuple[LearningEvidence, ...]:
+        """Evidence carrying a human judgement or an expected value."""
+        return self._repository.list_judged()
+
+    def prediction_calls(self) -> dict[tuple[LearningComponent, str], int]:
+        """(component, AI output case-folded) -> calls the AI gave it on."""
+        return self._repository.prediction_calls()

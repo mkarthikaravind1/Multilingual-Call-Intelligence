@@ -342,6 +342,46 @@ def test_learning_evidence_enum_and_optional_fields_round_trip(session_factory):
     assert len(all_evidence) == 1
 
 
+def test_learning_evidence_is_read_in_parts(session_factory):
+    repo = PostgresLearningEvidenceRepository(session_factory)
+
+    def evidence(evidence_id, call_id, evidence_type, actual, corrected=None, at=100.0):
+        return LearningEvidence(
+            evidence_id=evidence_id,
+            call_id=call_id,
+            evidence_type=evidence_type,
+            component=LearningComponent.COMPLAINT_DETECTION,
+            description=actual if corrected is None else f"Corrected '{actual}' to '{corrected}'.",
+            expected_value=corrected,
+            actual_value=actual,
+            human_correction=corrected,
+            created_at=at,
+        )
+
+    prediction, correction = EvidenceType.AI_PREDICTION, EvidenceType.HUMAN_CORRECTION
+    for record in (
+        evidence("p1", "call-1", prediction, "Cost", at=1.0),
+        evidence("p2", "call-2", prediction, "Cost", at=2.0),
+        evidence("p3", "call-2", prediction, "cost ", at=3.0),  # the same call and output
+        evidence("p4", "call-3", prediction, "Communication", at=4.0),
+        evidence("c1", "call-1", correction, "Cost", "No complaint", at=5.0),
+    ):
+        repo.save(record)
+
+    assert [e.evidence_id for e in repo.list_judged()] == ["c1"]
+    assert repo.prediction_calls() == {
+        (LearningComponent.COMPLAINT_DETECTION, "cost"): 3,
+        (LearningComponent.COMPLAINT_DETECTION, "communication"): 1,
+    }
+    assert {
+        e.evidence_id for e in repo.list_for_outputs(LearningComponent.COMPLAINT_DETECTION, {"Cost"})
+    } == {"p1", "p2", "c1"}
+    assert repo.list_for_outputs(LearningComponent.COMPLAINT_DETECTION, set()) == ()
+    assert repo.count() == 5
+    assert [e.evidence_id for e in repo.list_page(2)] == ["c1", "p4"]
+    assert [e.evidence_id for e in repo.list_page(2, offset=4)] == ["p1"]
+
+
 def test_improvement_candidate_specification_is_nullable_and_maps_correctly(session_factory):
     repo = PostgresImprovementCandidateRepository(session_factory)
 
@@ -468,8 +508,10 @@ def test_end_to_end_call_and_learning_flow(session_factory):
             outcome=None,
             created_at=2.0,
             call_id=call_id,
+            created_by="user-1",
         )
     )
+    assert feedback_repo.get("fb-e2e").created_by == "user-1"
     evidence_repo.save(
         LearningEvidence(
             evidence_id="ev-e2e",

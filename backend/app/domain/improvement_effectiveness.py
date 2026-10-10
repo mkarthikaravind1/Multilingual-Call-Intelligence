@@ -7,6 +7,28 @@ class ImprovementEffectivenessStatus(str, Enum):
     EVIDENCE_AVAILABLE = "evidence_available"
 
 
+class ImprovementEffect(str, Enum):
+    """How often reviewers corrected the output an improvement is about,
+    after it went live compared with before."""
+
+    NOT_ENOUGH_DATA = "not_enough_data"
+    BETTER = "better"
+    NO_CHANGE = "no_change"
+    WORSE = "worse"
+
+
+@dataclass(frozen=True)
+class ImprovementEffectMeasure:
+    effect: ImprovementEffect
+    # Calls on which the AI gave that output, and on how many of them a
+    # reviewer corrected it: before the improvement went live...
+    outputs_before: int = 0
+    corrections_before: int = 0
+    # ...and while it was live.
+    outputs_after: int = 0
+    corrections_after: int = 0
+
+
 @dataclass(frozen=True)
 class ImprovementEffectivenessResult:
     improvement_id: str
