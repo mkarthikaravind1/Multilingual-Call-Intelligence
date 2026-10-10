@@ -12,6 +12,7 @@ import { CallHeader } from '../features/live-call/components/CallHeader'
 import { AlertsPanel } from '../features/live-call/components/AlertsPanel'
 import { ComplaintPanel } from '../features/live-call/components/ComplaintPanel'
 import { NextQuestionPanel } from '../features/live-call/components/NextQuestionPanel'
+import { RecordingPanel } from '../features/live-call/components/RecordingPanel'
 import { ServiceEstimatePanel } from '../features/live-call/components/ServiceEstimatePanel'
 import { ToneIndicator } from '../features/live-call/components/ToneIndicator'
 import { TranscriptPanel } from '../features/live-call/components/TranscriptPanel'
@@ -203,6 +204,10 @@ export function LiveCallPage() {
                 compact
                 onUpdated={setSavedEscalation}
               />
+
+              {canManageEscalations && liveCall.call.status.toLowerCase() !== 'active' && (
+                <RecordingPanel key={callId} callId={callId} />
+              )}
 
               <section className="panel">
                 <h4 className="live-call__panel-title">Service estimate</h4>

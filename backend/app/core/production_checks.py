@@ -71,6 +71,17 @@ def configuration_problems(settings: Settings) -> list[str]:
                 "summaries through the SMS gateway."
             )
 
+    if settings.recording_enabled:
+        # Imported here: only this check needs the encryption library.
+        from app.services.recording_archive import RecordingError, parse_key
+
+        try:
+            parse_key(settings.recording_encryption_key)
+        except RecordingError as error:
+            problems.append(f"RECORDING_ENABLED is true but {error}")
+        if settings.recording_retention_days <= 0:
+            problems.append("RECORDING_RETENTION_DAYS must be more than 0.")
+
     if settings.role_provider.strip().lower() != "session":
         problems.append("ROLE_PROVIDER must be session (static is for tests).")
 

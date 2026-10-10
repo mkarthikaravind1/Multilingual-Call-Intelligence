@@ -61,6 +61,21 @@ class Settings(BaseSettings):
     post_call_retranscription_workers: int = 4
     call_recording_max_seconds: float = 3600.0
     call_recording_max_calls: int = 20
+    # Keep each phone call's audio on disk, encrypted (see
+    # app.services.recording_archive). Off unless turned on: recording
+    # calls needs the customer's consent.
+    recording_enabled: bool = False
+    # Where the encrypted files go. With several API instances this must
+    # be a folder they share.
+    recording_dir: str = "data/recordings"
+    # 32 random bytes in base64. Make one with:
+    #   python -c "from app.services.recording_archive import generate_key; print(generate_key())"
+    # Losing it makes every stored recording unreadable.
+    recording_encryption_key: str = ""
+    # A recording is removed this many days after its call.
+    recording_retention_days: float = 90.0
+    # How often expired recordings are removed (0: never).
+    recording_retention_sweep_seconds: float = 3600.0
     sarvam_input_audio_codec: str | None = None
     language_provider: str = "not_configured"
     diarization_enabled: bool = True

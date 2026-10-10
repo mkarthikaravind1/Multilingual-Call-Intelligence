@@ -102,6 +102,24 @@ export interface CallAlertDto {
   cleared_at: number | null
 }
 
+// A call's stored recording (supervisors and admins).
+export interface CallRecordingDto {
+  // Whether this server keeps call recordings at all.
+  enabled: boolean
+  // Whether this call has one that can be listened to now.
+  available: boolean
+  duration_seconds: number | null
+  size_bytes: number | null
+  // 2: the caller on the left, the other party on the right.
+  channels: number | null
+  created_at: number | null
+  // When it is (or was) due to be removed.
+  delete_after: number | null
+  deleted_at: number | null
+  // How many times it has been listened to.
+  plays: number
+}
+
 export type QuestionOutcomeChoice = 'accepted' | 'skipped'
 
 export interface QuestionOutcomeDto {

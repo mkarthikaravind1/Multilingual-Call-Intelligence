@@ -152,6 +152,8 @@ def test_schema_creates_all_expected_tables(engine):
         "locations",
         "call_alerts",
         "question_outcomes",
+        "call_recordings",
+        "recording_plays",
     }
 
 

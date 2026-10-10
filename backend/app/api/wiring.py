@@ -138,6 +138,7 @@ from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.domain.location import InMemoryLocationRepository, LocationRepository
 from app.services.call_routing_service import CallRoutingService
 from app.services.location_service import LocationService
+from app.services.recording_archive import RecordingArchive, RecordingRepository
 from app.services.call_alerts import (
     AlertRules,
     CallAlertRepository,
@@ -192,6 +193,7 @@ def build_api_services(
     report_source: ReportSource | None = None,
     call_alert_repository: CallAlertRepository | None = None,
     question_outcome_repository: QuestionOutcomeRepository | None = None,
+    recording_repository: RecordingRepository | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -388,6 +390,8 @@ def build_api_services(
         alert_service=alert_service,
     )
 
+    recording_archive = _build_recording_archive(settings, recording_repository)
+
     # --- After the call, telephony and the background jobs ---
     post_call_repair_service = _build_post_call_repair_service(
         settings, call_service, workflow_service, post_call_summary_repository, live_state_store
@@ -404,6 +408,7 @@ def build_api_services(
         customer_summary_delivery_service,
         post_call_summary_repository,
         customer_contact_resolver,
+        recording_archive,
     )
     telephony_provider = _optional(
         lambda: create_telephony_provider(settings), "Telephony provider is not available"
@@ -466,6 +471,7 @@ def build_api_services(
         performance_service=performance_service,
         alert_service=alert_service,
         question_outcome_repository=question_outcome_repository,
+        recording_archive=recording_archive,
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
         background_jobs=background_jobs,
@@ -631,6 +637,34 @@ def _build_post_call_repair_service(
     )
 
 
+def _build_recording_archive(
+    settings: Settings, repository: "RecordingRepository | None"
+) -> "RecordingArchive | None":
+    """Where call recordings are kept; None when recording is off. A call
+    is never recorded unencrypted: without a usable key nothing is kept
+    (production refuses to start instead, see production_checks)."""
+    if not settings.recording_enabled:
+        return None
+    try:
+        from app.services.recording_archive import (
+            InMemoryRecordingRepository,
+            RecordingArchive,
+            parse_key,
+        )
+
+        return RecordingArchive(
+            repository or InMemoryRecordingRepository(),
+            settings.recording_dir,
+            parse_key(settings.recording_encryption_key),
+            retention_days=settings.recording_retention_days,
+        )
+    except Exception as exc:
+        if settings.is_production:
+            raise
+        logger.error("Call recordings will NOT be kept: %s", exc)
+        return None
+
+
 def _build_telephony_call_service(
     settings: Settings,
     call_service: CallService,
@@ -663,6 +697,7 @@ def _build_background_jobs(
     customer_summary_delivery_service: CustomerSummaryDeliveryService | None,
     post_call_summary_repository: PostCallSummaryRepository,
     customer_contact_resolver: Callable[[str], CustomerContact | None],
+    recording_archive: "RecordingArchive | None" = None,
 ) -> BackgroundJobRunner:
     """The periodic jobs; one with interval 0 is not run."""
     stale_call_sweeper = StaleCallSweeper(
@@ -693,6 +728,11 @@ def _build_background_jobs(
                 "stale_call_sweep",
                 settings.stale_call_sweep_interval_seconds,
                 stale_call_sweeper.run,
+            ),
+            PeriodicJob(
+                "recording_retention",
+                settings.recording_retention_sweep_seconds if recording_archive else 0.0,
+                lambda: recording_archive.purge_expired(),
             ),
         ]
     )

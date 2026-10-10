@@ -70,6 +70,7 @@ def build_app():
         report_source=repositories.report_source,
         call_alert_repository=repositories.call_alert,
         question_outcome_repository=repositories.question_outcome,
+        recording_repository=repositories.recording,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),
     )
     services = dataclasses.replace(

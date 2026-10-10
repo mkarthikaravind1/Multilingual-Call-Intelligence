@@ -1,6 +1,8 @@
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel
 
 from app.api.dependencies import (
     get_question_outcome_repository,
@@ -52,6 +54,7 @@ from app.services.call_workflow_service import CallWorkflowService
 from app.api.security_dependencies import get_current_user, require_roles
 from app.domain.call_alert import QuestionOutcome
 from app.services.call_alerts import QuestionOutcomeRepository
+from app.services.recording_archive import RecordingError, RecordingNotFoundError
 from app.domain.user import User, UserRole
 
 
@@ -353,3 +356,72 @@ def record_question_outcome(
     )
     outcomes.save(outcome)
     return QuestionOutcomeResponse.model_validate(outcome)
+
+
+class CallRecordingResponse(BaseModel):
+    # Whether this server keeps call recordings at all.
+    enabled: bool
+    # Whether this call has one that can be listened to now.
+    available: bool
+    duration_seconds: float | None = None
+    size_bytes: int | None = None
+    # 2: the caller on the left, the other party on the right.
+    channels: int | None = None
+    created_at: float | None = None
+    # When the recording is (or was) due to be removed.
+    delete_after: float | None = None
+    deleted_at: float | None = None
+    # How many times it has been listened to.
+    plays: int = 0
+
+
+@router.get("/{call_id}/recording", response_model=CallRecordingResponse)
+def get_call_recording(
+    call_id: str,
+    request: Request,
+    call_service: CallService = Depends(get_call_service),
+    _: User = Depends(_SUPERVISORS),
+) -> CallRecordingResponse:
+    call_service.get_call(call_id)  # 404 for an unknown call
+    archive = request.app.state.services.recording_archive
+    stored = None if archive is None else archive.get(call_id)
+    if stored is None:
+        return CallRecordingResponse(enabled=archive is not None, available=False)
+    return CallRecordingResponse(
+        enabled=True,
+        available=stored.is_available,
+        duration_seconds=stored.duration_seconds,
+        size_bytes=stored.size_bytes,
+        channels=stored.channels,
+        created_at=stored.created_at,
+        delete_after=stored.delete_after,
+        deleted_at=stored.deleted_at,
+        plays=len(archive.plays(call_id)),
+    )
+
+
+@router.get("/{call_id}/recording/audio")
+async def get_call_recording_audio(
+    call_id: str,
+    request: Request,
+    call_service: CallService = Depends(get_call_service),
+    user: User = Depends(_SUPERVISORS),
+) -> Response:
+    """The call's recording, decrypted, as a WAV file. Every request is
+    logged against the user as a listen."""
+    await run_in_threadpool(call_service.get_call, call_id)  # 404 for an unknown call
+    archive = request.app.state.services.recording_archive
+    if archive is None:
+        raise HTTPException(status_code=404, detail="Call recordings are not kept on this server.")
+    try:
+        wav = await run_in_threadpool(archive.read, call_id, user.user_id)
+    except RecordingNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except RecordingError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(
+        wav,
+        media_type="audio/wav",
+        # Never cached: a copy outside the server would outlive the retention period.
+        headers={"Cache-Control": "no-store"},
+    )

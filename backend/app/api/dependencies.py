@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 
 from fastapi import HTTPException, Request
@@ -33,6 +34,10 @@ from app.services.live_chunk_processing_service import LiveChunkProcessingServic
 from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import TelephonyProvider
 from starlette.requests import HTTPConnection
+
+if TYPE_CHECKING:
+    from app.services.recording_archive import RecordingArchive
+
 
 @dataclass(frozen=True)
 class ApiServices:
@@ -71,6 +76,8 @@ class ApiServices:
     performance_service: PerformanceService | None = None
     alert_service: CallAlertService | None = None
     question_outcome_repository: QuestionOutcomeRepository | None = None
+    # Encrypted call recordings on disk; None when recording is off.
+    recording_archive: "RecordingArchive | None" = None
     price_list_service: PriceListService | None = None
     background_jobs: BackgroundJobRunner | None = None
     # Loads slow models (e.g. diarization) in the background at startup.

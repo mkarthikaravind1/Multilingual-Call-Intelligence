@@ -87,6 +87,10 @@ from app.infrastructure.database.repositories.call_alert_repository import (
     PostgresQuestionOutcomeRepository,
 )
 from app.services.call_alerts import CallAlertRepository, QuestionOutcomeRepository
+from app.services.recording_archive import RecordingArchive, RecordingRepository
+from app.infrastructure.database.repositories.recording_repository import (
+    PostgresRecordingRepository,
+)
 from app.infrastructure.database.repositories.location_repository import (
     PostgresLocationRepository,
 )
@@ -118,6 +122,7 @@ class PostgresRepositories:
     report_source: ReportSource | None = None
     call_alert: CallAlertRepository | None = None
     question_outcome: QuestionOutcomeRepository | None = None
+    recording: RecordingRepository | None = None
     # Read model over conversations, customers, escalations and complaints.
     call_listing: CallListingQuery | None = None
     session_factory: sessionmaker[Session] | None = None
@@ -155,6 +160,7 @@ def build_postgres_repositories(
         report_source=PostgresReportSource(session_factory),
         call_alert=PostgresCallAlertRepository(session_factory),
         question_outcome=PostgresQuestionOutcomeRepository(session_factory),
+        recording=PostgresRecordingRepository(session_factory),
         session_factory=session_factory,
     )
 

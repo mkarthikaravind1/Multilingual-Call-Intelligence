@@ -7,6 +7,7 @@ import type {
   CallListResponseDto,
   CallResponseDto,
   CallStatsResponseDto,
+  CallRecordingDto,
   CompleteCallRequestDto,
   LiveCallsDto,
   QuestionOutcomeChoice,
@@ -82,6 +83,17 @@ export class CallRestService {
     return apiClient.get<CallListResponseDto>(
       `/api/v1/calls?${query.toString()}`,
     )
+  }
+
+  getRecording(callId: string) {
+    return apiClient.get<CallRecordingDto>(
+      `/api/v1/calls/${encodeURIComponent(callId)}/recording`,
+    )
+  }
+
+  // The decrypted audio (WAV). Each call is logged as a listen.
+  getRecordingAudio(callId: string) {
+    return apiClient.download(`/api/v1/calls/${encodeURIComponent(callId)}/recording/audio`)
   }
 
   // Every active call, for the supervisor's live view.

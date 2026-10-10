@@ -198,6 +198,8 @@ class _StreamSession:
         self._telephony_call_service = telephony_call_service
         self._flush_after_seconds = flush_after_seconds
         self._recording_store = recording_store
+        # Encrypted recordings on disk; None when recording is off.
+        self._recording_archive = getattr(websocket.app.state.services, "recording_archive", None)
         self._recording_max_seconds = get_settings().call_recording_max_seconds
         # One buffer per track when the two sides of the call arrive
         # separately, else one (key None) for the mixed audio.
@@ -310,7 +312,8 @@ class _StreamSession:
                 sample_rate=stream_event.sample_rate or 8000,
                 max_seconds=self._recording_max_seconds,
             )
-            if self._recording_store is not None and not self._buffers
+            if (self._recording_store is not None or self._recording_archive is not None)
+            and not self._buffers
             else None
         )
         self._buffers = {
@@ -387,8 +390,23 @@ class _StreamSession:
 
     def _store_recording(self) -> None:
         recording, self._recording = self._recording, None
-        if recording is not None and self._recording_store is not None and recording.tracks:
+        if recording is None or not recording.tracks:
+            return
+        if self._recording_store is not None:
             self._recording_store.put(self._call_id, recording)
+        if self._recording_archive is not None:
+            # Encrypting and writing a long call takes a while: off the
+            # event loop, so other calls' audio keeps flowing.
+            asyncio.get_running_loop().run_in_executor(
+                None, _archive_recording, self._recording_archive, self._call_id, recording
+            )
+
+
+def _archive_recording(archive, call_id: str, recording: CallRecording) -> None:
+    try:
+        archive.save(call_id, recording)
+    except Exception:
+        logger.exception("Could not keep the recording of call %r", call_id)
 
 
 async def _call_is_completed(call_id: str, call_service: CallService) -> bool:

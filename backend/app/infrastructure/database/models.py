@@ -8,6 +8,7 @@ these models carry no business logic. Repositories map ORM <-> domain.
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -348,6 +349,33 @@ class QuestionOutcomeModel(Base):
     outcome: Mapped[str] = mapped_column(String, nullable=False)
     user_id: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class CallRecordingModel(Base):
+    # Where a call's encrypted recording is and when it is to be removed
+    # (see app.services.recording_archive). No foreign key, like the other
+    # per-call records.
+    __tablename__ = "call_recordings"
+
+    call_id: Mapped[str] = mapped_column(String, primary_key=True)
+    file_name: Mapped[str] = mapped_column(String, nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sample_rate: Mapped[int] = mapped_column(Integer, nullable=False)
+    channels: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False)
+    delete_after: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    deleted_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class RecordingPlayModel(Base):
+    # Append-only: each time someone listened to a recording.
+    __tablename__ = "recording_plays"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    call_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    played_at: Mapped[float] = mapped_column(Float, nullable=False)
 
 
 class LocationModel(Base):
