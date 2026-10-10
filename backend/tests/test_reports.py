@@ -467,7 +467,15 @@ def test_the_excel_file_has_a_sheet_per_section(stores):
 
     assert filename.endswith(".xlsx")
     workbook = load_workbook(io.BytesIO(content))
-    assert workbook.sheetnames == ["Summary", "Trend", "By location", "Root causes", "Complaints"]
+    assert workbook.sheetnames == [
+        "Summary",
+        "Trend",
+        "By location",
+        "Root causes",
+        "Tone",
+        "Tone trend",
+        "Complaints",
+    ]
     summary = {row[0]: row[1] for row in workbook["Summary"].iter_rows(values_only=True)}
     assert summary["Location"] == "Chennai"
     assert summary["Calls from"] == "05 Jan 2026"

@@ -16,13 +16,19 @@ from typing import Literal
 
 from app.domain.escalation import EscalationLevel
 from app.domain.sentiment import SentimentLabel
+from app.services.quality_audit import CallAudit, audit_call, audit_figures
 from app.services.reporting import (
     MAX_REPORT_CALLS,
     SECONDS_PER_DAY,
+    Bucket,
     ReportCall,
     ReportError,
     ReportFilters,
     ReportSource,
+    TonePoint,
+    _bucket_start,
+    report_buckets,
+    tone_trend,
 )
 
 # First Call Resolution: the matter was settled by one call when the same
@@ -107,6 +113,13 @@ class Figures:
     # Suggested questions the executive accepted, and skipped.
     questions_accepted: int = 0
     questions_skipped: int = 0
+    # Quality audit (see app.services.quality_audit): the calls that raised
+    # a complaint, their average score (0 to 100), and the category handled
+    # worst on average with its score.
+    audited_calls: int = 0
+    audit_score: float | None = None
+    weakest_category: str | None = None
+    weakest_category_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +128,8 @@ class ExecutiveFigures:
     executive_user_id: str | None
     name: str
     figures: Figures
+    # Their calls' tone per day or week of the report.
+    tone_trend: tuple[TonePoint, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -123,6 +138,12 @@ class PerformanceReport:
     overall: Figures
     # Most calls first.
     executives: tuple[ExecutiveFigures, ...]
+    # The days or weeks of the tone trends: when each starts (epoch
+    # seconds), by the reader's clock.
+    bucket: Bucket = "day"
+    bucket_starts: tuple[float, ...] = ()
+    # Every call's tone per day or week.
+    tone_trend: tuple[TonePoint, ...] = ()
 
 
 class PerformanceService:
@@ -136,7 +157,19 @@ class PerformanceService:
         self._max_calls = max_calls
         self._clock = clock
 
-    def report(self, filters: ReportFilters) -> PerformanceReport:
+    def audit(self, call_id: str) -> CallAudit | None:
+        """That call's quality audit; None for a call there is none of."""
+        call = self._source.call(call_id)
+        return None if call is None else audit_call(call)
+
+    def report(
+        self,
+        filters: ReportFilters,
+        bucket: Bucket | None = None,
+        tz_offset_minutes: int = 0,
+    ) -> PerformanceReport:
+        """bucket and tz_offset_minutes: the days or weeks of the tone
+        trends (see ReportService.complaint_report)."""
         filters.require_reportable()
         calls = self._calls(filters)
         if filters.category is not None:
@@ -160,11 +193,22 @@ class PerformanceService:
         for item in figures:
             by_executive[item.call.executive_user_id].append(item)
             names[item.call.executive_user_id] = item.call.executive_name or "Not recorded"
+        bucket, first, last, offset = report_buckets(filters, bucket, tz_offset_minutes)
         return PerformanceReport(
             filters=filters,
             overall=_figures(figures),
+            bucket=bucket,
+            bucket_starts=tuple(
+                _bucket_start(index, bucket, offset) for index in range(first, last + 1)
+            ),
+            tone_trend=tone_trend(calls, bucket, first, last, offset),
             executives=tuple(
-                ExecutiveFigures(user_id, names[user_id], _figures(items))
+                ExecutiveFigures(
+                    user_id,
+                    names[user_id],
+                    _figures(items),
+                    tone_trend((item.call for item in items), bucket, first, last, offset),
+                )
                 for user_id, items in sorted(
                     by_executive.items(),
                     key=lambda entry: (
@@ -254,7 +298,12 @@ def _figures(items: list[CallFigures]) -> Figures:
     known = sum(len(item.call.complaints) for item in items if item.call.customer_key is not None)
     repeats = sum(item.repeat_complaints for item in items)
     rated = [item for item in items if item.csat is not None]
+    audit = audit_figures(item.call for item in items)
     return Figures(
+        audited_calls=audit.audited_calls,
+        audit_score=audit.score,
+        weakest_category=audit.weakest_category,
+        weakest_category_score=audit.weakest_category_score,
         calls=len(items),
         complaints=complaints,
         probed_complaints=probed,

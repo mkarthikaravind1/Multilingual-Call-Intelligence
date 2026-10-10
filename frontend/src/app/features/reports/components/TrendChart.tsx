@@ -15,6 +15,10 @@ type TrendChartProps = {
   // When each day or week starts (epoch seconds).
   bucketStarts: number[]
   lines: TrendLine[]
+  // What the lines count, for screen readers and the legend's name
+  // (default: complaints for each category).
+  description?: string
+  legendLabel?: string
 }
 
 const WIDTH = 760
@@ -32,7 +36,13 @@ function yScale(max: number): { top: number; step: number } {
   return { top: step * 4, step }
 }
 
-export function TrendChart({ bucket, bucketStarts, lines }: TrendChartProps) {
+export function TrendChart({
+  bucket,
+  bucketStarts,
+  lines,
+  description,
+  legendLabel = 'Categories',
+}: TrendChartProps) {
   const [hovered, setHovered] = useState<number | null>(null)
 
   const count = bucketStarts.length
@@ -54,7 +64,7 @@ export function TrendChart({ bucket, bucketStarts, lines }: TrendChartProps) {
 
   return (
     <div className="trend-chart">
-      <ul className="chart-legend" aria-label="Categories">
+      <ul className="chart-legend" aria-label={legendLabel}>
         {lines.map((line) => (
           <li key={line.category}>
             <span className="chart-legend__swatch" style={{ background: line.color }} />
@@ -67,7 +77,10 @@ export function TrendChart({ bucket, bucketStarts, lines }: TrendChartProps) {
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
-          aria-label={`Complaints per ${bucket} for each category. The table below has the same numbers.`}
+          aria-label={
+            description ??
+            `Complaints per ${bucket} for each category. The table below has the same numbers.`
+          }
           onMouseMove={onMove}
           onMouseLeave={() => setHovered(null)}
         >

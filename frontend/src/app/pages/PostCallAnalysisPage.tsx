@@ -11,6 +11,7 @@ import { CustomerPanel } from '../features/customer/components/CustomerPanel'
 import { EscalationCard } from '../features/escalation/components/EscalationCard'
 import { CallComplaintsPanel } from '../features/complaints/components/CallComplaintsPanel'
 import { useAuth } from '../auth/useAuth'
+import { CallAuditPanel } from '../features/reports/components/CallAuditPanel'
 import { SummaryDeliveryPanel } from '../features/customer/components/SummaryDeliveryPanel'
 import { adminRestService } from '../features/admin/services/adminRestService'
 
@@ -349,6 +350,10 @@ export function PostCallAnalysisPage() {
             isCallActive={isActiveCall}
             refreshToken={call.status}
           />
+
+          {canManageEscalations && (
+            <CallAuditPanel callId={call.callId} refreshToken={`${call.status}:${hasSummary}`} />
+          )}
 
           <AiReviewPanel callId={call.callId} />
 

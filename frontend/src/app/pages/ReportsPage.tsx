@@ -7,6 +7,7 @@ import { complaintRestService } from '../features/complaints/services/complaintR
 import { useCallDirectory } from '../features/live-call/hooks/useCallDirectory'
 import { PerformancePanel } from '../features/reports/components/PerformancePanel'
 import { TrendChart, type TrendLine } from '../features/reports/components/TrendChart'
+import { humanizeLabel } from '../format/text'
 import { formatBucket } from '../features/reports/format/bucket'
 import {
   reportRestService,
@@ -391,6 +392,63 @@ export function ReportsPage() {
               <strong>{report.total_complaints}</strong>
             </div>
           </div>
+
+          {report.tone.rated_calls > 0 && (
+            <section className="panel">
+              <div className="section-heading">
+                <h3 className="section-title">Customer tone</h3>
+                <span className="customer-panel__muted">
+                  How {report.tone.rated_calls} calls ended · per {report.bucket}
+                </span>
+              </div>
+              <ul className="tone-summary">
+                {report.tone.by_tone.map(({ label, calls }) => (
+                  <li key={label}>
+                    <span
+                      className={`tone-dot tone-dot--${label.toLowerCase()}`}
+                      aria-hidden="true"
+                    />
+                    {humanizeLabel(label.toLowerCase())} <strong>{calls}</strong>
+                  </li>
+                ))}
+              </ul>
+              <p className="tone-summary__notes">
+                <strong>
+                  {Math.round((100 * report.tone.negative_calls) / report.tone.rated_calls)}%
+                </strong>{' '}
+                ended negative or worse ({report.tone.negative_calls} of{' '}
+                {report.tone.rated_calls}).{' '}
+                {report.tone.tracked_calls > 0 ? (
+                  <>
+                    During the call the customer’s tone got better on{' '}
+                    <strong>{report.tone.improved_calls}</strong> and worse on{' '}
+                    <strong>{report.tone.worsened_calls}</strong> of the{' '}
+                    {report.tone.tracked_calls} calls whose lines carry a tone.
+                  </>
+                ) : (
+                  'None of these calls has a tone per line, so how it changed during the call is not known.'
+                )}
+              </p>
+              <TrendChart
+                bucket={report.bucket}
+                bucketStarts={report.bucket_starts}
+                legendLabel="Tone"
+                description={`Calls per ${report.bucket}: all calls with a tone, and those ending negative or worse.`}
+                lines={[
+                  {
+                    category: 'Calls with a tone',
+                    counts: report.tone.trend.map((point) => point.rated),
+                    color: OTHER_COLOR,
+                  },
+                  {
+                    category: 'Ending negative or worse',
+                    counts: report.tone.trend.map((point) => point.negative),
+                    color: 'var(--tone-escalating)',
+                  },
+                ]}
+              />
+            </section>
+          )}
 
           {report.total_complaints === 0 ? (
             <StatePanel

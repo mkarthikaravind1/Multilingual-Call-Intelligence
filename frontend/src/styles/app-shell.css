@@ -3442,6 +3442,99 @@
   cursor: default;
 }
 
+/* How calls ended, on the Reports page. */
+.tone-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.tone-summary li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tone-summary__notes {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+}
+
+/* A call's quality audit. */
+.call-audit__score {
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.call-audit__score span {
+  color: var(--color-text-muted);
+  font-size: 1rem;
+}
+
+.call-audit__categories,
+.call-audit__points,
+.call-audit__rules {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.call-audit__categories {
+  gap: var(--space-4);
+}
+
+.call-audit__category {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.call-audit__category-score {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.call-audit__points li {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+}
+
+.call-audit__points li span {
+  flex: 0 0 64px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.call-audit__points li.call-audit__point--earned {
+  color: var(--color-text);
+}
+
+.call-audit__points--call {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid rgba(13, 41, 63, 0.08);
+}
+
+.call-audit__rules {
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: 0.86rem;
+}
+
 .report-rules {
   display: grid;
   gap: var(--space-3);

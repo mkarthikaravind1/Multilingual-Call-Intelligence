@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 
 import { ApiError } from '../../../api/errors'
 import { StatePanel } from '../../../components/StatePanel'
+import { TrendChart } from './TrendChart'
+import { formatBucket } from '../format/bucket'
 import {
   reportRestService,
   type FiguresDto,
@@ -18,7 +20,15 @@ type PerformancePanelProps = {
 
 // How each figure is worked out; keep in step with the backend's rules
 // (app/services/performance.py).
+// Executives drawn on the tone trend: the busiest ones.
+const MAX_TREND_EXECUTIVES = 5
+const SERIES_COLORS = [1, 2, 3, 4, 5].map((slot) => `var(--chart-series-${slot})`)
+
 const RULES: Array<{ name: string; rule: string }> = [
+  {
+    name: 'Audit score',
+    rule: 'Per call that raised a complaint, 0 to 100. Each complaint: 60 points when the executive asked about it, 20 when they accepted a question suggested about it (counted only when one was suggested), 20 once it has been resolved; its score is the points earned out of those that apply. The call’s score is the average of its complaints’ scores, plus 5 when the customer ended in a milder tone than they began, minus 10 when harsher, minus 10 for a high or critical escalation left open, minus 5 for more than 2 minutes on hold. The weakest category is the one with the lowest average score.',
+  },
   {
     name: 'Coverage score',
     rule: 'Of the complaints raised on the calls, the share the executive asked the customer about. Whether a complaint was asked about is the AI’s reading of the call.',
@@ -154,7 +164,9 @@ export function PerformancePanel({ filters, fileLabel }: PerformancePanelProps) 
     )
   }
 
-  const { overall, executives } = loaded.report
+  const { overall, executives, bucket } = loaded.report
+  const bucketStarts = loaded.report.bucket_starts
+  const toneTrend = loaded.report.tone_trend
   const isStale = loaded.key !== filterKey
 
   return (
@@ -184,6 +196,15 @@ export function PerformancePanel({ filters, fileLabel }: PerformancePanelProps) 
           label="CSAT"
           value={overall.csat === null ? '—' : `${score(overall.csat)} / 5`}
           basis={`${overall.rated_calls} calls with a tone`}
+        />
+        <Tile
+          label="Audit score"
+          value={overall.audit_score === null ? '—' : `${Math.round(overall.audit_score)} / 100`}
+          basis={
+            overall.weakest_category
+              ? `${overall.audited_calls} calls with a complaint · weakest: ${overall.weakest_category}`
+              : `${overall.audited_calls} calls with a complaint`
+          }
         />
       </div>
 
@@ -238,6 +259,8 @@ export function PerformancePanel({ filters, fileLabel }: PerformancePanelProps) 
                     <th scope="col">First Call Resolution</th>
                     <th scope="col">Repeat complaints</th>
                     <th scope="col">CSAT</th>
+                    <th scope="col">Audit score</th>
+                    <th scope="col">Weakest category</th>
                     <th scope="col">Negative or worse</th>
                     <th scope="col">High churn risk</th>
                     <th scope="col">High or critical escalations</th>
@@ -260,6 +283,14 @@ export function PerformancePanel({ filters, fileLabel }: PerformancePanelProps) 
                         {percent(figures.repeat_rate)}
                       </td>
                       <td>{score(figures.csat)}</td>
+                      <td title={`${figures.audited_calls} calls with a complaint`}>
+                        {figures.audit_score === null ? '—' : Math.round(figures.audit_score)}
+                      </td>
+                      <td>
+                        {figures.weakest_category === null
+                          ? '—'
+                          : `${figures.weakest_category} (${Math.round(figures.weakest_category_score ?? 0)})`}
+                      </td>
                       <td title={`of ${figures.rated_calls} calls with a tone`}>
                         {figures.negative_calls}
                       </td>
@@ -274,6 +305,70 @@ export function PerformancePanel({ filters, fileLabel }: PerformancePanelProps) 
               </table>
             </div>
           </section>
+
+          {overall.rated_calls > 0 && (
+            <section className="panel">
+              <div className="section-heading">
+                <h3 className="section-title">Tone trend by executive</h3>
+                <span className="customer-panel__muted">
+                  Calls ending negative or worse, per {bucket}
+                </span>
+              </div>
+              <TrendChart
+                bucket={bucket}
+                bucketStarts={bucketStarts}
+                legendLabel="Executives"
+                description={`Calls ending negative or worse per ${bucket}, for each executive. The table below has the same numbers.`}
+                lines={executives.slice(0, MAX_TREND_EXECUTIVES).map((executive, index) => ({
+                  category: executive.name,
+                  counts: executive.tone_trend.map((point) => point.negative),
+                  color: SERIES_COLORS[index % SERIES_COLORS.length],
+                }))}
+              />
+              {executives.length > MAX_TREND_EXECUTIVES && (
+                <p className="customer-panel__muted">
+                  The chart shows the {MAX_TREND_EXECUTIVES} executives with the most calls; the
+                  table and the Excel file have everyone.
+                </p>
+              )}
+              <details className="report-table-toggle">
+                <summary>Show the numbers as a table</summary>
+                <div className="report-table-scroll">
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Negative or worse / calls with a tone</th>
+                        {bucketStarts.map((start) => (
+                          <th scope="col" key={start}>
+                            {formatBucket(start, bucket).replace('Week of ', '')}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ...executives.map((executive) => ({
+                          key: executive.executive_user_id ?? 'none',
+                          name: executive.name,
+                          trend: executive.tone_trend,
+                        })),
+                        { key: 'all', name: 'All executives', trend: toneTrend },
+                      ].map((row) => (
+                        <tr key={row.key}>
+                          <th scope="row">{row.name}</th>
+                          {row.trend.map((point, index) => (
+                            <td key={bucketStarts[index]}>
+                              {point.rated === 0 ? '—' : `${point.negative} / ${point.rated}`}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </section>
+          )}
         </>
       )}
 

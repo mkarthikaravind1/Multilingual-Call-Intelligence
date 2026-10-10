@@ -65,11 +65,19 @@ _SCORECARD_COLUMNS = (
     "High or critical escalations",
     "Suggested questions accepted",
     "Suggested questions skipped",
+    "Audit score 0-100 (estimate)",
+    "Calls audited",
+    "Weakest category",
+    "Weakest category score",
 )
 
 
 def _percent(rate: float | None) -> float | str:
     return "" if rate is None else round(rate * 100, 1)
+
+
+def _rate(part: int, whole: int) -> float | None:
+    return None if whole == 0 else part / whole
 
 
 def _scorecard_row(name: str, figures: Figures) -> list:
@@ -90,6 +98,10 @@ def _scorecard_row(name: str, figures: Figures) -> list:
         figures.serious_escalations,
         figures.questions_accepted,
         figures.questions_skipped,
+        "" if figures.audit_score is None else figures.audit_score,
+        figures.audited_calls,
+        figures.weakest_category or "",
+        "" if figures.weakest_category_score is None else figures.weakest_category_score,
     ]
 
 
@@ -115,6 +127,22 @@ def export_scorecard(
         workbook = Workbook()
         workbook.remove(workbook.active)
         _sheet(workbook, "Scorecard", list(_SCORECARD_COLUMNS), rows)
+        prefix = "Week of " if report.bucket == "week" else ""
+        periods = [
+            f"{prefix}{datetime.fromtimestamp(at, zone):%d %b %Y}" for at in report.bucket_starts
+        ]
+        _sheet(
+            workbook,
+            "Tone trend",
+            ["Executive (% of calls ending negative or worse)"] + periods,
+            [
+                [name] + [_percent(_rate(point.negative, point.rated)) for point in trend]
+                for name, trend in (
+                    *((e.name, e.tone_trend) for e in report.executives),
+                    ("All executives", report.tone_trend),
+                )
+            ],
+        )
         out = io.BytesIO()
         workbook.save(out)
         content = out.getvalue()
@@ -261,6 +289,33 @@ def _xlsx(report: Report) -> bytes:
             ]
             for cause in report.root_causes
             for theme in cause.themes
+        ],
+    )
+    tone = report.tone
+    _sheet(
+        workbook,
+        "Tone",
+        ["How calls ended", "Calls"],
+        [
+            *([count.label.value.capitalize(), count.calls] for count in tone.by_tone),
+            ["Calls with a tone", tone.rated_calls],
+            ["Ending negative or worse", tone.negative_calls],
+            ["Calls whose lines carry tones", tone.tracked_calls],
+            ["Customer ended milder than they began", tone.improved_calls],
+            ["Customer ended harsher than they began", tone.worsened_calls],
+        ],
+    )
+    _sheet(
+        workbook,
+        "Tone trend",
+        ["", *_bucket_labels(report)],
+        [
+            ["Calls with a tone", *(point.rated for point in tone.trend)],
+            ["Ending negative or worse", *(point.negative for point in tone.trend)],
+            [
+                "% negative or worse",
+                *(_percent(_rate(point.negative, point.rated)) for point in tone.trend),
+            ],
         ],
     )
     _sheet(workbook, "Complaints", list(_COMPLAINT_COLUMNS), _complaint_rows(report))

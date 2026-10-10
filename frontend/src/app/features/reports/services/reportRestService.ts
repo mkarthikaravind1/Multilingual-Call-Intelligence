@@ -44,6 +44,50 @@ export interface RootCauseDto {
   themes: ThemeDto[]
 }
 
+// One day or week of a tone trend.
+export interface TonePointDto {
+  // Calls with a tone, and those ending negative or worse.
+  rated: number
+  negative: number
+}
+
+export interface ToneSummaryDto {
+  rated_calls: number
+  // By the tone the call ended on, mildest first.
+  by_tone: Array<{ label: ReportSentiment; calls: number }>
+  negative_calls: number
+  // Calls whose lines carry tones, and those whose customer ended in a
+  // milder, or a harsher, tone than they began.
+  tracked_calls: number
+  improved_calls: number
+  worsened_calls: number
+  // One per bucket_starts entry.
+  trend: TonePointDto[]
+}
+
+export interface AuditPointDto {
+  rule: string
+  points: number
+  // The most the rule could have earned; 0 for a call-level adjustment.
+  possible: number
+  note: string
+}
+
+// A call's quality audit: an estimate by fixed rules.
+export interface CallAuditDto {
+  call_id: string
+  // 0 to 100.
+  score: number
+  categories: Array<{
+    category: string
+    score: number
+    points: AuditPointDto[]
+    // The AI was not sure this complaint was raised at all.
+    unsure: boolean
+  }>
+  adjustments: AuditPointDto[]
+}
+
 export interface ComplaintReportDto {
   bucket: ReportBucket
   total_calls: number
@@ -58,6 +102,8 @@ export interface ComplaintReportDto {
   locations: Array<{ location_id: string | null; name: string }>
   heatmap: Array<{ category: string; counts: number[] }>
   root_causes: RootCauseDto[]
+  // How the calls ended, and the tone per day or week.
+  tone: ToneSummaryDto
 }
 
 // Estimates worked out by fixed rules (see the Performance view). Rates
@@ -84,12 +130,28 @@ export interface FiguresDto {
   // Suggested questions the executive accepted, and skipped.
   questions_accepted: number
   questions_skipped: number
+  // Quality audit: calls that raised a complaint, their average score (0
+  // to 100), and the category handled worst on average with its score.
+  audited_calls: number
+  audit_score: number | null
+  weakest_category: string | null
+  weakest_category_score: number | null
 }
 
 export interface PerformanceReportDto {
   overall: FiguresDto
   // Most calls first; executive_user_id null: calls with no executive recorded.
-  executives: Array<{ executive_user_id: string | null; name: string; figures: FiguresDto }>
+  executives: Array<{
+    executive_user_id: string | null
+    name: string
+    figures: FiguresDto
+    // Their calls' tone per day or week (one per bucket_starts entry).
+    tone_trend: TonePointDto[]
+  }>
+  bucket: ReportBucket
+  // When each day or week of the tone trends starts (epoch seconds).
+  bucket_starts: number[]
+  tone_trend: TonePointDto[]
 }
 
 function toQuery(filters: ReportFilters): URLSearchParams {
@@ -123,6 +185,12 @@ export const reportRestService = {
   getPerformanceReport(filters: ReportFilters): Promise<PerformanceReportDto> {
     return apiClient.get<PerformanceReportDto>(
       `/api/v1/reports/performance?${toQuery(filters).toString()}`,
+    )
+  },
+
+  getCallAudit(callId: string): Promise<CallAuditDto> {
+    return apiClient.get<CallAuditDto>(
+      `/api/v1/reports/calls/${encodeURIComponent(callId)}/audit`,
     )
   },
 

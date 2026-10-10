@@ -275,6 +275,12 @@ migration 0020 (an index the page's query uses).
 - **The first call right after a backend restart** can end with no
   transcript if it is shorter than the speech models' warm-up (under a
   minute). Wait a minute after a restart before the first test call.
+- **Audit scores** are estimates by fixed rules (listed on the call's audit
+  panel and on Reports > Performance); nobody listened to the call. Like the
+  coverage score, they are meaningful only for calls made after the "asked
+  about" check was added (10 October 2026): earlier calls score close to 0.
+  "Tone got better or worse during the call" needs a tone per line, which
+  calls from before 10 October 2026 do not have.
 - **Coverage scores** are meaningful only for calls made after the
   "asked about" check was added (10 October 2026); earlier calls read 0%.
 - **Root causes in reports** group complaints by shared words, so the same

@@ -94,6 +94,12 @@ class ReportComplaint:
     # The customer's words: the first line of the call that raises it;
     # None when the call's lines carry no categories.
     quote: str | None = None
+    # How sure the detector was (0 to 1); None when not recorded.
+    confidence: float | None = None
+    # Suggested questions about this complaint the executive accepted, and
+    # skipped.
+    questions_accepted: int = 0
+    questions_skipped: int = 0
 
 
 @dataclass(frozen=True)
@@ -115,6 +121,33 @@ class ReportCall:
     # Suggested questions the executive accepted, and skipped.
     questions_accepted: int = 0
     questions_skipped: int = 0
+    # The call escalated and the escalation has not been resolved.
+    escalation_open: bool = False
+    # The customer's tone on the first and the last of their lines that
+    # carry one; None for a call whose lines carry none.
+    tone_start: SentimentLabel | None = None
+    tone_end: SentimentLabel | None = None
+    # Time the customer was kept on hold.
+    hold_seconds: float = 0.0
+
+
+# Tones from the mildest to the harshest.
+TONE_SEVERITY = {
+    SentimentLabel.POSITIVE: 0,
+    SentimentLabel.NEUTRAL: 1,
+    SentimentLabel.NEGATIVE: 2,
+    SentimentLabel.FRUSTRATED: 3,
+    SentimentLabel.ESCALATING: 4,
+}
+
+
+def tone_change(call: ReportCall) -> int | None:
+    """Whether the customer's tone ended milder (-1) or harsher (1) than
+    it began, or the same (0); None when the call's lines carry no tones."""
+    if call.tone_start is None or call.tone_end is None:
+        return None
+    start, end = TONE_SEVERITY[call.tone_start], TONE_SEVERITY[call.tone_end]
+    return (end > start) - (end < start)
 
 
 def customer_key(customer_id: str | None, caller_number: str | None) -> str | None:
@@ -129,6 +162,11 @@ class ReportSource(ABC):
         """Up to `limit` calls matching every filter except the category
         (each with all its complaints), oldest first."""
         raise NotImplementedError
+
+    def call(self, call_id: str) -> ReportCall | None:
+        """That one call as reports see it; None when there is none (or
+        the source cannot look a single call up)."""
+        return None
 
 
 # ---- The report ----
@@ -188,6 +226,83 @@ class RootCause:
 
 
 @dataclass(frozen=True)
+class TonePoint:
+    """One day or week of the tone trend."""
+
+    # Calls with a tone, and those ending negative or worse.
+    rated: int
+    negative: int
+
+
+@dataclass(frozen=True)
+class ToneCount:
+    label: SentimentLabel
+    calls: int
+
+
+@dataclass(frozen=True)
+class ToneSummary:
+    """How the calls of a report ended, and how they changed on the way."""
+
+    # Calls with an overall tone (from their summary).
+    rated_calls: int
+    # Those calls by the tone they ended on, mildest first (every tone).
+    by_tone: tuple[ToneCount, ...]
+    negative_calls: int
+    # Calls whose lines carry tones, and those whose customer ended in a
+    # milder, or a harsher, tone than they began.
+    tracked_calls: int
+    improved_calls: int
+    worsened_calls: int
+    # One point per day or week of the report.
+    trend: tuple[TonePoint, ...]
+
+
+def report_buckets(
+    filters: ReportFilters, bucket: Bucket | None, tz_offset_minutes: int
+) -> tuple[Bucket, int, int, int]:
+    """(bucket, the first and last bucket's index, the reader's clock
+    ahead of UTC in seconds). bucket None: by day for a short range, by
+    week for a long one."""
+    days = (filters.started_to - filters.started_from) / SECONDS_PER_DAY
+    bucket = bucket or ("day" if days <= MAX_DAILY_BUCKETS else "week")
+    offset = tz_offset_minutes * 60
+    first = _bucket_index(filters.started_from, bucket, offset)
+    last = _bucket_index(filters.started_to - 1, bucket, offset)
+    return bucket, first, last, offset
+
+
+def tone_trend(
+    calls: Iterable[ReportCall], bucket: Bucket, first: int, last: int, offset: int
+) -> tuple[TonePoint, ...]:
+    rated: Counter[int] = Counter()
+    negative: Counter[int] = Counter()
+    for call in calls:
+        if call.sentiment is None:
+            continue
+        index = _bucket_index(call.start_time, bucket, offset) - first
+        rated[index] += 1
+        negative[index] += call.sentiment.is_negative
+    return tuple(TonePoint(rated[i], negative[i]) for i in range(last - first + 1))
+
+
+def tone_summary(
+    calls: tuple[ReportCall, ...], bucket: Bucket, first: int, last: int, offset: int
+) -> ToneSummary:
+    ended = Counter(call.sentiment for call in calls if call.sentiment is not None)
+    changes = [change for call in calls if (change := tone_change(call)) is not None]
+    return ToneSummary(
+        rated_calls=sum(ended.values()),
+        by_tone=tuple(ToneCount(label, ended[label]) for label in TONE_SEVERITY),
+        negative_calls=sum(count for label, count in ended.items() if label.is_negative),
+        tracked_calls=len(changes),
+        improved_calls=sum(1 for change in changes if change < 0),
+        worsened_calls=sum(1 for change in changes if change > 0),
+        trend=tone_trend(calls, bucket, first, last, offset),
+    )
+
+
+@dataclass(frozen=True)
 class ComplaintRow:
     """One complaint with its call, as exports list them."""
 
@@ -224,6 +339,8 @@ class Report:
     heatmap: tuple[HeatmapRow, ...]
     root_causes: tuple[RootCause, ...]
     rows: tuple[ComplaintRow, ...]
+    # How the calls ended, and the share ending negative per day or week.
+    tone: ToneSummary
 
 
 class ReportService:
@@ -271,11 +388,7 @@ class ReportService:
                 if any(c.category == filters.category for c in call.complaints)
             )
 
-        days = (filters.started_to - filters.started_from) / SECONDS_PER_DAY
-        bucket = bucket or ("day" if days <= MAX_DAILY_BUCKETS else "week")
-        offset = tz_offset_minutes * 60
-        first = _bucket_index(filters.started_from, bucket, offset)
-        last = _bucket_index(filters.started_to - 1, bucket, offset)
+        bucket, first, last, offset = report_buckets(filters, bucket, tz_offset_minutes)
 
         totals: Counter[str] = Counter()
         resolved: Counter[str] = Counter()
@@ -340,6 +453,7 @@ class ReportService:
                 for c in categories
             ),
             rows=tuple(rows),
+            tone=tone_summary(calls, bucket, first, last, offset),
         )
 
     def _location_name(self, location_id: str | None) -> str | None:
@@ -475,12 +589,18 @@ def _root_cause(
 # ---- Calls from the in-memory stores (tests and local runs) ----
 
 
-def call_complaints(coverage, summary, records=(), utterances=()) -> tuple[ReportComplaint, ...]:
+def call_complaints(
+    coverage, summary, records=(), utterances=(), outcomes=()
+) -> tuple[ReportComplaint, ...]:
     """A call's complaints: the categories raised on it, each described by
     the post-call summary when there is one, with the status of its
-    tracked complaint (records) when it has one, and the customer's words
-    from the call's lines (utterances) when they carry categories."""
+    tracked complaint (records) when it has one, the customer's words
+    from the call's lines (utterances) when they carry categories, and
+    what the executive did with the questions suggested about it
+    (outcomes)."""
     quotes = first_quotes((u.transcript, u.complaint_categories) for u in utterances)
+    accepted = Counter(o.target_category for o in outcomes if o.outcome.value == "accepted")
+    skipped = Counter(o.target_category for o in outcomes if o.outcome.value == "skipped")
     descriptions = (
         {} if summary is None else {c.category: c.description for c in summary.complaints}
     )
@@ -494,6 +614,9 @@ def call_complaints(coverage, summary, records=(), utterances=()) -> tuple[Repor
             descriptions.get(c.category),
             probed=c.status.value != _DETECTED,
             quote=quotes.get(c.category),
+            confidence=c.confidence,
+            questions_accepted=accepted[c.category],
+            questions_skipped=skipped[c.category],
         )
         for c in coverage.complaints
         if c.status.value != _NOT_RAISED
@@ -538,56 +661,75 @@ class InMemoryReportSource(ReportSource):
             sentiment = None if summary is None else summary.sentiment.label
             if filters.sentiment not in (None, sentiment):
                 continue
-            location = (
-                None
-                if self._locations is None or conversation.location_id is None
-                else self._locations.get(conversation.location_id)
-            )
-            executive = (
-                None
-                if self._users is None or conversation.executive_user_id is None
-                else self._users.get_by_id(conversation.executive_user_id)
-            )
-            link = (
-                None
-                if self._call_customers is None
-                else self._call_customers.get(conversation.call_id)
-            )
-            escalation = (
-                None if self._escalations is None else self._escalations.get(conversation.call_id)
-            )
-            accepted, skipped = count_outcomes(
-                    ()
-                    if self._question_outcomes is None
-                    else self._question_outcomes.list_for_calls([conversation.call_id]).get(
-                        conversation.call_id, ()
-                    )
-                )
-            matching.append(
-                ReportCall(
-                    questions_accepted=accepted,
-                    questions_skipped=skipped,
-                    customer_key=(
-                        None if link is None else customer_key(link.customer_id, link.caller_number)
-                    ),
-                    escalation_level=None if escalation is None else escalation.level,
-                    call_id=conversation.call_id,
-                    start_time=conversation.start_time,
-                    direction=conversation.direction,
-                    location_id=conversation.location_id,
-                    location_name=None if location is None else location.name,
-                    executive_user_id=conversation.executive_user_id,
-                    executive_name=None if executive is None else executive.name,
-                    sentiment=sentiment,
-                    complaints=call_complaints(
-                        self._coverages.get(conversation.call_id),
-                        summary,
-                        ()
-                        if self._complaints is None
-                        else self._complaints.list_for_call(conversation.call_id),
-                        conversation.utterances,
-                    ),
-                )
-            )
+            matching.append(self._report_call(conversation, summary))
         matching.sort(key=lambda call: (call.start_time, call.call_id))
         return tuple(matching[:limit])
+
+    def call(self, call_id: str) -> ReportCall | None:
+        conversation = self._conversations.get(call_id)
+        if conversation is None:
+            return None
+        return self._report_call(conversation, self._summaries.get(call_id))
+
+    def _report_call(self, conversation, summary) -> ReportCall:
+        sentiment = None if summary is None else summary.sentiment.label
+        location = (
+            None
+            if self._locations is None or conversation.location_id is None
+            else self._locations.get(conversation.location_id)
+        )
+        executive = (
+            None
+            if self._users is None or conversation.executive_user_id is None
+            else self._users.get_by_id(conversation.executive_user_id)
+        )
+        link = (
+            None
+            if self._call_customers is None
+            else self._call_customers.get(conversation.call_id)
+        )
+        escalation = (
+            None if self._escalations is None else self._escalations.get(conversation.call_id)
+        )
+        outcomes = (
+            ()
+            if self._question_outcomes is None
+            else self._question_outcomes.list_for_calls([conversation.call_id]).get(
+                conversation.call_id, ()
+            )
+        )
+        accepted, skipped = count_outcomes(outcomes)
+        tones = [u.sentiment for u in conversation.utterances if u.sentiment is not None]
+        return (
+            ReportCall(
+                questions_accepted=accepted,
+                questions_skipped=skipped,
+                escalation_open=(
+                    escalation is not None and escalation.status.value != "resolved"
+                ),
+                tone_start=tones[0] if tones else None,
+                tone_end=tones[-1] if tones else None,
+                hold_seconds=conversation.hold_seconds,
+                customer_key=(
+                    None if link is None else customer_key(link.customer_id, link.caller_number)
+                ),
+                escalation_level=None if escalation is None else escalation.level,
+                call_id=conversation.call_id,
+                start_time=conversation.start_time,
+                direction=conversation.direction,
+                location_id=conversation.location_id,
+                location_name=None if location is None else location.name,
+                executive_user_id=conversation.executive_user_id,
+                executive_name=None if executive is None else executive.name,
+                sentiment=sentiment,
+                complaints=call_complaints(
+                    self._coverages.get(conversation.call_id),
+                    summary,
+                    ()
+                    if self._complaints is None
+                    else self._complaints.list_for_call(conversation.call_id),
+                    conversation.utterances,
+                    outcomes,
+                ),
+            )
+        )

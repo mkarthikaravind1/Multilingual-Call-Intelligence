@@ -1,7 +1,7 @@
 import time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict
 
@@ -47,6 +47,31 @@ class TrendSeriesResponse(_Response):
     counts: list[int]
 
 
+class TonePointResponse(_Response):
+    # Calls with a tone, and those ending negative or worse.
+    rated: int
+    negative: int
+
+
+class ToneCountResponse(_Response):
+    label: SentimentLabel
+    calls: int
+
+
+class ToneSummaryResponse(_Response):
+    rated_calls: int
+    # By the tone the call ended on, mildest first.
+    by_tone: list[ToneCountResponse]
+    negative_calls: int
+    # Calls whose lines carry tones, and those whose customer ended in a
+    # milder, or a harsher, tone than they began.
+    tracked_calls: int
+    improved_calls: int
+    worsened_calls: int
+    # One per bucket_starts entry.
+    trend: list[TonePointResponse]
+
+
 class HeatmapLocationResponse(_Response):
     location_id: str | None
     name: str
@@ -89,6 +114,7 @@ class ComplaintReportResponse(_Response):
     locations: list[HeatmapLocationResponse]
     heatmap: list[HeatmapRowResponse]
     root_causes: list[RootCauseResponse]
+    tone: ToneSummaryResponse
 
 
 class _ReportQuery:
@@ -181,6 +207,12 @@ class FiguresResponse(_Response):
     serious_escalations: int
     questions_accepted: int
     questions_skipped: int
+    # Quality audit: calls that raised a complaint, their average score (0
+    # to 100), and the category handled worst on average with its score.
+    audited_calls: int
+    audit_score: float | None
+    weakest_category: str | None
+    weakest_category_score: float | None
 
 
 class ExecutiveFiguresResponse(_Response):
@@ -188,6 +220,8 @@ class ExecutiveFiguresResponse(_Response):
     executive_user_id: str | None
     name: str
     figures: FiguresResponse
+    # Their calls' tone per day or week (one per bucket_starts entry).
+    tone_trend: list[TonePointResponse]
 
 
 class PerformanceReportResponse(_Response):
@@ -195,6 +229,35 @@ class PerformanceReportResponse(_Response):
     overall: FiguresResponse
     # Most calls first.
     executives: list[ExecutiveFiguresResponse]
+    bucket: Literal["day", "week"]
+    # When each day or week of the tone trends starts (epoch seconds).
+    bucket_starts: list[float]
+    tone_trend: list[TonePointResponse]
+
+
+class AuditPointResponse(_Response):
+    # asked_about, used_suggestion, resolved, tone, open_escalation, long_hold.
+    rule: str
+    points: float
+    # The most the rule could have earned; 0 for a call-level adjustment.
+    possible: float
+    note: str
+
+
+class CategoryAuditResponse(_Response):
+    category: str
+    score: float
+    points: list[AuditPointResponse]
+    # The detector was not sure this complaint was raised at all.
+    unsure: bool
+
+
+class CallAuditResponse(_Response):
+    call_id: str
+    # 0 to 100; an estimate by fixed rules.
+    score: float
+    categories: list[CategoryAuditResponse]
+    adjustments: list[AuditPointResponse]
 
 
 @router.get("/performance", response_model=PerformanceReportResponse)
@@ -203,8 +266,24 @@ async def performance_report(
     service: PerformanceService = Depends(get_performance_service),
     _: User = Depends(_SUPERVISORS),
 ) -> PerformanceReportResponse:
-    report = await run_in_threadpool(service.report, query.filters)
+    report = await run_in_threadpool(
+        service.report, query.filters, query.bucket, query.tz_offset_minutes
+    )
     return PerformanceReportResponse.model_validate(report)
+
+
+@router.get("/calls/{call_id}/audit", response_model=CallAuditResponse)
+async def call_audit(
+    call_id: str,
+    service: PerformanceService = Depends(get_performance_service),
+    _: User = Depends(_SUPERVISORS),
+) -> CallAuditResponse:
+    """How the call was handled, scored by fixed rules (an estimate), with
+    a score per complaint category and the reason for each point."""
+    audit = await run_in_threadpool(service.audit, call_id)
+    if audit is None:
+        raise HTTPException(status_code=404, detail="There is no such call.")
+    return CallAuditResponse.model_validate(audit)
 
 
 @router.get("/performance/export")
@@ -216,7 +295,9 @@ async def export_performance_report(
 ) -> Response:
     content, media_type, filename = await run_in_threadpool(
         lambda: export_scorecard(
-            service.report(query.filters), file_format, query.tz_offset_minutes
+            service.report(query.filters, query.bucket, query.tz_offset_minutes),
+            file_format,
+            query.tz_offset_minutes,
         )
     )
     return Response(
