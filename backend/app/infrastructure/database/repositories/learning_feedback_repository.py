@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.domain.learning_feedback import FeedbackSource, FeedbackType, LearningFeedback
 from app.domain.learning_feedback_repository import LearningFeedbackRepository
 from app.infrastructure.database.models import LearningFeedbackModel
+from app.infrastructure.database.repositories._saving import save_row
 
 
 def _to_domain(model: LearningFeedbackModel) -> LearningFeedback:
@@ -43,12 +44,7 @@ class PostgresLearningFeedbackRepository(LearningFeedbackRepository):
         self._session_factory = session_factory
 
     def save(self, feedback: LearningFeedback) -> None:
-        with self._session_factory() as session, session.begin():
-            existing = session.get(LearningFeedbackModel, feedback.feedback_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(feedback))
+        save_row(self._session_factory, _to_model(feedback))
 
     def get(self, feedback_id: str) -> LearningFeedback | None:
         with self._session_factory() as session:

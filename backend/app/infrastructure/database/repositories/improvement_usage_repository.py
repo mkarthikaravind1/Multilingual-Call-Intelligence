@@ -5,6 +5,7 @@ from app.domain.improvement_usage import ImprovementUsage
 from app.domain.improvement_usage_repository import ImprovementUsageRepository
 from app.domain.learning_evidence import LearningComponent
 from app.infrastructure.database.models import ImprovementUsageModel
+from app.infrastructure.database.repositories._saving import save_row
 
 
 def _to_domain(model: ImprovementUsageModel) -> ImprovementUsage:
@@ -36,12 +37,7 @@ class PostgresImprovementUsageRepository(ImprovementUsageRepository):
         self._session_factory = session_factory
 
     def save(self, usage: ImprovementUsage) -> None:
-        with self._session_factory() as session, session.begin():
-            existing = session.get(ImprovementUsageModel, usage.usage_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(usage))
+        save_row(self._session_factory, _to_model(usage))
 
     def get(self, usage_id: str) -> ImprovementUsage | None:
         with self._session_factory() as session:

@@ -25,23 +25,23 @@ class PostgresConversationCoverageRepository(ConversationCoverageRepository):
 
     def save(self, coverage: ConversationCoverage) -> None:
         with self._session_factory() as session, session.begin():
-            existing = session.get(ConversationCoverageModel, coverage.call_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
+            model = session.get(ConversationCoverageModel, coverage.call_id)
+            if model is None:
+                model = ConversationCoverageModel(call_id=coverage.call_id)
+                session.add(model)
 
-            model = ConversationCoverageModel(
-                call_id=coverage.call_id,
-                complaints=[
-                    ComplaintCoverageModel(
-                        call_id=coverage.call_id,
-                        category=complaint.category,
-                        status=complaint.status.value,
-                    )
-                    for complaint in coverage.complaints
-                ],
-            )
-            session.add(model)
+            # Updated in place (saved on every analysis of a live call):
+            # a complaint already stored keeps its row and gets its new
+            # status; one no longer in the coverage is deleted.
+            stored = {complaint.category: complaint for complaint in model.complaints}
+            complaints = []
+            for complaint in coverage.complaints:
+                row = stored.get(complaint.category) or ComplaintCoverageModel(
+                    call_id=coverage.call_id, category=complaint.category
+                )
+                row.status = complaint.status.value
+                complaints.append(row)
+            model.complaints = complaints
 
     def get(self, call_id: str) -> ConversationCoverage | None:
         with self._session_factory() as session:

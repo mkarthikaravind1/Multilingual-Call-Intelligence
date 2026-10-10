@@ -9,6 +9,7 @@ from app.domain.customer_summary_delivery import (
 )
 from app.services.customer_summary_repository import CustomerSummaryDeliveryRepository
 from app.infrastructure.database.models import CustomerSummaryDeliveryModel
+from app.infrastructure.database.repositories._saving import save_row
 
 
 def _to_domain(model: CustomerSummaryDeliveryModel) -> CustomerSummaryDelivery:
@@ -57,12 +58,7 @@ class PostgresCustomerSummaryDeliveryRepository(CustomerSummaryDeliveryRepositor
         self._session_factory = session_factory
 
     def save(self, delivery: CustomerSummaryDelivery) -> None:
-        with self._session_factory() as session, session.begin():
-            existing = session.get(CustomerSummaryDeliveryModel, delivery.delivery_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(delivery))
+        save_row(self._session_factory, _to_model(delivery))
 
     def add_if_absent(self, delivery: CustomerSummaryDelivery) -> bool:
         try:

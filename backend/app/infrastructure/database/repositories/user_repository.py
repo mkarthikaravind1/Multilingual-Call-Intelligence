@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.domain.user import User, UserRole
 from app.domain.user_repository import UserRepository
 from app.infrastructure.database.models import UserModel
+from app.infrastructure.database.repositories._saving import save_row
 
 
 def _to_domain(model: UserModel) -> User:
@@ -35,12 +36,7 @@ class PostgresUserRepository(UserRepository):
         self._session_factory = session_factory
 
     def save(self, user: User) -> None:
-        with self._session_factory() as session, session.begin():
-            existing = session.get(UserModel, user.user_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(user))
+        save_row(self._session_factory, _to_model(user))
 
     def get_by_id(self, user_id: str) -> User | None:
         with self._session_factory() as session:

@@ -237,8 +237,8 @@ class ComplaintLifecycleRecordModel(Base):
 
 
 class ComplaintLifecycleEventModel(Base):
-    # Append-only history of a complaint's status changes. No foreign key,
-    # like the records table's own saves (delete and re-insert).
+    # Append-only history of a complaint's status changes. No foreign key
+    # to the records table.
     __tablename__ = "complaint_lifecycle_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -277,8 +277,8 @@ class CustomerSummaryDeliveryModel(Base):
 
 
 class PostCallSummaryModel(Base):
-    # Keyed by call_id without a foreign key: conversation saves delete and
-    # re-insert the conversation row, which must not remove the summary.
+    # Keyed by call_id without a foreign key (from when saving a call
+    # deleted and re-inserted its row, which must not remove the summary).
     __tablename__ = "post_call_summaries"
 
     call_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -314,8 +314,8 @@ class UserModel(Base):
 
 
 class CallCustomerModel(Base):
-    # Keyed by call_id without a foreign key: conversation saves delete and
-    # re-insert the conversation row, which must not remove this link.
+    # Keyed by call_id without a foreign key (from when saving a call
+    # deleted and re-inserted its row, which must not remove this link).
     __tablename__ = "call_customers"
 
     call_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -335,7 +335,7 @@ class CallCustomerModel(Base):
 
 class EscalationModel(Base):
     # One row per escalated call, keyed by call_id without a foreign key
-    # (conversation saves delete and re-insert the conversation row).
+    # (from when saving a call deleted and re-inserted its row).
     __tablename__ = "escalations"
 
     call_id: Mapped[str] = mapped_column(String, primary_key=True)

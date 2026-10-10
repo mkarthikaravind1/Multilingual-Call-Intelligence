@@ -10,6 +10,7 @@ from app.infrastructure.database.repositories._complaint_lifecycle_mapping impor
     to_domain,
     to_model,
 )
+from app.infrastructure.database.repositories._saving import save_row
 
 # Must match ComplaintCustomerHistoryRepository's in-memory implementation:
 # RESOLVED is the only fully closed status; FOLLOW_UP still needs attention.
@@ -21,12 +22,7 @@ class PostgresComplaintCustomerHistoryRepository(ComplaintCustomerHistoryReposit
         self._session_factory = session_factory
 
     def save(self, record: ComplaintLifecycleRecord) -> None:
-        with self._session_factory() as session, session.begin():
-            existing = session.get(ComplaintLifecycleRecordModel, record.complaint_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(to_model(record))
+        save_row(self._session_factory, to_model(record))
 
     def get(self, complaint_id: str) -> ComplaintLifecycleRecord | None:
         with self._session_factory() as session:

@@ -39,6 +39,22 @@ def _conversation_to_domain(model: ConversationModel) -> Conversation:
     return conversation
 
 
+def _write_utterance(model: UtteranceModel, utterance: Utterance) -> UtteranceModel:
+    model.transcript = utterance.transcript
+    model.speaker_role = utterance.speaker_role.value
+    model.languages = list(utterance.languages)
+    model.start_time = utterance.start_time
+    model.end_time = utterance.end_time
+    model.confidence = utterance.confidence
+    return model
+
+
+def _utterance_to_model(call_id: str, utterance: Utterance) -> UtteranceModel:
+    return _write_utterance(
+        UtteranceModel(utterance_id=utterance.utterance_id, call_id=call_id), utterance
+    )
+
+
 def _conversation_to_model(conversation: Conversation) -> ConversationModel:
     return ConversationModel(
         call_id=conversation.call_id,
@@ -46,16 +62,7 @@ def _conversation_to_model(conversation: Conversation) -> ConversationModel:
         start_time=conversation.start_time,
         end_time=conversation.end_time,
         utterances=[
-            UtteranceModel(
-                utterance_id=utterance.utterance_id,
-                call_id=conversation.call_id,
-                transcript=utterance.transcript,
-                speaker_role=utterance.speaker_role.value,
-                languages=list(utterance.languages),
-                start_time=utterance.start_time,
-                end_time=utterance.end_time,
-                confidence=utterance.confidence,
-            )
+            _utterance_to_model(conversation.call_id, utterance)
             for utterance in conversation.utterances
         ],
     )
@@ -78,16 +85,26 @@ class PostgresConversationRepository(ConversationRepository):
     def save(self, conversation: Conversation) -> None:
         with self._session_factory() as session, session.begin():
             existing = session.get(ConversationModel, conversation.call_id)
-            # Persistence-only creation time; carried across the delete/re-insert.
-            created_at = None if existing is None else existing.created_at
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
+            if existing is None:
+                session.add(_conversation_to_model(conversation))
+                return
 
-            model = _conversation_to_model(conversation)
-            if created_at is not None:
-                model.created_at = created_at
-            session.add(model)
+            # Updated in place. A live call is saved on every utterance:
+            # only what changed is written (deleting and re-inserting the
+            # call rewrote its whole transcript each time), and the row
+            # keeps its created_at.
+            existing.status = conversation.status.value
+            existing.start_time = conversation.start_time
+            existing.end_time = conversation.end_time
+            stored = {model.utterance_id: model for model in existing.utterances}
+            # Utterances no longer in the call (a revised transcript) are
+            # deleted with this assignment.
+            existing.utterances = [
+                _write_utterance(stored[utterance.utterance_id], utterance)
+                if utterance.utterance_id in stored
+                else _utterance_to_model(conversation.call_id, utterance)
+                for utterance in conversation.utterances
+            ]
 
     def get(self, call_id: str) -> Conversation | None:
         with self._session_factory() as session:

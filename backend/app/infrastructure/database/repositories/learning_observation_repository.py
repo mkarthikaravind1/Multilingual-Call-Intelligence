@@ -5,6 +5,7 @@ from app.domain.learning_evidence import LearningComponent
 from app.domain.learning_observation import LearningObservation
 from app.domain.learning_observation_repository import LearningObservationRepository
 from app.infrastructure.database.models import LearningObservationModel
+from app.infrastructure.database.repositories._saving import save_row
 
 
 def _to_domain(model: LearningObservationModel) -> LearningObservation:
@@ -38,12 +39,7 @@ class PostgresLearningObservationRepository(LearningObservationRepository):
         self._session_factory = session_factory
 
     def save(self, observation: LearningObservation) -> None:
-        with self._session_factory() as session, session.begin():
-            existing = session.get(LearningObservationModel, observation.observation_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(observation))
+        save_row(self._session_factory, _to_model(observation))
 
     def get(self, observation_id: str) -> LearningObservation | None:
         with self._session_factory() as session:

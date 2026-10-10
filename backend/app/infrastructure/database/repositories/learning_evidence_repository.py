@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.domain.learning_evidence import EvidenceType, LearningComponent, LearningEvidence
 from app.domain.learning_evidence_repository import LearningEvidenceRepository
 from app.infrastructure.database.models import LearningEvidenceModel
+from app.infrastructure.database.repositories._saving import save_row
 
 
 def _to_domain(model: LearningEvidenceModel) -> LearningEvidence:
@@ -41,12 +42,7 @@ class PostgresLearningEvidenceRepository(LearningEvidenceRepository):
         self._session_factory = session_factory
 
     def save(self, evidence: LearningEvidence) -> None:
-        with self._session_factory() as session, session.begin():
-            existing = session.get(LearningEvidenceModel, evidence.evidence_id)
-            if existing is not None:
-                session.delete(existing)
-                session.flush()
-            session.add(_to_model(evidence))
+        save_row(self._session_factory, _to_model(evidence))
 
     def get(self, evidence_id: str) -> LearningEvidence | None:
         with self._session_factory() as session:
