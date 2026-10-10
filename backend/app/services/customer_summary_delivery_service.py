@@ -22,6 +22,9 @@ CUSTOMER_LOOKUP_FAILED = "customer_lookup_failed"
 # A delivery left "queued" this long was interrupted (the process stopped
 # between claiming it and recording the outcome) and may be tried again.
 QUEUED_STALE_SECONDS = 600.0
+# A delivery is only tried again this long after its call: a summary
+# arriving days later would confuse the customer more than none.
+RETRY_WINDOW_SECONDS = 24 * 60 * 60.0
 _MAX_ERROR_LENGTH = 500
 _RETRY_BATCH = 50
 
@@ -336,6 +339,8 @@ class CustomerSummaryDeliveryService:
 
     def _may_retry(self, delivery: CustomerSummaryDelivery, now: float) -> bool:
         if delivery.attempts >= self._max_attempts:
+            return False
+        if now - delivery.created_at > RETRY_WINDOW_SECONDS:
             return False
         if delivery.status is DeliveryStatus.FAILED:
             return True

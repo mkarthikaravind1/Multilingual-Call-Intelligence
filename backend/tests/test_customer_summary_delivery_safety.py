@@ -18,6 +18,7 @@ from app.messaging.sms_length import sms_parts
 from app.services.customer_summary_delivery_service import (
     CUSTOMER_LOOKUP_FAILED,
     QUEUED_STALE_SECONDS,
+    RETRY_WINDOW_SECONDS,
     CustomerSummaryDeliveryService,
 )
 from app.services.customer_summary_message_service import CustomerSummaryMessageService
@@ -73,6 +74,18 @@ def test_retries_stop_after_the_attempt_limit():
     assert delivery.status is DeliveryStatus.FAILED
     assert delivery.attempts == 3
     assert len(gateway.requests) == 3
+
+
+def test_a_delivery_that_failed_more_than_a_day_ago_is_left_alone():
+    gateway = Gateway(DOWN)
+    service, repository = _service(gateway)
+    failed = service.deliver_for_call(summary(), lambda call_id: contact())
+    repository.save(
+        dataclasses.replace(failed, created_at=failed.created_at - RETRY_WINDOW_SECONDS - 1)
+    )
+
+    assert service.retry_unfinished(_summaries, lambda call_id: contact()) == 0
+    assert len(gateway.requests) == 1
 
 
 def test_a_sent_or_refused_delivery_is_never_retried():

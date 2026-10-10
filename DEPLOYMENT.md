@@ -159,7 +159,8 @@ and `SMS_GATE_PASSWORD`).
 - A text that failed, or whose customer could not be looked up because the
   CRM was unreachable, is tried again every
   `CUSTOMER_SUMMARY_RETRY_INTERVAL_SECONDS` (default 300), up to
-  `CUSTOMER_SUMMARY_MAX_ATTEMPTS` attempts (default 5).
+  `CUSTOMER_SUMMARY_MAX_ATTEMPTS` attempts (default 5), and only within 24
+  hours of the call.
 - An SMS longer than `CUSTOMER_SUMMARY_SMS_MAX_PARTS` parts (default 3: about
   450 English or 200 Tamil characters) is sent without its greeting line if
   that makes it fit, otherwise replaced by a short standard message.
