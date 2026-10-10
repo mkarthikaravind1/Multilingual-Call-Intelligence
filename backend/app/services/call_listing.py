@@ -18,7 +18,7 @@ from app.domain.complaint_lifecycle import (
     ComplaintLifecycleStatus,
 )
 from app.domain.complaint_lifecycle_repository import ComplaintLifecycleRepository
-from app.domain.conversation import CallDirection, ConversationStatus
+from app.domain.conversation import CallDirection, CallPhase, ConversationStatus, call_phase
 from app.domain.escalation import EscalationLevel, EscalationStatus
 from app.domain.location import LocationRepository
 from app.domain.user_repository import UserRepository
@@ -85,6 +85,12 @@ class CallListItem:
     executive_user_id: str | None = None
     # The executive's name, or their email when they have none.
     executive_name: str | None = None
+    on_hold: bool = False
+
+    @property
+    def phase(self) -> CallPhase:
+        answered = self.executive_user_id is not None or self.utterance_count > 0
+        return call_phase(self.status, self.direction, answered, self.on_hold)
 
 
 @dataclass(frozen=True)
@@ -210,6 +216,7 @@ class InMemoryCallListingQuery(CallListingQuery):
             else self._users.get_by_id(conversation.executive_user_id)
         )
         return CallListItem(
+            on_hold=conversation.on_hold,
             direction=conversation.direction,
             location_id=conversation.location_id,
             location_name=None if location is None else location.name,

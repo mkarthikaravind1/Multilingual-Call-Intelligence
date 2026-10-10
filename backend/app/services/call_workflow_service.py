@@ -13,6 +13,7 @@ from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.service_estimate import CallServiceEstimate
 from app.domain.utterance import SpeakerRole, Utterance
 from app.services.best_effort import best_effort
+from app.services.call_indicators import AiStatus, CallIndicators, LoggingStatus
 from app.domain.call_alert import CallAlert
 from app.services.call_alerts import CallAlertService
 from app.services.call_service import CallService
@@ -61,6 +62,10 @@ class CallAnalysisResult:
     alerts: tuple[CallAlert, ...] = ()
     # Every suggested question, the most relevant first.
     question_suggestions: tuple[QuestionSuggestion, ...] = ()
+    # What the AI is doing with the call right now, and where its record
+    # stands (see CallIndicators); filled in when the call is read.
+    ai_status: AiStatus | None = None
+    logging_statuses: tuple[LoggingStatus, ...] = ()
 
 
 def _customer_speech(conversation: Conversation) -> tuple[int, int]:
@@ -129,8 +134,11 @@ class CallWorkflowService:
         sleep: Callable[[float], None] = time.sleep,
         alert_service: CallAlertService | None = None,
         handled_questions: Callable[[str], tuple[str, ...]] | None = None,
+        indicators: CallIndicators | None = None,
     ) -> None:
         self._alert_service = alert_service
+        # What the AI is doing on each call, and where its record stands.
+        self._indicators = indicators
         # call_id -> the suggested questions its executive has accepted or
         # skipped, which are not suggested again; None: none are known.
         self._handled_questions = handled_questions
@@ -185,14 +193,16 @@ class CallWorkflowService:
         call_id: str,
         utterance: Utterance,
     ) -> CallAnalysisResult:
-        """Store the utterance and analyse the call, in one step."""
-        conversation = self.record_utterance(call_id, utterance)
+        """Store the utterance and analyse the call, in one step. A line
+        entered by hand comes this way: refused while the call is on hold
+        (CallOnHoldError), as its audio would be."""
+        conversation = self.record_utterance(call_id, utterance, by_hand=True)
         if conversation.status == ConversationStatus.COMPLETED:
             result = self._read_completed_analysis(conversation)
         else:
             result = self._analyze_and_store(conversation)
         self._record_learning(call_id, result)
-        return result
+        return self._with_indicators(conversation, result)
 
     def process_utterance_update(
         self,
@@ -205,11 +215,17 @@ class CallWorkflowService:
         self._record_learning(call_id, result)
         return result
 
-    def record_utterance(self, call_id: str, utterance: Utterance) -> Conversation:
+    def record_utterance(
+        self, call_id: str, utterance: Utterance, by_hand: bool = False
+    ) -> Conversation:
         """Store the utterance and let open live views show it at once,
         before (and independently of) the slower AI analysis. Returns the
         call as stored, so callers need not load it again."""
-        conversation = self._call_service.add_utterance(call_id, utterance)
+        conversation = (
+            self._call_service.add_utterance(call_id, utterance, by_hand=True)
+            if by_hand
+            else self._call_service.add_utterance(call_id, utterance)
+        )
         self._flag_what_was_said(conversation)
         self._live_analysis.touch(call_id)
         return conversation
@@ -285,6 +301,49 @@ class CallWorkflowService:
         conversation: Conversation,
         still_active: Callable[[], bool] | None = None,
     ) -> CallAnalysisResult:
+        try:
+            return self._analyze_and_store_now(conversation, still_active)
+        finally:
+            # Whatever happened, the AI is back to waiting for speech.
+            self._ai(conversation.call_id, AiStatus.LISTENING)
+
+    def _ai(self, call_id: str, status: AiStatus) -> None:
+        if self._indicators is not None:
+            self._indicators.set_ai(call_id, status)
+
+    def _with_indicators(
+        self, conversation: Conversation, result: CallAnalysisResult
+    ) -> CallAnalysisResult:
+        if self._indicators is None:
+            return result
+        return replace(
+            result,
+            ai_status=self._indicators.ai(conversation),
+            logging_statuses=self._indicators.logging(
+                conversation, has_summary=result.post_call_summary is not None
+            ),
+        )
+
+    # ---- On hold ----
+
+    def hold_call(self, call_id: str, at: float) -> Conversation:
+        """Put the call on hold: until it is resumed its audio is not
+        transcribed, so nothing said or played meanwhile reaches the
+        transcript or the AI."""
+        conversation = self._call_service.hold_call(call_id, at)
+        self._live_analysis.touch(call_id)
+        return conversation
+
+    def resume_call(self, call_id: str, at: float) -> Conversation:
+        conversation = self._call_service.resume_call(call_id, at)
+        self._live_analysis.touch(call_id)
+        return conversation
+
+    def _analyze_and_store_now(
+        self,
+        conversation: Conversation,
+        still_active: Callable[[], bool] | None = None,
+    ) -> CallAnalysisResult:
         call_id = conversation.call_id
         result, llm_escalation_signals = self._analyze_active_call(conversation, still_active)
         self._track_complaints(result.coverage)
@@ -344,8 +403,10 @@ class CallWorkflowService:
 
         if conversation.status == ConversationStatus.COMPLETED:
             self._forget_live_result(call_id)
-            return self._read_completed_analysis(conversation)
-        return self._read_active_analysis(conversation)
+            result = self._read_completed_analysis(conversation)
+        else:
+            result = self._read_active_analysis(conversation)
+        return self._with_indicators(conversation, result)
 
     def _read_active_analysis(self, conversation: Conversation) -> CallAnalysisResult:
         # Read-only, like _read_completed_analysis: the providers run only
@@ -384,6 +445,7 @@ class CallWorkflowService:
         call_id = conversation.call_id
         utterances = conversation.utterances
         handled = self._handled(call_id)
+        self._ai(call_id, AiStatus.CLASSIFYING_COMPLAINT)
         analysis = self._analyze_and_save_coverage(
             conversation,
             still_active,
@@ -391,6 +453,7 @@ class CallWorkflowService:
             # A combined request then writes the questions too.
             question_task=self._next_question_service.live_task(utterances, handled),
         )
+        self._ai(call_id, AiStatus.UPDATING_SENTIMENT)
         previous = self._live_analysis.load(call_id)
         # An unusable sentiment answer does not wipe the tone found so far.
         sentiment = keeping_earlier(
@@ -398,6 +461,7 @@ class CallWorkflowService:
         )
         estimate = self._estimate_call(conversation, live=True)
 
+        self._ai(call_id, AiStatus.GENERATING_QUESTION)
         drafted = self._next_question_service.drafted_questions(
             analysis.coverage, utterances, getattr(analysis, "question_answer", None), handled
         )

@@ -8,9 +8,10 @@ from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.customer_contact import ConsentStatus, MessagingChannel
 from app.domain.customer_summary_delivery import DeliveryStatus
 from app.domain.escalation import EscalationLevel, EscalationSignalType, EscalationStatus
-from app.domain.conversation import CallDirection, ConversationStatus
+from app.domain.conversation import CallDirection, CallPhase, ConversationStatus
 from app.domain.question_suggestion import SuggestionSource
 from app.domain.utterance import SpeakerRole
+from app.services.call_indicators import AiStatus, LoggingStatus
 
 class _Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -130,6 +131,17 @@ class UtteranceResponse(_Response):
     complaint_categories: list[str] = []
     multi_category: bool = False
 
+class HoldPeriodResponse(_Response):
+    started_at: float
+    # null while the hold is on.
+    ended_at: float | None = None
+
+
+class HoldRequest(_Request):
+    # Left out (or null): now, by the server's clock.
+    at: float | None = None
+
+
 class CallResponse(_Response):
     call_id: str
     status: ConversationStatus
@@ -141,10 +153,19 @@ class CallResponse(_Response):
     direction: CallDirection | None = None
     location_id: str | None = None
     executive_user_id: str | None = None
+    # Where the call stands: incoming or outgoing (ringing), connected,
+    # on_hold or ended.
+    phase: CallPhase = CallPhase.CONNECTED
+    # Each time it was put on hold, oldest first, and the time spent in
+    # holds that have ended.
+    holds: list[HoldPeriodResponse] = []
+    hold_seconds: float = 0.0
 
 class CallSummaryResponse(_Response):
     call_id: str
     status: ConversationStatus
+    # See CallResponse.phase.
+    phase: CallPhase = CallPhase.CONNECTED
     start_time: float
     end_time: float | None
     utterance_count: int
@@ -225,6 +246,8 @@ class LiveCallResponse(BaseModel):
     """An active call, as the supervisor's live view shows it."""
 
     call_id: str
+    # See CallResponse.phase.
+    phase: CallPhase = CallPhase.CONNECTED
     start_time: float
     direction: CallDirection | None
     location_name: str | None
@@ -354,6 +377,12 @@ class CallAnalysisResponse(_Response):
     question_suggestion: QuestionSuggestionResponse | None
     # Every suggested question, the most relevant first.
     question_suggestions: list[QuestionSuggestionResponse] = []
+    # What the AI is doing with the call right now; null once it has ended
+    # or while it is on hold.
+    ai_status: AiStatus | None = None
+    # Where the call's record stands: recording while it is kept as it is
+    # spoken; archive_complete and export_ready once each holds.
+    logging_statuses: list[LoggingStatus] = []
     service_estimate: ServiceEstimateResponse | None = None
     post_call_summary: PostCallSummaryResponse | None = None
     # null while the call has not escalated

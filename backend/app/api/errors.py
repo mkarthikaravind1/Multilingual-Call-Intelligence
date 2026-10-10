@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from app.domain.conversation import ConversationAlreadyExistsError
+from app.domain.conversation import CallOnHoldError, ConversationAlreadyExistsError
 from app.domain.escalation import EscalationTransitionError
 from app.services.escalation_service import EscalationNotFoundError
 from app.domain.emerging_complaint_candidate import EmergingComplaintReviewError
@@ -33,6 +33,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_call_already_exists(
         request: Request, exc: ConversationAlreadyExistsError
     ) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(CallOnHoldError)
+    async def handle_call_on_hold(request: Request, exc: CallOnHoldError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     @app.exception_handler(CandidateNotFoundError)

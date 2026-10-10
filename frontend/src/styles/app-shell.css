@@ -669,9 +669,80 @@
   color: var(--color-success);
 }
 
-.live-call__call-status--completed {
+.live-call__call-status--completed,
+.live-call__call-status--ended {
   background: #e9f0f7;
   color: var(--color-primary);
+}
+
+.live-call__call-status--connected {
+  background: #e7f7ef;
+  color: var(--color-success);
+}
+
+/* Ringing, and on hold: the call is not being talked on. */
+.live-call__call-status--incoming,
+.live-call__call-status--outgoing,
+.live-call__call-status--on_hold {
+  background: #fdf3dc;
+  color: #8a5a00;
+}
+
+/* What the AI is doing now, and where the call's record stands. */
+.live-call__ai-status,
+.live-call__logging-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.live-call__ai-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+}
+
+/* Working on something, as opposed to waiting for speech. */
+.live-call__ai-status:not(.live-call__ai-status--listening) {
+  border-color: rgba(42, 122, 226, 0.35);
+  color: var(--color-accent);
+}
+
+.live-call__ai-status:not(.live-call__ai-status--listening) .live-call__ai-status-dot {
+  background: var(--color-accent);
+  animation: live-pulse 1.8s ease-out infinite;
+}
+
+.live-call__logging-status--recording {
+  border-color: rgba(200, 40, 40, 0.35);
+  color: var(--color-danger);
+}
+
+.live-call__logging-status--archive_complete,
+.live-call__logging-status--export_ready {
+  border-color: rgba(30, 140, 90, 0.35);
+  color: var(--color-success);
+}
+
+.live-card__phase {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fdf3dc;
+  color: #8a5a00;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .live-call__connection {

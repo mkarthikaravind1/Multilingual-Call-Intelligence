@@ -3,6 +3,7 @@ import { toEscalationViewModel } from '../../escalation/adapters/toEscalationVie
 import type {
   CallAnalysisResponseDto,
   CallDirection,
+  CallPhase,
   CallSummaryDto,
   ComplaintDto,
   ComplaintSummaryDto,
@@ -50,6 +51,8 @@ export function toCallMetadataViewModel(
   return {
     callId: call.call_id,
     status: call.status,
+    phase: call.phase ?? null,
+    holdSeconds: call.hold_seconds ?? 0,
     startTime: call.start_time,
     endTime: call.end_time,
     utteranceCount: call.utterance_count,
@@ -65,6 +68,43 @@ export function toCallMetadataViewModel(
     executiveUserId: call.executive_user_id ?? null,
     executiveName: call.executive_name ?? null,
   }
+}
+
+const CALL_PHASE_LABELS: Record<CallPhase, string> = {
+  incoming: 'Incoming',
+  outgoing: 'Outgoing',
+  connected: 'Connected',
+  on_hold: 'On hold',
+  ended: 'Ended',
+}
+
+// "Connected", "On hold", ... from the call's phase, or from its status
+// when the server sends no phase.
+export function formatCallPhase(phase: CallPhase | null | undefined, status: string): string {
+  if (phase) return CALL_PHASE_LABELS[phase]
+  return status.toLowerCase() === 'completed' ? 'Ended' : 'Connected'
+}
+
+const AI_STATUS_LABELS: Record<string, string> = {
+  listening: 'Listening',
+  transcribing: 'Transcribing',
+  classifying_complaint: 'Classifying complaint',
+  updating_sentiment: 'Updating sentiment',
+  generating_question: 'Generating next question',
+}
+
+export function formatAiStatus(status: string): string {
+  return AI_STATUS_LABELS[status] ?? status
+}
+
+const LOGGING_STATUS_LABELS: Record<string, string> = {
+  recording: 'Recording',
+  archive_complete: 'Archive complete',
+  export_ready: 'Export ready',
+}
+
+export function formatLoggingStatus(status: string): string {
+  return LOGGING_STATUS_LABELS[status] ?? status
 }
 
 export function formatCallDirection(direction: CallDirection | null): string | null {
@@ -214,6 +254,9 @@ export function toCallAnalysisViewModel(
             analysis.question_suggestion,
           )
         : null,
+
+    aiStatus: analysis.ai_status ?? null,
+    loggingStatuses: analysis.logging_statuses ?? [],
 
     // A server from before the list sends only the one question.
     questionSuggestions: (

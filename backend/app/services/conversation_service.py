@@ -1,7 +1,12 @@
 import threading
 from dataclasses import dataclass
 
-from app.domain.conversation import CallDirection, Conversation, ConversationStatus
+from app.domain.conversation import (
+    CallDirection,
+    CallOnHoldError,
+    Conversation,
+    ConversationStatus,
+)
 from app.domain.utterance import Utterance
 from app.services.conversation_repository import ConversationRepository
 
@@ -81,9 +86,17 @@ class ConversationService:
     def count_conversations_by_status(self) -> dict[ConversationStatus, int]:
         return self._repository.count_by_status()
 
-    def add_utterance(self, call_id: str, utterance: Utterance) -> Conversation:
+    def add_utterance(
+        self, call_id: str, utterance: Utterance, by_hand: bool = False
+    ) -> Conversation:
+        """by_hand: the line was entered by a person rather than
+        transcribed from the call's audio; refused while the call is on
+        hold (CallOnHoldError). Speech already being transcribed when a
+        hold began is still stored."""
         with self._lock_for(call_id):
             conversation = self.get_conversation(call_id)
+            if by_hand and conversation.on_hold:
+                raise CallOnHoldError(call_id)
             conversation.add_utterance(utterance)
             self._repository.save(conversation)
             return conversation
@@ -116,6 +129,23 @@ class ConversationService:
         with self._lock_for(call_id):
             conversation = self.get_conversation(call_id)
             if conversation.annotate_utterances(ratings, categories):
+                self._repository.save(conversation)
+            return conversation
+
+    def hold(self, call_id: str, at: float) -> Conversation:
+        """Put the call on hold (see Conversation.hold); a call already on
+        hold stays as it is."""
+        with self._lock_for(call_id):
+            conversation = self.get_conversation(call_id)
+            if conversation.hold(at):
+                self._repository.save(conversation)
+            return conversation
+
+    def resume(self, call_id: str, at: float) -> Conversation:
+        """Take the call off hold; a call not on hold stays as it is."""
+        with self._lock_for(call_id):
+            conversation = self.get_conversation(call_id)
+            if conversation.resume(at):
                 self._repository.save(conversation)
             return conversation
 

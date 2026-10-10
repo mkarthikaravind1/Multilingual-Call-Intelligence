@@ -11,6 +11,7 @@ from app.domain.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.login_throttle import LoginThrottle
 from app.services.call_alerts import CallAlertService, QuestionOutcomeRepository
+from app.services.call_indicators import CallIndicators
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_recording_store import CallRecordingStore
 from app.services.call_listing import CallListingQuery
@@ -78,6 +79,8 @@ class ApiServices:
     report_service: ReportService | None = None
     performance_service: PerformanceService | None = None
     alert_service: CallAlertService | None = None
+    # What the AI is doing on each call, and where its record stands.
+    call_indicators: CallIndicators | None = None
     question_outcome_repository: QuestionOutcomeRepository | None = None
     # Encrypted call recordings on disk; None when recording is off.
     recording_archive: "RecordingArchive | None" = None

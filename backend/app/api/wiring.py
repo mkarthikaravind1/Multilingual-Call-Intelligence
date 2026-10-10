@@ -112,6 +112,7 @@ from app.domain.complaint_lifecycle_repository import (
     InMemoryComplaintLifecycleRepository,
 )
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
+from app.services.call_indicators import CallIndicators
 from app.services.call_listing import CallListingQuery, InMemoryCallListingQuery
 from app.services.emerging_complaint_repository import (
     EmergingComplaintRepository,
@@ -356,6 +357,26 @@ def build_api_services(
         usage_repository=usage_repository,
         evidence_repository=evidence_repository,
     )
+    # --- Recordings, telephony, and what each call's screen shows of them ---
+    recording_archive = _build_recording_archive(settings, recording_repository)
+    telephony_call_service = _build_telephony_call_service(
+        settings, call_service, call_customer_service, live_state_store, call_routing
+    )
+    call_indicators = CallIndicators(
+        live_state_store,
+        # Kept as it is spoken: recordings are on and the call's audio is arriving.
+        is_being_recorded=(
+            None if recording_archive is None else telephony_call_service.stream_is_open
+        ),
+        has_recording=(
+            None
+            if recording_archive is None
+            else lambda call_id: (
+                (stored := recording_archive.get(call_id)) is not None and stored.is_available
+            )
+        ),
+    )
+
     workflow_service = build_call_workflow_service(
         settings=settings,
         call_service=call_service,
@@ -397,9 +418,8 @@ def build_api_services(
                 call_id, ()
             )
         ),
+        indicators=call_indicators,
     )
-
-    recording_archive = _build_recording_archive(settings, recording_repository)
 
     # --- The supervisor's view of the calls in progress ---
     # The same keys the workflow writes each call's live analysis under.
@@ -423,9 +443,6 @@ def build_api_services(
     # --- After the call, telephony and the background jobs ---
     post_call_repair_service = _build_post_call_repair_service(
         settings, call_service, workflow_service, post_call_summary_repository, live_state_store
-    )
-    telephony_call_service = _build_telephony_call_service(
-        settings, call_service, call_customer_service, live_state_store, call_routing
     )
     background_jobs = _build_background_jobs(
         settings,
@@ -500,6 +517,7 @@ def build_api_services(
         report_service=report_service,
         performance_service=performance_service,
         alert_service=alert_service,
+        call_indicators=call_indicators,
         question_outcome_repository=question_outcome_repository,
         recording_archive=recording_archive,
         price_list_service=price_list_service,

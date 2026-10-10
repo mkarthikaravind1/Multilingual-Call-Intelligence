@@ -39,12 +39,17 @@ from app.api.v1.schemas import (
     CallResponse,
     CallStatsResponse,
     CompleteCallRequest,
+    HoldRequest,
     IdentifyCustomerRequest,
     SelectVehicleRequest,
     StartCallRequest,
     UtteranceRequest,
 )
-from app.domain.conversation import CallDirection, ConversationStatus
+from app.domain.conversation import (
+    CallDirection,
+    ConversationAlreadyCompletedError,
+    ConversationStatus,
+)
 from app.domain.sentiment import SentimentLabel
 from app.domain.user_repository import UserRepository
 from app.services.location_service import LocationService
@@ -161,6 +166,7 @@ def list_live_calls(
         items=[
             LiveCallResponse(
                 call_id=live.call.call_id,
+                phase=live.call.phase,
                 start_time=live.call.start_time,
                 direction=live.call.direction,
                 location_name=live.call.location_name,
@@ -331,6 +337,34 @@ def complete_call(
     end_time = time.time() if payload.end_time is None else payload.end_time
     completion = workflow_service.complete_call(call_id, end_time)
     return to_call_response(completion.conversation)
+
+@router.post("/{call_id}/hold", response_model=CallResponse)
+def hold_call(
+    call_id: str,
+    payload: HoldRequest | None = None,
+    workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    _: User = Depends(get_current_user),
+) -> CallResponse:
+    """The executive puts the customer on hold. Until the call is resumed
+    its audio is not transcribed or analysed. Repeating it changes nothing."""
+    at = time.time() if payload is None or payload.at is None else payload.at
+    try:
+        return to_call_response(workflow_service.hold_call(call_id, at))
+    except ConversationAlreadyCompletedError:
+        raise HTTPException(status_code=409, detail="The call has already ended.") from None
+
+
+@router.post("/{call_id}/resume", response_model=CallResponse)
+def resume_call(
+    call_id: str,
+    payload: HoldRequest | None = None,
+    workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    _: User = Depends(get_current_user),
+) -> CallResponse:
+    """The executive takes the customer off hold."""
+    at = time.time() if payload is None or payload.at is None else payload.at
+    return to_call_response(workflow_service.resume_call(call_id, at))
+
 
 @router.get("/{call_id}/question-outcomes", response_model=list[QuestionOutcomeResponse])
 def list_question_outcomes(

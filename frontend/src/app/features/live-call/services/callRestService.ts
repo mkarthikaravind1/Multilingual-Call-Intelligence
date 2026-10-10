@@ -168,6 +168,14 @@ export class CallRestService {
   }
 
   // The server sets the end time from its own clock.
+  // The executive puts the customer on hold (true) or takes them off it.
+  setCallOnHold(callId: string, onHold: boolean) {
+    return apiClient.post<CallResponseDto>(
+      `/api/v1/calls/${encodeURIComponent(callId)}/${onHold ? 'hold' : 'resume'}`,
+      {},
+    )
+  }
+
   completeCall(
     callId: string,
     request: CompleteCallRequestDto = {},

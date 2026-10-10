@@ -268,7 +268,7 @@ export function PostCallAnalysisPage() {
               </div>
 
               <div className="button-row">
-                <CallStatusBadge status={call.status} />
+                <CallStatusBadge status={call.status} phase={call.phase} />
                 {isActiveCall && (
                   <button
                     type="button"

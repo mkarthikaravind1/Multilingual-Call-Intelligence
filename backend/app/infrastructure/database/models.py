@@ -43,6 +43,9 @@ class ConversationModel(Base):
     direction: Mapped[str | None] = mapped_column(String, nullable=True)
     location_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     executive_user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Each time the call was on hold: [{"started_at": ..., "ended_at": ...}],
+    # ended_at null while the hold is on. NULL: never.
+    holds: Mapped[list[dict] | None] = mapped_column(JSON(none_as_null=True), nullable=True)
 
     utterances: Mapped[list["UtteranceModel"]] = relationship(
         back_populates="conversation",

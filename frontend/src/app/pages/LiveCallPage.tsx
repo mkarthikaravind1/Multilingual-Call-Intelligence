@@ -94,6 +94,12 @@ export function LiveCallPage() {
         onCompleteCall={() => {
           void liveCall.completeCall()
         }}
+        onSetHold={(onHold) => {
+          void liveCall.setOnHold(onHold)
+        }}
+        isChangingHold={liveCall.isChangingHold}
+        aiStatus={liveCall.analysis?.aiStatus ?? null}
+        loggingStatuses={liveCall.analysis?.loggingStatuses ?? []}
       >
         {canManageEscalations && <TestAudioPanel replay={testAudio} />}
       </CallHeader>
@@ -204,7 +210,7 @@ export function LiveCallPage() {
               />
 
               {canManageEscalations && liveCall.call.status.toLowerCase() !== 'active' && (
-                <RecordingPanel key={callId} callId={callId} />
+                <RecordingPanel key={`recording-${callId}`} callId={callId} />
               )}
 
               <section className="panel">

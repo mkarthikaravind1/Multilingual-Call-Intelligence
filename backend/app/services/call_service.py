@@ -46,11 +46,14 @@ class CallService:
         self,
         call_id: str,
         utterance: Utterance,
+        by_hand: bool = False,
     ) -> Conversation:
-        return self._conversation_service.add_utterance(
-            call_id=call_id,
-            utterance=utterance,
-        )
+        if not by_hand:
+            return self._conversation_service.add_utterance(
+                call_id=call_id,
+                utterance=utterance,
+            )
+        return self._conversation_service.add_utterance(call_id, utterance, by_hand=True)
 
     def update_latest_utterance(
         self,
@@ -68,6 +71,12 @@ class CallService:
         utterances: tuple[Utterance, ...],
     ) -> Conversation:
         return self._conversation_service.replace_transcript(call_id, utterances)
+
+    def hold_call(self, call_id: str, at: float) -> Conversation:
+        return self._conversation_service.hold(call_id, at)
+
+    def resume_call(self, call_id: str, at: float) -> Conversation:
+        return self._conversation_service.resume(call_id, at)
 
     def rate_utterances(self, call_id: str, ratings) -> Conversation:
         return self._conversation_service.rate_utterances(call_id, ratings)

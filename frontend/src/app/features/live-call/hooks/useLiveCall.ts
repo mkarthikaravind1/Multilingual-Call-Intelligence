@@ -59,6 +59,9 @@ interface UseLiveCallResult {
   error: string | null
   loadCall: (callId: string) => Promise<void>
   completeCall: () => Promise<void>
+  // Put the call on hold (true) or take it off hold.
+  setOnHold: (onHold: boolean) => Promise<void>
+  isChangingHold: boolean
   clearCall: () => void
 }
 
@@ -263,6 +266,32 @@ export function useLiveCall(
     ],
   )
 
+  const [isChangingHold, setIsChangingHold] = useState(false)
+
+  const setOnHold = useCallback(async (onHold: boolean) => {
+    const targetCallId = activeCallIdRef.current
+    if (!targetCallId) return
+    setIsChangingHold(true)
+    setError(null)
+    try {
+      const callResponse = await callRestService.setCallOnHold(targetCallId, onHold)
+      if (activeCallIdRef.current === targetCallId) {
+        setCall(toCallMetadataViewModel(callResponse))
+      }
+    } catch (holdError) {
+      if (activeCallIdRef.current === targetCallId) {
+        setError(
+          toUserErrorMessage(
+            holdError,
+            onHold ? 'Unable to put the call on hold.' : 'Unable to resume the call.',
+          ),
+        )
+      }
+    } finally {
+      setIsChangingHold(false)
+    }
+  }, [])
+
   const completeCall = useCallback(
     async () => {
       const targetCallId =
@@ -427,6 +456,8 @@ export function useLiveCall(
     error,
     loadCall,
     completeCall,
+    setOnHold,
+    isChangingHold,
     clearCall,
   }
 }

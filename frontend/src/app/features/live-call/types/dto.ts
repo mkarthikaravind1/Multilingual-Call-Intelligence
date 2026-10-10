@@ -25,9 +25,24 @@ export interface UtteranceDto extends UtteranceRequestDto {
   multi_category?: boolean
 }
 
+// Where a call stands: ringing (incoming or outgoing), connected, on
+// hold or ended.
+export type CallPhase = 'incoming' | 'outgoing' | 'connected' | 'on_hold' | 'ended'
+
+export interface HoldPeriodDto {
+  started_at: number
+  // null while the hold is on.
+  ended_at: number | null
+}
+
 export interface CallSummaryDto {
   call_id: string
   status: string
+  phase?: CallPhase
+  // On a single call: each time it was on hold, and the seconds spent in
+  // holds that have ended.
+  holds?: HoldPeriodDto[]
+  hold_seconds?: number
   start_time: number
   end_time: number | null
   utterance_count: number
@@ -136,6 +151,7 @@ export interface QuestionOutcomeDto {
 // An active call, as the supervisor's live view shows it.
 export interface LiveCallDto {
   call_id: string
+  phase?: CallPhase
   start_time: number
   direction: CallDirection | null
   location_name: string | null
@@ -283,6 +299,13 @@ export interface CallAnalysisResponseDto {
   escalation?: EscalationDto | null
   // Standing and cleared, oldest first.
   alerts?: CallAlertDto[]
+  // What the AI is doing with the call right now (listening,
+  // transcribing, classifying_complaint, updating_sentiment,
+  // generating_question); null once it has ended or while it is on hold.
+  ai_status?: string | null
+  // recording while the call is kept as it is spoken; archive_complete
+  // and export_ready once each holds.
+  logging_statuses?: string[]
 }
 
 export interface CompleteCallRequestDto {

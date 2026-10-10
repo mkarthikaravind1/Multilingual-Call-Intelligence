@@ -73,6 +73,8 @@ def to_analysis_response(
         question_suggestions=[
             QuestionSuggestionResponse.model_validate(each) for each in suggestions
         ],
+        ai_status=result.ai_status,
+        logging_statuses=list(result.logging_statuses),
         service_estimate=(
             ServiceEstimateResponse.model_validate(estimate)
             if estimate is not None

@@ -5,7 +5,10 @@ import { ApiError } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
 import { ComplaintStatusBadge } from '../components/ToneBadges'
 import { EscalationLevelBadge } from '../features/escalation/components/EscalationCard'
-import { formatCallDirection } from '../features/live-call/adapters/toViewModel'
+import {
+  formatCallDirection,
+  formatCallPhase,
+} from '../features/live-call/adapters/toViewModel'
 import { useCallDirectory } from '../features/live-call/hooks/useCallDirectory'
 import { callRestService } from '../features/live-call/services/callRestService'
 import type {
@@ -39,6 +42,11 @@ function LiveCallCard({ call, now }: { call: LiveCallDto; now: number }) {
             {call.executive_name ?? 'Executive not recorded'}
           </strong>
           <span className="live-card__meta">{where || 'Location not recorded'}</span>
+          {call.phase && call.phase !== 'connected' && (
+            <span className={`live-card__phase live-card__phase--${call.phase}`}>
+              {formatCallPhase(call.phase, 'active')}
+            </span>
+          )}
         </div>
         <span className="live-card__duration" title="Time on the call">
           {formatElapsedSeconds(now - call.start_time)}

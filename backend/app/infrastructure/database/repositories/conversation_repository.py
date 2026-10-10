@@ -8,6 +8,7 @@ from app.domain.conversation import (
     Conversation,
     ConversationAlreadyExistsError,
     ConversationStatus,
+    HoldPeriod,
 )
 from app.domain.utterance import SpeakerRole, Utterance
 from app.infrastructure.database.models import ConversationModel, UtteranceModel
@@ -40,6 +41,7 @@ def _conversation_to_domain(model: ConversationModel) -> Conversation:
         direction=None if model.direction is None else CallDirection(model.direction),
         location_id=model.location_id,
         executive_user_id=model.executive_user_id,
+        holds=holds_from_json(model.holds),
     )
     for utterance_model in model.utterances:
         conversation.add_utterance(_utterance_to_domain(utterance_model))
@@ -74,6 +76,13 @@ def _write_call_fields(model: ConversationModel, conversation: Conversation) -> 
     model.direction = None if conversation.direction is None else conversation.direction.value
     model.location_id = conversation.location_id
     model.executive_user_id = conversation.executive_user_id
+    model.holds = [
+        {"started_at": hold.started_at, "ended_at": hold.ended_at} for hold in conversation.holds
+    ] or None
+
+
+def holds_from_json(stored: list[dict] | None) -> tuple[HoldPeriod, ...]:
+    return tuple(HoldPeriod(hold["started_at"], hold.get("ended_at")) for hold in stored or ())
 
 
 def _conversation_to_model(conversation: Conversation) -> ConversationModel:

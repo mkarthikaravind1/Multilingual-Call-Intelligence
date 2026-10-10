@@ -15,6 +15,48 @@ class CallDirection(str, Enum):
     OUTBOUND = "outbound"
 
 
+class CallPhase(str, Enum):
+    """Where a call stands, as people see it."""
+
+    # Ringing: the customer called and no executive has answered yet.
+    INCOMING = "incoming"
+    # Ringing: an executive is calling the customer.
+    OUTGOING = "outgoing"
+    CONNECTED = "connected"
+    ON_HOLD = "on_hold"
+    ENDED = "ended"
+
+
+def call_phase(
+    status: ConversationStatus,
+    direction: CallDirection | None,
+    answered: bool,
+    on_hold: bool,
+) -> CallPhase:
+    """answered: an executive is on the call, or something has been said."""
+    if status == ConversationStatus.COMPLETED:
+        return CallPhase.ENDED
+    if on_hold:
+        return CallPhase.ON_HOLD
+    if answered:
+        return CallPhase.CONNECTED
+    return CallPhase.OUTGOING if direction is CallDirection.OUTBOUND else CallPhase.INCOMING
+
+
+@dataclass(frozen=True)
+class HoldPeriod:
+    """A stretch of a call the executive kept the customer on hold."""
+
+    started_at: float
+    # None while the hold is still on.
+    ended_at: float | None = None
+
+    @property
+    def seconds(self) -> float:
+        """How long it lasted; 0 while it is still on."""
+        return 0.0 if self.ended_at is None else max(0.0, self.ended_at - self.started_at)
+
+
 class ConversationAlreadyCompletedError(Exception):
     """Raised when something tries to mutate a call that has already ended
     (e.g. an utterance arriving after the status webhook completed the
@@ -24,6 +66,15 @@ class ConversationAlreadyCompletedError(Exception):
     def __init__(self, call_id: str) -> None:
         self.call_id = call_id
         super().__init__(f"Call is already completed: {call_id!r}")
+
+
+class CallOnHoldError(ValueError):
+    """Raised when a line is added by hand to a call that is on hold:
+    nothing said during a hold is part of the conversation."""
+
+    def __init__(self, call_id: str) -> None:
+        self.call_id = call_id
+        super().__init__("The call is on hold. Resume it to carry on.")
 
 
 class ConversationAlreadyExistsError(Exception):
@@ -57,6 +108,8 @@ class Conversation:
     direction: CallDirection | None = None
     location_id: str | None = None
     executive_user_id: str | None = None
+    # Each time the call was put on hold, oldest first (see hold()).
+    holds: tuple[HoldPeriod, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.call_id.strip():
@@ -153,8 +206,43 @@ class Conversation:
         if self.location_id is None:
             self.location_id = location_id
 
+    # ---- On hold ----
+
+    @property
+    def on_hold(self) -> bool:
+        return bool(self.holds) and self.holds[-1].ended_at is None
+
+    @property
+    def hold_seconds(self) -> float:
+        """The time spent on hold, in holds that have ended."""
+        return sum(hold.seconds for hold in self.holds)
+
+    @property
+    def phase(self) -> CallPhase:
+        answered = self.executive_user_id is not None or bool(self._utterances)
+        return call_phase(self.status, self.direction, answered, self.on_hold)
+
+    def hold(self, at: float) -> bool:
+        """Put the call on hold. False when it already is."""
+        if self.status == ConversationStatus.COMPLETED:
+            raise ConversationAlreadyCompletedError(self.call_id)
+        if self.on_hold:
+            return False
+        self.holds = (*self.holds, HoldPeriod(started_at=at))
+        return True
+
+    def resume(self, at: float) -> bool:
+        """Take the call off hold. False when it is not on hold."""
+        if not self.on_hold:
+            return False
+        held = self.holds[-1]
+        self.holds = (*self.holds[:-1], replace(held, ended_at=max(at, held.started_at)))
+        return True
+
     def complete(self, end_time: float) -> None:
         if end_time < self.start_time:
             raise ValueError("end_time cannot be before start_time.")
+        # A call that ends on hold: the hold ends with it.
+        self.resume(end_time)
         self.end_time = end_time
         self.status = ConversationStatus.COMPLETED

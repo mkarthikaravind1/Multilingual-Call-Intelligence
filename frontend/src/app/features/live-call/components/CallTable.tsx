@@ -42,7 +42,7 @@ export function CallTable({ calls }: CallTableProps) {
             </small>
           </span>
           <span className="table-cell call-history__status" role="cell" data-label="Status">
-            <CallStatusBadge status={call.status} />
+            <CallStatusBadge status={call.status} phase={call.phase} />
             {call.escalationLevel && call.escalationStatus !== 'resolved' && (
               <EscalationLevelBadge level={call.escalationLevel} />
             )}

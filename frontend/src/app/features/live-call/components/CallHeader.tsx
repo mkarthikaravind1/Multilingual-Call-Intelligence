@@ -8,7 +8,12 @@ import type {
   LiveSocketStatus,
 } from '../services/liveCallSocket'
 
-import { formatCallDirection } from '../adapters/toViewModel'
+import {
+  formatAiStatus,
+  formatCallDirection,
+  formatCallPhase,
+  formatLoggingStatus,
+} from '../adapters/toViewModel'
 import { useCallDirectory } from '../hooks/useCallDirectory'
 import { ConnectionStatus } from './ConnectionStatus'
 
@@ -23,6 +28,13 @@ type CallHeaderProps = {
   isLiveSession: boolean
   onStartCall: () => void
   onCompleteCall: () => void
+  // Put the call on hold (true) or take it off hold.
+  onSetHold?: (onHold: boolean) => void
+  isChangingHold?: boolean
+  // What the AI is doing with the call right now, and where its record
+  // stands; shown beside the call's own status.
+  aiStatus?: string | null
+  loggingStatuses?: string[]
   // Extra controls shown in the same box (e.g. test audio).
   children?: ReactNode
 }
@@ -36,9 +48,14 @@ export function CallHeader({
   isLiveSession,
   onStartCall,
   onCompleteCall,
+  onSetHold,
+  isChangingHold = false,
+  aiStatus = null,
+  loggingStatuses = [],
   children,
 }: CallHeaderProps) {
   const isActive = call?.status.toLowerCase() === 'active'
+  const isOnHold = call?.phase === 'on_hold'
   const directory = useCallDirectory()
   const nameOf = (entries: typeof directory.locations, id: string | null) =>
     entries.find((entry) => entry.id === id)?.name ?? null
@@ -91,15 +108,53 @@ export function CallHeader({
           </button>
         )}
 
+        {call && isActive && onSetHold && (
+          <button
+            type="button"
+            className="live-call__secondary-button"
+            onClick={() => onSetHold(!isOnHold)}
+            disabled={isChangingHold || isCompleting}
+            aria-pressed={isOnHold}
+            title={
+              isOnHold
+                ? 'Take the customer off hold'
+                : 'While on hold, nothing is transcribed or analysed'
+            }
+          >
+            {isOnHold ? 'Resume call' : 'Hold'}
+          </button>
+        )}
+
         <div className="live-call__header-status">
           {takenBy && <span className="live-call__taken-by">{takenBy}</span>}
           {call && (
             <span
-              className={`live-call__call-status live-call__call-status--${call.status.toLowerCase()}`}
+              className={`live-call__call-status live-call__call-status--${
+                call.phase ?? call.status.toLowerCase()
+              }`}
+              title="Call status"
             >
-              {call.status}
+              {formatCallPhase(call.phase, call.status)}
             </span>
           )}
+          {aiStatus && (
+            <span
+              className={`live-call__ai-status live-call__ai-status--${aiStatus}`}
+              title="What the AI is doing now"
+            >
+              <span className="live-call__ai-status-dot" aria-hidden="true" />
+              AI: {formatAiStatus(aiStatus)}
+            </span>
+          )}
+          {loggingStatuses.map((status) => (
+            <span
+              key={status}
+              className={`live-call__logging-status live-call__logging-status--${status}`}
+              title="Call record"
+            >
+              {formatLoggingStatus(status)}
+            </span>
+          ))}
 
           <ConnectionStatus
             status={connectionStatus}

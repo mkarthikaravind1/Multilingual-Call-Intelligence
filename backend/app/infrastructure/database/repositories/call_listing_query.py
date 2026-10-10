@@ -103,6 +103,7 @@ class PostgresCallListingQuery(CallListingQuery):
                 location.name.label("location_name"),
                 conversation.executive_user_id,
                 func.coalesce(executive.display_name, executive.email).label("executive_name"),
+                conversation.holds,
             )
             .outerjoin(location, location.location_id == conversation.location_id)
             .outerjoin(executive, executive.user_id == conversation.executive_user_id)
@@ -188,6 +189,7 @@ class PostgresCallListingQuery(CallListingQuery):
                 location.name.label("location_name"),
                 conversation.executive_user_id,
                 func.coalesce(executive.display_name, executive.email).label("executive_name"),
+                conversation.holds,
             )
             .outerjoin(location, location.location_id == conversation.location_id)
             .outerjoin(executive, executive.user_id == conversation.executive_user_id)
@@ -223,4 +225,6 @@ def _item(row) -> CallListItem:
         location_name=row.location_name,
         executive_user_id=row.executive_user_id,
         executive_name=row.executive_name,
+        # The last hold has not ended.
+        on_hold=bool(row.holds) and row.holds[-1].get("ended_at") is None,
     )

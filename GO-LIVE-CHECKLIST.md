@@ -260,12 +260,15 @@ migration 0020 (an index the page's query uses).
 
 ## 9. In the SRD and not built
 
-- Call status "On Hold".
 - Cloud archive and backups of recordings.
 - A real CRM connection (customers come from a file), WhatsApp delivery,
   failover and disaster recovery, penetration testing: set aside by decision.
 
 ## 10. Known weak spots
+
+- **On Hold is what the executive marks in the web app** (Hold / Resume on
+  the call screen). Plivo does not report a hold made on the handset: the
+  call then stays "Connected" and hold music may be transcribed.
 
 - **Speaker roles on a single mixed stream** are sometimes wrong. Separate
   Plivo tracks (section 3, test 3) should not have this.

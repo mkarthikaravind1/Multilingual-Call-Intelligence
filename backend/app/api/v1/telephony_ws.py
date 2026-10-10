@@ -25,6 +25,7 @@ from app.api.v1.live_handler import LiveCallHandler
 from app.domain.conversation import ConversationAlreadyCompletedError, ConversationStatus
 from app.services.audio_chunking_service import AudioChunk
 from app.services.call_alerts import CallAlertService
+from app.services.call_indicators import AiStatus, CallIndicators
 from app.services.call_recording_store import CallRecording, CallRecordingStore
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
@@ -212,6 +213,7 @@ class _StreamSession:
             call_service,
             live_chunk_processing_service,
             getattr(websocket.app.state.services, "alert_service", None),
+            getattr(websocket.app.state.services, "call_indicators", None),
         )
         # The stream's audio encoding, from its "start" event.
         self._encoding: str | None = None
@@ -431,9 +433,11 @@ class _ChunkWorker:
         call_service: CallService,
         live_chunk_processing_service: LiveChunkProcessingService,
         alert_service: CallAlertService | None = None,
+        indicators: CallIndicators | None = None,
     ) -> None:
         self.call_id = call_id
         self._alert_service = alert_service
+        self._indicators = indicators
         self._call_service = call_service
         self._live_chunk_processing_service = live_chunk_processing_service
         self._queue: asyncio.Queue[
@@ -484,6 +488,7 @@ class _ChunkWorker:
                     is_final,
                     track,
                     self._alert_service,
+                    self._indicators,
                 )
             except Exception:
                 logger.exception("Live pipeline processing failed for call %r", self.call_id)
@@ -552,6 +557,7 @@ async def _process_chunk(
     is_final: bool,
     track: str | None = None,
     alert_service: CallAlertService | None = None,
+    indicators: CallIndicators | None = None,
 ) -> None:
     if live_chunk_processing_service is None:
         logger.error(
@@ -572,7 +578,35 @@ async def _process_chunk(
         logger.info("Dropping buffered telephony audio for completed call %r", call_id)
         LIVE_CHUNKS.inc(stream, "dropped")
         return
+    if conversation.on_hold:
+        # Hold music, or the executive talking to someone else: not part
+        # of the conversation, and not a sign of poor audio either.
+        LIVE_CHUNKS.inc(stream, "on_hold")
+        return
 
+    if indicators is not None and chunk.has_speech:
+        indicators.set_ai(call_id, AiStatus.TRANSCRIBING)
+    try:
+        await _transcribe_chunk(
+            call_id, chunk, chunk_sequence, live_chunk_processing_service, is_final, track,
+            alert_service, stream, conversation,
+        )
+    finally:
+        if indicators is not None and chunk.has_speech:
+            indicators.set_ai(call_id, AiStatus.LISTENING)
+
+
+async def _transcribe_chunk(
+    call_id: str,
+    chunk: BufferedAudioChunk,
+    chunk_sequence: int,
+    live_chunk_processing_service: LiveChunkProcessingService,
+    is_final: bool,
+    track: str | None,
+    alert_service: CallAlertService | None,
+    stream: str,
+    conversation,
+) -> None:
     started = time.monotonic()
     try:
         await run_in_threadpool(

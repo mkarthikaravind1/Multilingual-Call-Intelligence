@@ -1,4 +1,4 @@
-import type { CallDirection } from './dto'
+import type { CallDirection, CallPhase } from './dto'
 import type { EscalationLevel, EscalationStatus } from '../../escalation/types/dto'
 import type { EscalationViewModel } from '../../escalation/types/view-models'
 
@@ -52,6 +52,10 @@ export interface QuestionSuggestionViewModel {
 export interface CallMetadataViewModel {
   callId: string
   status: string
+  // Where the call stands; null from a server that does not say.
+  phase: CallPhase | null
+  // Seconds spent in holds that have ended.
+  holdSeconds: number
   startTime: number
   endTime: number | null
   utteranceCount: number
@@ -143,4 +147,9 @@ export interface CallAnalysisViewModel {
   postCallSummary: PostCallSummaryViewModel | null
   escalation: EscalationViewModel | null
   alerts: CallAlertViewModel[]
+  // What the AI is doing with the call right now; null when nothing.
+  aiStatus: string | null
+  // Where the call's record stands (recording, archive_complete,
+  // export_ready).
+  loggingStatuses: string[]
 }

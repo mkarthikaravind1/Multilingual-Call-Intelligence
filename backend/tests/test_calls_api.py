@@ -143,6 +143,10 @@ def test_start_call():
         "direction": "inbound",
         "location_id": None,
         "executive_user_id": "test-icr",
+        # Started by the executive: connected at once, never on hold.
+        "phase": "connected",
+        "holds": [],
+        "hold_seconds": 0.0,
     }
 
 
@@ -389,6 +393,7 @@ def test_list_calls_returns_newest_first_with_pagination():
     assert second_page["items"][0] == {
         "call_id": "call-a",
         "status": "active",
+        "phase": "connected",
         "start_time": 0.0,
         "end_time": None,
         "utterance_count": 1,

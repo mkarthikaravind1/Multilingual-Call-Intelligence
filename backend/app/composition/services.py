@@ -22,6 +22,7 @@ from app.composition.providers import (
     create_summary_provider,
 )
 from app.core.config import Settings
+from app.services.call_indicators import CallIndicators
 from app.services.audio_processing_pipeline import (
     AudioProcessingPipeline,
     UtteranceProcessor,
@@ -273,6 +274,7 @@ def build_call_workflow_service(
     vehicle_model_resolver: Callable[[str], str | None] | None = None,
     alert_service: CallAlertService | None = None,
     handled_questions: Callable[[str], tuple[str, ...]] | None = None,
+    indicators: CallIndicators | None = None,
 ) -> CallWorkflowService:
     """The one place the call workflow is put together.
 
@@ -341,6 +343,7 @@ def build_call_workflow_service(
         vehicle_model_resolver=vehicle_model_resolver,
         alert_service=alert_service,
         handled_questions=handled_questions,
+        indicators=indicators,
     )
 
 def build_audio_processing_pipeline(
