@@ -218,6 +218,16 @@ class Settings(BaseSettings):
     # escalation, estimate) starts at most this often; speech in between is
     # covered by the next run. Each run makes several LLM calls. 0 = no limit.
     live_analysis_min_interval_seconds: float = 30.0
+    # "standard": as above. "fast": no waiting, so the analysis follows
+    # every customer line (one run at a time per call; lines spoken while
+    # it runs share the next run). Several times the LLM requests and
+    # tokens per call: for a paid LLM key, not a free tier.
+    live_analysis_speed: str = "standard"
+    # How many calls' live analyses run at the same time; the others wait
+    # their turn. Each is a few LLM requests (seconds), so about one worker
+    # per 10 calls in progress at the standard speed, more with "fast".
+    # Bounded by the LLM provider's rate limit rather than by this machine.
+    live_analysis_workers: int = 16
     # On-screen alerts on live calls (see app.services.call_alerts).
     # A complaint not asked about this long after it was detected.
     alert_uncovered_after_seconds: float = 60.0

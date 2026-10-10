@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.call_alert import (
@@ -96,3 +96,17 @@ class PostgresQuestionOutcomeRepository(QuestionOutcomeRepository):
                 )
             )
         return {call_id: tuple(outcomes) for call_id, outcomes in found.items()}
+
+    def totals(self) -> tuple[int, int]:
+        with self._session_factory() as session:
+            counts = dict(
+                session.execute(
+                    select(QuestionOutcomeModel.outcome, func.count()).group_by(
+                        QuestionOutcomeModel.outcome
+                    )
+                ).all()
+            )
+        return (
+            counts.get(QuestionOutcomeChoice.ACCEPTED.value, 0),
+            counts.get(QuestionOutcomeChoice.SKIPPED.value, 0),
+        )

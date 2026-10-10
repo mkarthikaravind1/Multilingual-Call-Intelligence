@@ -757,7 +757,8 @@ def _build_live_chunk_processing_service(
             # LiveAnalysisScheduler), so it never delays the next chunk.
             workflow_service=LiveAnalysisScheduler(
                 workflow_service,
-                min_interval_seconds=settings.live_analysis_min_interval_seconds,
+                min_interval_seconds=live_analysis_interval_seconds(settings),
+                max_workers=max(1, settings.live_analysis_workers),
             ),
             diarization_segments=(),
             settings=settings,
@@ -767,6 +768,18 @@ def _build_live_chunk_processing_service(
         ),
         "Live chunk processing is not available",
     )
+
+
+def live_analysis_interval_seconds(settings: Settings) -> float:
+    """How long a call's next live analysis waits after the previous one
+    started: LIVE_ANALYSIS_MIN_INTERVAL_SECONDS, or none at all with
+    LIVE_ANALYSIS_SPEED=fast."""
+    speed = settings.live_analysis_speed.strip().lower()
+    if speed == "fast":
+        return 0.0
+    if speed != "standard":
+        logger.warning("Unknown LIVE_ANALYSIS_SPEED %r; using standard", speed)
+    return settings.live_analysis_min_interval_seconds
 
 
 def _warm_up_live_models(settings: Settings) -> None:

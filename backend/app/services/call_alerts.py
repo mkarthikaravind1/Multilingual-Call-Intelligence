@@ -237,6 +237,11 @@ class QuestionOutcomeRepository(ABC):
         """Each call's outcomes, oldest first; calls without any are left out."""
         raise NotImplementedError
 
+    @abstractmethod
+    def totals(self) -> tuple[int, int]:
+        """(accepted, skipped) over every call."""
+        raise NotImplementedError
+
 
 class InMemoryQuestionOutcomeRepository(QuestionOutcomeRepository):
     def __init__(self) -> None:
@@ -252,6 +257,9 @@ class InMemoryQuestionOutcomeRepository(QuestionOutcomeRepository):
             if outcome.call_id in wanted:
                 found.setdefault(outcome.call_id, []).append(outcome)
         return {call_id: tuple(outcomes) for call_id, outcomes in found.items()}
+
+    def totals(self) -> tuple[int, int]:
+        return count_outcomes(self._outcomes.values())
 
 
 def count_outcomes(outcomes: Iterable[QuestionOutcome]) -> tuple[int, int]:

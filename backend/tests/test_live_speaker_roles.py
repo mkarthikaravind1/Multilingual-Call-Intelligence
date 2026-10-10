@@ -604,7 +604,10 @@ def test_follow_up_analysis_waits_for_the_minimum_interval():
                 scheduler.request_analysis(call_id)  # speech arrived meanwhile
 
     scheduler = LiveAnalysisScheduler(
-        Workflow(), executor=Inline(), min_interval_seconds=5.0, sleep=slept.append
+        Workflow(),
+        executor=Inline(),
+        min_interval_seconds=5.0,
+        later=lambda seconds, work: (slept.append(seconds), work()),
     )
     scheduler.request_analysis("c")
 

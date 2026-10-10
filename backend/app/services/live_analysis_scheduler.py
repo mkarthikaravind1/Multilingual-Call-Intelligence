@@ -10,7 +10,10 @@ analysis runs here, per call, in the background:
 - at most one analysis runs per call at a time;
 - utterances that arrive while it runs are covered by a single follow-up
   analysis of the whole conversation (analysis always reads the full call),
-  so a burst of speech costs one round of LLM calls, not one per utterance.
+  so a burst of speech costs one round of LLM calls, not one per utterance;
+- a call waiting out its interval before the follow-up holds no worker, and
+  after each analysis a call goes to the back of the queue: the workers are
+  shared between all calls in progress, however many there are.
 """
 
 import logging
@@ -46,13 +49,14 @@ class LiveAnalysisScheduler:
         executor: Executor | None = None,
         max_workers: int = 4,
         min_interval_seconds: float = 0.0,
-        sleep: Callable[[float], None] = time.sleep,
+        later: Callable[[float, Callable[[], None]], None] | None = None,
     ) -> None:
         self._workflow = workflow
         # A follow-up analysis starts no sooner than this after the previous
         # one started: each run makes several (rate-limited) LLM calls.
         self._min_interval = max(0.0, min_interval_seconds)
-        self._sleep = sleep
+        # Runs the work after that many seconds, without holding a worker.
+        self._later = later or _on_a_timer
         # call_id -> when its latest analysis started.
         self._last_start: dict[str, float] = {}
         self._executor = executor
@@ -88,23 +92,26 @@ class LiveAnalysisScheduler:
         with self._idle:
             return self._idle.wait_for(lambda: not self._running, timeout)
 
-    def _run(self, call_id: str) -> None:
-        while True:
-            wait = self._min_interval - (time.monotonic() - self._last_start.get(call_id, -1e9))
-            if wait > 0:
-                self._sleep(wait)
-            self._last_start[call_id] = time.monotonic()
-            try:
-                self._workflow.analyze_latest_speech(call_id)
-            except Exception:
-                logger.exception("Live analysis failed for call %r", call_id)
-            with self._lock:
-                if self._running.get(call_id):
-                    self._running[call_id] = False  # analyse the newer speech
-                    continue
+    def _run(self, call_id: str, waited: bool = False) -> None:
+        wait = self._min_interval - (time.monotonic() - self._last_start.get(call_id, -1e9))
+        if wait > 0 and not waited:
+            # Come back when the interval is over; meanwhile this worker
+            # analyses other calls.
+            self._later(wait, lambda: self._submit(lambda: self._run(call_id, waited=True)))
+            return
+        self._last_start[call_id] = time.monotonic()
+        try:
+            self._workflow.analyze_latest_speech(call_id)
+        except Exception:
+            logger.exception("Live analysis failed for call %r", call_id)
+        with self._lock:
+            if not self._running.get(call_id):
                 self._running.pop(call_id, None)
                 self._idle.notify_all()
                 return
+            self._running[call_id] = False  # analyse the newer speech
+        # Behind the calls already waiting for a worker.
+        self._submit(lambda: self._run(call_id))
 
     def _submit(self, work: Callable[[], None]) -> None:
         if self._executor is None:
@@ -112,3 +119,9 @@ class LiveAnalysisScheduler:
                 max_workers=self._max_workers, thread_name_prefix="live-analysis"
             )
         self._executor.submit(work)
+
+
+def _on_a_timer(seconds: float, work: Callable[[], None]) -> None:
+    timer = threading.Timer(seconds, work)
+    timer.daemon = True
+    timer.start()

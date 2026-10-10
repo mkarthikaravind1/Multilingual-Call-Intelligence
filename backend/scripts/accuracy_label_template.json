@@ -1,0 +1,5 @@
+{
+  "transcript": "ICR: Good morning, how can I help you?\nCUSTOMER: My car was due yesterday and nobody called me.\nICR: I am sorry about that, let me check.\nCUSTOMER: And the bill is higher than I was told.",
+  "categories": ["Turnaround Time", "Communication", "Cost"],
+  "sentiment": "FRUSTRATED"
+}

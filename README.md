@@ -558,6 +558,18 @@ With the backend running, interactive OpenAPI docs are at
 | Test calls | `/test-calls` (disabled in production) |
 | Ops (no prefix) | `/health/live`, `/health/ready`, `/metrics` |
 
+### Readiness tools
+
+Run from `backend/`. What to fill in for each provider, and the test to run
+after, is in [GO-LIVE-CHECKLIST.md](GO-LIVE-CHECKLIST.md).
+
+| Tool | What it does |
+|---|---|
+| `python -m scripts.measure_accuracy <folder>` | Scores labelled recordings against the SRD's accuracy targets (speech recognition, complaint categories, several categories, sentiment, question relevance) and writes a report. Uses the real providers. |
+| `python -m scripts.load_test --calls 50` | Plays that many two-sided calls at once into its own copy of the backend, with stand-ins for speech recognition and the AI; says whether it kept up. Costs nothing and touches no real service. |
+| `LIVE_ANALYSIS_SPEED=fast` | Live analysis after every customer line instead of every 30 seconds (several times the tokens). `LIVE_ANALYSIS_WORKERS` sets how many calls are analysed at once. |
+
+
 ## Security considerations
 
 - JWT bearer authentication on every REST endpoint; roles checked on
