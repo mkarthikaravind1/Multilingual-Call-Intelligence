@@ -1,11 +1,9 @@
 from dataclasses import dataclass, replace
 import logging
 import time
-from typing import Callable, Protocol, TypeVar
+from typing import Callable, Protocol
 
-from app.ai.llm.client import rate_limit_in
 from app.ai.sentiment.provider import SentimentResult
-from app.ai.summary.provider import PostCallSummaryRequest
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.customer_contact import CustomerContact
@@ -14,6 +12,7 @@ from app.domain.post_call_summary import PostCallSummary
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.service_estimate import CallServiceEstimate
 from app.domain.utterance import SpeakerRole, Utterance
+from app.services.best_effort import best_effort
 from app.services.call_service import CallService
 from app.services.conversation_analysis_service import (
     ConversationAnalysisResult,
@@ -35,6 +34,7 @@ from app.services.live_analysis_store import (
 )
 from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
 from app.services.next_question_service import NextQuestionService
+from app.services.post_call_processor import PostCallProcessor
 from app.services.post_call_summary_repository import (
     InMemoryPostCallSummaryRepository,
     PostCallSummaryRepository,
@@ -53,12 +53,6 @@ class CallAnalysisResult:
     post_call_summary: PostCallSummary | None = None
     # None when the call has never escalated (or escalation is not wired).
     escalation: Escalation | None = None
-
-_T = TypeVar("_T")
-_RATE_LIMIT_ATTEMPTS = 3
-# Waits longer than this (a daily limit) are left to the repair job.
-_MAX_RATE_LIMIT_WAIT_SECONDS = 60.0
-_DEFAULT_RATE_LIMIT_WAIT_SECONDS = 20.0
 
 
 def _customer_speech(conversation: Conversation) -> tuple[int, int]:
@@ -116,32 +110,20 @@ class CallWorkflowService:
         vehicle_model_resolver: Callable[[str], str | None] | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        # Waits out a short LLM rate limit during post-call processing.
-        self._sleep = sleep
         # The model of the caller's vehicle (from the CRM), so the estimate
         # uses that model's prices; None when it is not known.
         self._vehicle_model_resolver = vehicle_model_resolver
-        # After the call: a better transcript of the whole call (e.g. from
-        # its recording, see PostCallRetranscriptionService), or None.
-        self._transcript_reviser = transcript_reviser
         self._escalation_service = escalation_service
         self._complaint_lifecycle_service = complaint_lifecycle_service
-        self._customer_id_resolver = customer_id_resolver
-        self._emerging_complaint_service = emerging_complaint_service
-        self._emerging_complaint_auto_discovery = emerging_complaint_auto_discovery
         self._call_service = call_service
         self._coverage_repository = coverage_repository
         self._analysis_service = analysis_service
         self._next_question_service = next_question_service
         self._estimation_service = estimation_service
-        self._post_call_summary_service = post_call_summary_service
-        self._customer_summary_delivery_service = customer_summary_delivery_service
-        self._customer_contact_resolver = customer_contact_resolver
         self._learning_recorder = learning_recorder
         self._post_call_summary_repository = (
             post_call_summary_repository or InMemoryPostCallSummaryRepository()
         )
-        self._customer_summary_enabled = customer_summary_enabled
         # The analysis of each active call's latest speech. Reads of an
         # active call return it rather than re-running the AI providers, so
         # polling a call costs no LLM calls. Kept in the live state store
@@ -153,6 +135,26 @@ class CallWorkflowService:
         # call_id -> _customer_speech() at its last live analysis. Per
         # instance: a call's stream (and so its live analysis) is on one.
         self._analysed_customer_speech: dict[str, tuple[int, int]] = {}
+        self._post_call = PostCallProcessor(
+            call_service=call_service,
+            coverage_repository=coverage_repository,
+            analysis_service=analysis_service,
+            post_call_summary_service=post_call_summary_service,
+            post_call_summary_repository=self._post_call_summary_repository,
+            live_analysis=self._live_analysis,
+            forget_live_result=self._forget_live_result,
+            estimate=self._estimate_call,
+            customer_summary_delivery_service=customer_summary_delivery_service,
+            customer_contact_resolver=customer_contact_resolver,
+            customer_summary_enabled=customer_summary_enabled,
+            escalation_service=escalation_service,
+            complaint_lifecycle_service=complaint_lifecycle_service,
+            customer_id_resolver=customer_id_resolver,
+            emerging_complaint_service=emerging_complaint_service,
+            emerging_complaint_auto_discovery=emerging_complaint_auto_discovery,
+            transcript_reviser=transcript_reviser,
+            sleep=sleep,
+        )
 
     def process_utterance(
         self,
@@ -201,7 +203,7 @@ class CallWorkflowService:
         AI analysis (seconds behind, and dropped when the call ends) gets to it."""
         if self._escalation_service is None:
             return
-        self._best_effort(
+        best_effort(
             "Quick escalation check", conversation.call_id,
             self._escalation_service.assess_what_was_said, conversation,
         )
@@ -349,23 +351,10 @@ class CallWorkflowService:
             analysis.escalation_signals,
         )
 
-    def _assess_final_escalation(
-        self, conversation: Conversation, analysis: ConversationAnalysisResult
-    ) -> None:
-        """Escalation is otherwise assessed only during the call, and the
-        last live analysis is dropped when the call ends: without this, what
-        the customer said at the end (a manager demand, a refund) is missed."""
-        if self._escalation_service is None:
-            return
-        self._best_effort(
-            "Final escalation assessment", conversation.call_id,
-            self._escalation_service.assess, conversation, analysis.coverage, analysis.sentiment,
-        )
-
     def _stored_escalation(self, call_id: str) -> Escalation | None:
         if self._escalation_service is None:
             return None
-        return self._best_effort(
+        return best_effort(
             "Reading the escalation", call_id, self._escalation_service.get, call_id
         )
 
@@ -378,146 +367,18 @@ class CallWorkflowService:
         return completion
 
     def process_completed_call(self, call_id: str) -> PostCallSummary | None:
-        """Generate, store and deliver the post-call summary once.
-
-        Safe to repeat: a stored summary is never regenerated. Failures are
-        logged and leave the call COMPLETED.
-        """
-        conversation = self._call_service.get_call(call_id)
-        if conversation.status != ConversationStatus.COMPLETED:
-            logger.warning("Skipping post-call processing for active call %r", call_id)
-            return None
-        self._forget_live_result(call_id)
-        # Open live views learn that the call has completed.
-        self._live_analysis.touch(call_id)
-
-        existing = self._post_call_summary_repository.get(call_id)
-        if existing is not None:
-            return existing
-
-        conversation = self._revise_transcript(conversation)
-
-        if conversation.utterance_count == 0:
-            # e.g. busy / no-answer: nothing was said, so there is nothing to summarise.
-            logger.info("Skipping post-call summary for call %r without utterances", call_id)
-            return None
-
-        try:
-            analysis = self._waiting_out_rate_limits(
-                call_id, lambda: self._analyze_and_save_coverage(conversation)
-            )
-        except Exception:
-            logger.exception("Final analysis failed for call %r", call_id)
-            return None
-
-        self._close_out_complaints(call_id, analysis.coverage)
-        self._assess_final_escalation(conversation, analysis)
-
-        request = PostCallSummaryRequest(
-            call_id=conversation.call_id,
-            conversation=conversation,
-            complaint_coverages=analysis.coverage.complaints,
-            sentiment=analysis.sentiment,
-            service_estimate=self._estimate_call(conversation),
-        )
-        try:
-            summary = self._waiting_out_rate_limits(
-                call_id, lambda: self._post_call_summary_service.generate_summary(request)
-            )
-        except Exception:
-            logger.exception("Post-call summary generation failed for call %r", call_id)
-            return None
-
-        if summary is None:
-            logger.warning("No post-call summary was produced for call %r", call_id)
-            return None
-
-        try:
-            stored = self._post_call_summary_repository.add_if_absent(summary)
-        except Exception:
-            logger.exception("Storing the post-call summary failed for call %r", call_id)
-            return None
-
-        self._deliver_summary(stored)
-        # Lets open live views pick up the summary.
-        self._live_analysis.touch(call_id)
-        return stored
-
-    def _waiting_out_rate_limits(self, call_id: str, step: Callable[[], _T]) -> _T:
-        """Run a post-call step, waiting and trying again (at most
-        _RATE_LIMIT_ATTEMPTS times) while the LLM is rate limited for a
-        short while: the call's last live analysis often used the minute's
-        tokens. A longer limit (e.g. the daily one) is left to the post-call
-        repair job."""
-        for attempt in range(1, _RATE_LIMIT_ATTEMPTS + 1):
-            try:
-                return step()
-            except Exception as exc:
-                limited = rate_limit_in(exc)
-                wait = None if limited is None else limited.retry_after_seconds
-                if wait is None and limited is not None:
-                    wait = _DEFAULT_RATE_LIMIT_WAIT_SECONDS
-                if wait is None or wait > _MAX_RATE_LIMIT_WAIT_SECONDS or attempt == _RATE_LIMIT_ATTEMPTS:
-                    raise
-                logger.info(
-                    "LLM rate limited during post-call processing of call %r; "
-                    "trying again in %.0f s",
-                    call_id,
-                    wait,
-                )
-                self._sleep(wait + 1.0)
-        raise AssertionError("unreachable")
-
-    def _revise_transcript(self, conversation: Conversation) -> Conversation:
-        """The completed call with its revised transcript, when there is
-        one; on any failure the live transcript stays."""
-        if self._transcript_reviser is None:
-            return conversation
-        try:
-            utterances = self._transcript_reviser(conversation)
-            if not utterances:
-                return conversation
-            revised = self._call_service.replace_transcript(conversation.call_id, utterances)
-        except Exception:
-            logger.exception(
-                "Revising the transcript of call %r failed; keeping the live one",
-                conversation.call_id,
-            )
-            return conversation
-        # Open views pick up the new transcript.
-        self._live_analysis.touch(conversation.call_id)
-        return revised
+        """Generate, store and deliver the post-call summary once (see
+        PostCallProcessor). Safe to repeat; failures are logged and leave
+        the call COMPLETED."""
+        return self._post_call.process(call_id)
 
     def _track_complaints(self, coverage: ConversationCoverage) -> None:
         if self._complaint_lifecycle_service is None:
             return
-        self._best_effort(
+        best_effort(
             "Complaint lifecycle tracking", coverage.call_id,
             self._complaint_lifecycle_service.sync_from_coverage, coverage,
         )
-
-    def _close_out_complaints(self, call_id: str, coverage: ConversationCoverage) -> None:
-        """After the call: final complaint states, the customer link, open
-        complaints flagged for follow-up, and a discovery run requested."""
-        if self._complaint_lifecycle_service is not None:
-            self._track_complaints(coverage)
-            customer_id = (
-                self._best_effort(
-                    "Resolving the customer", call_id, self._customer_id_resolver, call_id
-                )
-                if self._customer_id_resolver is not None
-                else None
-            )
-            self._best_effort(
-                "Closing out the complaints", call_id,
-                self._complaint_lifecycle_service.close_call, call_id, customer_id,
-            )
-
-        if self._emerging_complaint_service is not None and self._emerging_complaint_auto_discovery:
-            self._best_effort(
-                "Requesting emerging-complaint discovery", call_id,
-                self._emerging_complaint_service.request_discovery,
-            )
 
     def _analyze_and_save_coverage(
         self,
@@ -555,24 +416,6 @@ class CallWorkflowService:
             escalation=self._stored_escalation(conversation.call_id),
         )
 
-    def _deliver_summary(self, summary: PostCallSummary) -> None:
-        if (
-            not self._customer_summary_enabled
-            or self._customer_summary_delivery_service is None
-            or self._customer_contact_resolver is None
-        ):
-            return
-
-        def deliver() -> None:
-            contact = self._customer_contact_resolver(summary.call_id)
-            if contact is not None:
-                self._customer_summary_delivery_service.send_summary_to_customer(
-                    summary=summary,
-                    contact=contact,
-                )
-
-        self._best_effort("Customer summary delivery", summary.call_id, deliver)
-
     def _vehicle_model(self, call_id: str) -> str | None:
         if self._vehicle_model_resolver is None:
             return None
@@ -588,20 +431,9 @@ class CallWorkflowService:
         """Every service the call has needed so far, added up. A failure
         here never stops the rest of the analysis. live: from the price
         list's keywords only (no LLM request on every update)."""
-        return self._best_effort(
+        return best_effort(
             "Service estimate", conversation.call_id,
             lambda: self._estimation_service.estimate_call(
                 conversation.utterances, self._vehicle_model(conversation.call_id), live=live
             ),
         )
-
-    @staticmethod
-    def _best_effort(what: str, call_id: str, action: Callable[..., _T], *args) -> _T | None:
-        """action(*args), for a step the call's processing must not stop for
-        (lifecycle, escalation, delivery, estimate...): a failure is logged
-        and gives None."""
-        try:
-            return action(*args)
-        except Exception:
-            logger.exception("%s failed for call %r", what, call_id)
-            return None
