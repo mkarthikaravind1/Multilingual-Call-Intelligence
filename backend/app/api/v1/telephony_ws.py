@@ -165,151 +165,224 @@ async def _serve_stream(
         await websocket.close(code=STREAM_INTERNAL_ERROR_CLOSE_CODE)
         return
 
-    # One buffer per track when the two sides of the call arrive
-    # separately, else one (key None) for the mixed audio.
-    buffers: dict[str | None, TelephonyAudioBuffer] = {}
-    # Chunks are processed in order on a worker, off this receive loop: one
-    # chunk can take longer to process than the websocket keepalive allows,
-    # and a socket that stops reading gets dropped mid-call.
-    worker = _ChunkWorker(call_id, call_service, live_chunk_processing_service)
-    # The stream's audio encoding, from its "start" event.
-    encoding: str | None = None
-    # The call's audio, transcribed again in full after the call (see
-    # PostCallRetranscriptionService); None when not kept.
-    recording: CallRecording | None = None
-    recording_settings = get_settings()
+    await _StreamSession(
+        websocket,
+        call_id,
+        parse_stream_event,
+        call_service,
+        live_chunk_processing_service,
+        telephony_call_service,
+        flush_after_seconds,
+        recording_store,
+    ).run()
 
-    def store_recording() -> None:
-        nonlocal recording
-        if recording is not None and recording_store is not None and recording.tracks:
-            recording_store.put(call_id, recording)
-        recording = None
 
-    # While the stream is open, a terminal status waits for it to drain
-    # before completing the call (see TelephonyCallService).
-    if telephony_call_service is not None:
-        telephony_call_service.stream_opened(call_id)
+class _StreamSession:
+    """One open media stream of a call: buffers its audio into chunks for
+    the worker, keeps the recording, and notices when the call has ended
+    elsewhere."""
 
-    next_completion_check = 0.0
-    next_heartbeat = time.monotonic() + STREAM_HEARTBEAT_SECONDS
-    try:
-        while True:
-            message = await websocket.receive()
-            if message["type"] == "websocket.disconnect":
-                return
+    def __init__(
+        self,
+        websocket: WebSocket,
+        call_id: str,
+        parse_stream_event: Callable[[Mapping[str, Any], str | None], MediaStreamEvent],
+        call_service: CallService,
+        live_chunk_processing_service: LiveChunkProcessingService,
+        telephony_call_service: TelephonyCallService | None,
+        flush_after_seconds: float,
+        recording_store: CallRecordingStore | None,
+    ) -> None:
+        self._websocket = websocket
+        self._call_id = call_id
+        self._parse_stream_event = parse_stream_event
+        self._call_service = call_service
+        self._telephony_call_service = telephony_call_service
+        self._flush_after_seconds = flush_after_seconds
+        self._recording_store = recording_store
+        self._recording_max_seconds = get_settings().call_recording_max_seconds
+        # One buffer per track when the two sides of the call arrive
+        # separately, else one (key None) for the mixed audio.
+        self._buffers: dict[str | None, TelephonyAudioBuffer] = {}
+        # Chunks are processed in order on a worker, off the receive loop: one
+        # chunk can take longer to process than the websocket keepalive allows,
+        # and a socket that stops reading gets dropped mid-call.
+        self._worker = _ChunkWorker(call_id, call_service, live_chunk_processing_service)
+        # The stream's audio encoding, from its "start" event.
+        self._encoding: str | None = None
+        # The call's audio, transcribed again in full after the call (see
+        # PostCallRetranscriptionService); None when not kept.
+        self._recording: CallRecording | None = None
+        self._next_completion_check = 0.0
+        self._next_heartbeat = time.monotonic() + STREAM_HEARTBEAT_SECONDS
 
-            raw_text = message.get("text")
-            if raw_text is None:
-                logger.debug("Ignoring non-text telephony stream frame for call %r", call_id)
-                continue
+    async def run(self) -> None:
+        """Serve the stream until it stops, disconnects or the call ends."""
+        # While the stream is open, a terminal status waits for it to drain
+        # before completing the call (see TelephonyCallService).
+        if self._telephony_call_service is not None:
+            self._telephony_call_service.stream_opened(self._call_id)
 
-            try:
-                raw_event = json.loads(raw_text)
-            except json.JSONDecodeError:
-                logger.warning("Malformed (non-JSON) telephony stream frame for call %r", call_id)
-                continue
-
-            try:
-                stream_event = parse_stream_event(raw_event, encoding)
-            except TelephonyStreamError as exc:
-                logger.warning("Invalid telephony stream frame for call %r: %s", call_id, exc)
-                continue
-
-            if stream_event.event_type == "start":
-                if telephony_call_service is not None:
-                    telephony_call_service.stream_opened(call_id)
-                # A second "start" on the same connection (e.g. a
-                # provider-side stream restart) without a "stop" first
-                # must not silently discard whatever was already buffered.
-                _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=False)
-                # The new stream's chunks and times start at 0 again (as do
-                # a reconnected socket's); they carry on from the call's
-                # previous ones.
-                worker.stream_started()
-                settings = get_settings()
-                encoding = stream_event.encoding
-                split = set(TRACK_ROLES) <= set(stream_event.tracks)
-                # A restarted stream starts its chunk times at 0 again, so
-                # the audio recorded so far no longer lines up: stop keeping it.
-                recording = (
-                    CallRecording(
-                        sample_rate=stream_event.sample_rate or 8000,
-                        max_seconds=recording_settings.call_recording_max_seconds,
-                    )
-                    if recording_store is not None and not buffers
-                    else None
-                )
-                buffers = {
-                    track: TelephonyAudioBuffer(
-                        sample_rate=stream_event.sample_rate or 8000,
-                        flush_after_seconds=flush_after_seconds,
-                        pause_seconds=settings.plivo_stream_pause_seconds,
-                        min_speech_seconds=settings.plivo_stream_min_speech_seconds,
-                        silence_rms=settings.plivo_stream_silence_rms,
-                    )
-                    for track in (tuple(TRACK_ROLES) if split else (None,))
-                }
-                if split:
-                    logger.info(
-                        "Call %r streams the customer and the ICR as separate tracks", call_id
-                    )
-
-            elif stream_event.event_type == "media":
-                track = stream_event.track if None not in buffers else None
-                buffer = buffers.get(track)
-                if buffer is not None:
-                    accepted = buffer.accept(stream_event.sequence, stream_event.audio or b"")
-                    if accepted:
-                        if recording is not None and stream_event.audio:
-                            recording.append(track, stream_event.audio)
-                        _flush(buffer, worker, track, force=False, min_duration=0.0, is_final=False)
-
-            elif stream_event.event_type == "stop":
-                _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
-                buffers = {}
-                await worker.drain()
-                store_recording()
-                # All of this stream's audio has been processed.
-                if telephony_call_service is not None:
-                    telephony_call_service.stream_drained(call_id)
-
-            # Check whether the call ended elsewhere (the status webhook)
-            # while this socket was still open. Waiting indefinitely for a
-            # "stop" that may never arrive would otherwise strand any
-            # further buffered audio. Media frames check at most once per
-            # COMPLETION_CHECK_SECONDS; other events always check.
-            now = time.monotonic()
-            if stream_event.event_type == "media" and now < next_completion_check:
-                continue
-            next_completion_check = now + COMPLETION_CHECK_SECONDS
-            # Still streaming: keep the stream marked open for the other
-            # instances (the mark expires if this one dies).
-            if buffers and telephony_call_service is not None and now >= next_heartbeat:
-                next_heartbeat = now + STREAM_HEARTBEAT_SECONDS
-                await run_in_threadpool(telephony_call_service.stream_opened, call_id)
-            if await _call_is_completed(call_id, call_service):
-                _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
-                buffers = {}
-                await websocket.close(code=STREAM_CALL_COMPLETED_CLOSE_CODE)
-                return
-    except WebSocketDisconnect:
-        return
-    except Exception:
-        logger.exception("Telephony stream crashed for call %r", call_id)
         try:
-            await websocket.close(code=STREAM_INTERNAL_ERROR_CLOSE_CODE)
-        except RuntimeError:
-            pass  # socket already closed
-    finally:
-        # A disconnect without "stop" must not discard the call's final
-        # audio. _process_chunk drops it if the call already completed.
-        try:
-            _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
-            await worker.close()
+            while True:
+                message = await self._websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    return
+
+                stream_event = self._parse(message)
+                if stream_event is None:
+                    continue
+
+                if stream_event.event_type == "start":
+                    self._on_start(stream_event)
+                elif stream_event.event_type == "media":
+                    self._on_media(stream_event)
+                elif stream_event.event_type == "stop":
+                    await self._on_stop()
+
+                if await self._call_ended_elsewhere(stream_event):
+                    return
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            logger.exception("Telephony stream crashed for call %r", self._call_id)
+            try:
+                await self._websocket.close(code=STREAM_INTERNAL_ERROR_CLOSE_CODE)
+            except RuntimeError:
+                pass  # socket already closed
         finally:
-            store_recording()
-            if telephony_call_service is not None:
-                telephony_call_service.stream_drained(call_id)
+            # A disconnect without "stop" must not discard the call's final
+            # audio. _process_chunk drops it if the call already completed.
+            try:
+                self._flush_all(is_final=True)
+                await self._worker.close()
+            finally:
+                self._store_recording()
+                if self._telephony_call_service is not None:
+                    self._telephony_call_service.stream_drained(self._call_id)
+
+    def _parse(self, message: Mapping[str, Any]) -> MediaStreamEvent | None:
+        """The stream event in a socket message; None (and a log line) for
+        anything that is not one. A bad frame never ends the stream."""
+        raw_text = message.get("text")
+        if raw_text is None:
+            logger.debug("Ignoring non-text telephony stream frame for call %r", self._call_id)
+            return None
+
+        try:
+            raw_event = json.loads(raw_text)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Malformed (non-JSON) telephony stream frame for call %r", self._call_id
+            )
+            return None
+
+        try:
+            return self._parse_stream_event(raw_event, self._encoding)
+        except TelephonyStreamError as exc:
+            logger.warning("Invalid telephony stream frame for call %r: %s", self._call_id, exc)
+            return None
+
+    def _on_start(self, stream_event: MediaStreamEvent) -> None:
+        if self._telephony_call_service is not None:
+            self._telephony_call_service.stream_opened(self._call_id)
+        # A second "start" on the same connection (e.g. a
+        # provider-side stream restart) without a "stop" first
+        # must not silently discard whatever was already buffered.
+        self._flush_all(is_final=False)
+        # The new stream's chunks and times start at 0 again (as do
+        # a reconnected socket's); they carry on from the call's
+        # previous ones.
+        self._worker.stream_started()
+        settings = get_settings()
+        self._encoding = stream_event.encoding
+        split = set(TRACK_ROLES) <= set(stream_event.tracks)
+        # A restarted stream starts its chunk times at 0 again, so
+        # the audio recorded so far no longer lines up: stop keeping it.
+        self._recording = (
+            CallRecording(
+                sample_rate=stream_event.sample_rate or 8000,
+                max_seconds=self._recording_max_seconds,
+            )
+            if self._recording_store is not None and not self._buffers
+            else None
+        )
+        self._buffers = {
+            track: TelephonyAudioBuffer(
+                sample_rate=stream_event.sample_rate or 8000,
+                flush_after_seconds=self._flush_after_seconds,
+                pause_seconds=settings.plivo_stream_pause_seconds,
+                min_speech_seconds=settings.plivo_stream_min_speech_seconds,
+                silence_rms=settings.plivo_stream_silence_rms,
+            )
+            for track in (tuple(TRACK_ROLES) if split else (None,))
+        }
+        if split:
+            logger.info(
+                "Call %r streams the customer and the ICR as separate tracks", self._call_id
+            )
+
+    def _on_media(self, stream_event: MediaStreamEvent) -> None:
+        track = stream_event.track if None not in self._buffers else None
+        buffer = self._buffers.get(track)
+        if buffer is None:
+            return
+        if not buffer.accept(stream_event.sequence, stream_event.audio or b""):
+            return
+        if self._recording is not None and stream_event.audio:
+            self._recording.append(track, stream_event.audio)
+        _flush(buffer, self._worker, track, force=False, min_duration=0.0, is_final=False)
+
+    async def _on_stop(self) -> None:
+        self._flush_all(is_final=True)
+        self._buffers = {}
+        await self._worker.drain()
+        self._store_recording()
+        # All of this stream's audio has been processed.
+        if self._telephony_call_service is not None:
+            self._telephony_call_service.stream_drained(self._call_id)
+
+    async def _call_ended_elsewhere(self, stream_event: MediaStreamEvent) -> bool:
+        """Whether the call ended elsewhere (the status webhook) while this
+        socket was still open, in which case the socket is closed. Waiting
+        indefinitely for a "stop" that may never arrive would otherwise
+        strand any further buffered audio. Media frames check at most once
+        per COMPLETION_CHECK_SECONDS; other events always check."""
+        now = time.monotonic()
+        if stream_event.event_type == "media" and now < self._next_completion_check:
+            return False
+        self._next_completion_check = now + COMPLETION_CHECK_SECONDS
+        # Still streaming: keep the stream marked open for the other
+        # instances (the mark expires if this one dies).
+        if (
+            self._buffers
+            and self._telephony_call_service is not None
+            and now >= self._next_heartbeat
+        ):
+            self._next_heartbeat = now + STREAM_HEARTBEAT_SECONDS
+            await run_in_threadpool(self._telephony_call_service.stream_opened, self._call_id)
+        if not await _call_is_completed(self._call_id, self._call_service):
+            return False
+        self._flush_all(is_final=True)
+        self._buffers = {}
+        await self._websocket.close(code=STREAM_CALL_COMPLETED_CLOSE_CODE)
+        return True
+
+    def _flush_all(self, *, is_final: bool) -> None:
+        """Hand every buffer's audio to the worker, whatever its length
+        (bar a fraction of a second, which is not worth transcribing)."""
+        _flush_all(
+            self._buffers,
+            self._worker,
+            force=True,
+            min_duration=_MIN_FLUSH_AUDIO_SECONDS,
+            is_final=is_final,
+        )
+
+    def _store_recording(self) -> None:
+        recording, self._recording = self._recording, None
+        if recording is not None and self._recording_store is not None and recording.tracks:
+            self._recording_store.put(self._call_id, recording)
 
 
 async def _call_is_completed(call_id: str, call_service: CallService) -> bool:
