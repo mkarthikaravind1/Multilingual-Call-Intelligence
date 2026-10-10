@@ -1,4 +1,5 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.customer_contact import MessagingChannel
@@ -48,6 +49,9 @@ def _to_model(delivery: CustomerSummaryDelivery) -> CustomerSummaryDeliveryModel
     )
 
 
+_UNFINISHED = (DeliveryStatus.FAILED.value, DeliveryStatus.QUEUED.value)
+
+
 class PostgresCustomerSummaryDeliveryRepository(CustomerSummaryDeliveryRepository):
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
@@ -59,6 +63,40 @@ class PostgresCustomerSummaryDeliveryRepository(CustomerSummaryDeliveryRepositor
                 session.delete(existing)
                 session.flush()
             session.add(_to_model(delivery))
+
+    def add_if_absent(self, delivery: CustomerSummaryDelivery) -> bool:
+        try:
+            with self._session_factory() as session, session.begin():
+                session.add(_to_model(delivery))
+        except IntegrityError:
+            # The idempotency key is unique: another run stored it first.
+            return False
+        return True
+
+    def claim_retry(self, delivery_id: str, attempts: int, now: float) -> bool:
+        with self._session_factory() as session, session.begin():
+            claimed = session.execute(
+                update(CustomerSummaryDeliveryModel)
+                .where(
+                    CustomerSummaryDeliveryModel.delivery_id == delivery_id,
+                    CustomerSummaryDeliveryModel.status.in_(_UNFINISHED),
+                    CustomerSummaryDeliveryModel.attempts == attempts,
+                )
+                .values(
+                    status=DeliveryStatus.QUEUED.value, attempts=attempts + 1, updated_at=now
+                )
+            )
+            return claimed.rowcount == 1
+
+    def list_unfinished(self, limit: int) -> tuple[CustomerSummaryDelivery, ...]:
+        with self._session_factory() as session:
+            models = session.scalars(
+                select(CustomerSummaryDeliveryModel)
+                .where(CustomerSummaryDeliveryModel.status.in_(_UNFINISHED))
+                .order_by(CustomerSummaryDeliveryModel.updated_at)
+                .limit(limit)
+            ).all()
+            return tuple(_to_domain(model) for model in models)
 
     def get_by_call_id(self, call_id: str) -> tuple[CustomerSummaryDelivery, ...]:
         with self._session_factory() as session:

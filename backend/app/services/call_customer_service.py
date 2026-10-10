@@ -131,6 +131,15 @@ class CallCustomerService:
         Used for post-call summary delivery."""
         return self.get(call_id).contact
 
+    def resolve_contact_for_delivery(self, call_id: str) -> CustomerContact | None:
+        """Like resolve_contact, but raises CrmUnavailableError when the
+        CRM could not be asked: "no customer" then means there is none,
+        and an outage can be retried instead of losing the message."""
+        view = self.get(call_id)
+        if view.status is CustomerMatchStatus.CRM_UNAVAILABLE:
+            raise CrmUnavailableError(f"CRM unavailable for call {call_id!r}")
+        return view.contact
+
     def resolve_customer_id(self, call_id: str) -> str | None:
         """The CRM id of the customer on this call, if identified."""
         customer = self.get(call_id).customer

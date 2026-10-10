@@ -148,6 +148,24 @@ A Redis lock ensures that only one instance sweeps at a time. Supervisors
 and admins can see waiting calls and retry them under **Administration →
 Post-call processing**, or from a call's post-call analysis page.
 
+## Customer summary texts
+
+With `CUSTOMER_SUMMARY_ENABLED=true` the app refuses to start in production
+unless a real delivery provider is set (`sms_gate` with `SMS_GATE_USERNAME`
+and `SMS_GATE_PASSWORD`).
+
+- Each call's text is recorded before it is sent, so two runs for the same
+  call (a retry overlapping the first attempt) send it once.
+- A text that failed, or whose customer could not be looked up because the
+  CRM was unreachable, is tried again every
+  `CUSTOMER_SUMMARY_RETRY_INTERVAL_SECONDS` (default 300), up to
+  `CUSTOMER_SUMMARY_MAX_ATTEMPTS` attempts (default 5).
+- An SMS longer than `CUSTOMER_SUMMARY_SMS_MAX_PARTS` parts (default 3: about
+  450 English or 200 Tamil characters) is sent without its greeting line if
+  that makes it fit, otherwise replaced by a short standard message.
+- "Sent" means the SMS gateway accepted the text; the phone sends it
+  afterwards, and its delivery reports are not read.
+
 ## Stale calls
 
 A phone call is completed by Plivo's hangup webhook. If that webhook is

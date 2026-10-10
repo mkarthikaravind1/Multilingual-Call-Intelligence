@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
+from app.ai.summary.llm_provider import SAFE_CUSTOMER_MESSAGE
 from app.domain.customer_contact import CustomerContact, MessagingChannel
 from app.domain.post_call_summary import PostCallSummary
+from app.messaging.sms_length import sms_parts
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -41,8 +46,16 @@ class CustomerSummaryMessageService:
     be sent to a customer who has explicitly granted consent.
     """
 
-    def __init__(self, default_channel: MessagingChannel = MessagingChannel.SMS):
+    def __init__(
+        self,
+        default_channel: MessagingChannel = MessagingChannel.SMS,
+        sms_max_parts: int = 3,
+    ):
         self._default_channel = default_channel
+        # The longest SMS sent, in parts (a part is 153 Latin or 67 Tamil
+        # characters): the summary text comes from an LLM, and each part
+        # is a separate SMS from the gateway's SIM. 0 = no limit.
+        self._sms_max_parts = sms_max_parts
 
     def build_message(
         self,
@@ -94,6 +107,21 @@ class CustomerSummaryMessageService:
             if contact.language is None or contact.language.lower() == "en"
             else f"Hello, here is your summary.\n\n"
         )
-        if channel == MessagingChannel.WHATSAPP:
-            return f"{prefix}{customer_text}"
-        return f"{prefix}{customer_text}"
+        message = f"{prefix}{customer_text}"
+        if channel != MessagingChannel.SMS or self._fits(message):
+            return message
+        # Too long for an SMS: first without the greeting line, then
+        # the standard message instead of the summary.
+        if self._fits(customer_text):
+            return customer_text
+        logger.warning(
+            "Customer summary of call %s is %d SMS parts (limit %d); "
+            "sending the standard message",
+            summary.call_id,
+            sms_parts(customer_text),
+            self._sms_max_parts,
+        )
+        return SAFE_CUSTOMER_MESSAGE
+
+    def _fits(self, text: str) -> bool:
+        return self._sms_max_parts <= 0 or sms_parts(text) <= self._sms_max_parts

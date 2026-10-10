@@ -164,6 +164,13 @@ class Settings(BaseSettings):
     customer_summary_sms_sender_id: str = ""
     customer_summary_sms_timeout_seconds: float = 10.0
     customer_summary_sms_retry_attempts: int = 0
+    # The longest SMS sent, in parts (153 Latin or 67 Tamil characters
+    # each); a longer summary is replaced by the standard message. 0 = no limit.
+    customer_summary_sms_max_parts: int = 3
+    # A delivery that failed is tried again every RETRY_INTERVAL seconds
+    # (0 disables the retries) until it was attempted MAX_ATTEMPTS times.
+    customer_summary_retry_interval_seconds: float = 300.0
+    customer_summary_max_attempts: int = 5
     customer_summary_whatsapp_provider: str = "disabled"
     customer_summary_whatsapp_sender_id: str = ""
     customer_summary_whatsapp_timeout_seconds: float = 10.0

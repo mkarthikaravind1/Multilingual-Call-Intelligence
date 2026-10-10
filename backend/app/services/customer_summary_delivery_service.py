@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from time import time
 from uuid import uuid4
 
@@ -11,10 +13,25 @@ from app.domain.post_call_summary import PostCallSummary
 from app.services.customer_summary_message_service import CustomerSummaryMessageService
 from app.services.customer_summary_repository import CustomerSummaryDeliveryRepository
 
+logger = logging.getLogger(__name__)
+
+# Recorded while the customer of a call could not be looked up (e.g. the
+# CRM was unreachable), so the delivery is tried again later.
+UNKNOWN_CUSTOMER_ID = "unknown"
+CUSTOMER_LOOKUP_FAILED = "customer_lookup_failed"
+# A delivery left "queued" this long was interrupted (the process stopped
+# between claiming it and recording the outcome) and may be tried again.
+QUEUED_STALE_SECONDS = 600.0
+_MAX_ERROR_LENGTH = 500
+_RETRY_BATCH = 50
+
 
 class CustomerSummaryDeliveryProvider(ABC):
     # Channels this provider can actually deliver on.
     supported_channels: frozenset[MessagingChannel] = frozenset(MessagingChannel)
+    # False for a provider that sends nothing at all (delivery not set up):
+    # its deliveries are recorded as not sent rather than as sent.
+    delivers: bool = True
 
     @abstractmethod
     def send_summary(
@@ -24,6 +41,19 @@ class CustomerSummaryDeliveryProvider(ABC):
         channel: MessagingChannel,
     ) -> str:
         raise NotImplementedError
+
+    def send_summary_once(
+        self,
+        contact: CustomerContact,
+        message: str,
+        channel: MessagingChannel,
+        delivery_key: str,
+    ) -> str:
+        """Like send_summary, for one delivery that may be attempted again
+        (delivery_key is the same every time). A provider that can tell its
+        gateway "this is the same message" overrides this, so a repeated
+        attempt cannot reach the customer twice."""
+        return self.send_summary(contact, message, channel)
 
 
 @dataclass(frozen=True)
@@ -57,11 +87,14 @@ class CustomerSummaryDeliveryService:
         message_service: CustomerSummaryMessageService | None = None,
         repository: CustomerSummaryDeliveryRepository | None = None,
         require_consent: bool = True,
+        max_attempts: int = 5,
     ):
         self._provider = provider
         self._message_service = message_service
         self._repository = repository
         self._require_consent = require_consent
+        # How many times one delivery is attempted before it stays failed.
+        self._max_attempts = max(1, max_attempts)
 
     def list_for_call(self, call_id: str) -> tuple[CustomerSummaryDelivery, ...]:
         """Delivery records for a call, most recent first."""
@@ -94,36 +127,114 @@ class CustomerSummaryDeliveryService:
             self._repository.save(delivery)
         return delivery
 
-    def _record_failure(
+    # --- Delivering for a call ---
+
+    def deliver_for_call(
         self,
-        request: CustomerSummaryDeliveryRequest,
-        *,
-        reason: str,
-        error: str | None,
-        provider_message_id: str | None = None,
-    ) -> CustomerSummaryDelivery:
+        summary: PostCallSummary,
+        resolve_contact: Callable[[str], CustomerContact | None],
+    ) -> CustomerSummaryDelivery | None:
+        """Send the call's summary to its customer. resolve_contact gives
+        the customer (None: the call has no known customer, so there is
+        nobody to send to) or raises when it cannot tell right now, in
+        which case the delivery is recorded as failed and tried again."""
+        try:
+            contact = resolve_contact(summary.call_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not look up the customer of call %r to send the summary: %s",
+                summary.call_id,
+                type(exc).__name__,
+            )
+            return self._record_lookup_failure(summary, exc)
+        if contact is None:
+            return self._close_unfinished(summary.call_id)
+        return self.send_summary_to_customer(summary=summary, contact=contact)
+
+    def retry_unfinished(
+        self,
+        get_summary: Callable[[str], PostCallSummary | None],
+        resolve_contact: Callable[[str], CustomerContact | None],
+    ) -> int:
+        """Try again the deliveries that failed (or were interrupted) and
+        still have attempts left. Returns how many were sent."""
+        if self._repository is None:
+            return 0
+        sent = 0
         now = time()
-        delivery = CustomerSummaryDelivery(
-            delivery_id=f"delivery-{uuid4()}",
-            customer_id=request.contact.customer_id,
-            call_id=request.summary.call_id,
-            channel=request.channel,
-            status=DeliveryStatus.FAILED,
-            message=request.message,
-            provider=self._provider.__class__.__name__,
-            provider_message_id=provider_message_id,
-            idempotency_key=self._idempotency_key(
-                request.contact,
-                request.summary.call_id,
-                request.channel,
-            ),
-            attempts=1,
-            created_at=now,
-            updated_at=now,
-            failure_reason=reason,
-            last_error=error,
+        for delivery in self._repository.list_unfinished(_RETRY_BATCH):
+            if not self._may_retry(delivery, now):
+                continue
+            try:
+                summary = get_summary(delivery.call_id)
+                if summary is None:
+                    continue
+                result = self.deliver_for_call(summary, resolve_contact)
+            except Exception:
+                logger.exception(
+                    "Retrying the customer summary of call %r failed", delivery.call_id
+                )
+                continue
+            if result is not None and result.status is DeliveryStatus.SENT:
+                sent += 1
+        return sent
+
+    def _record_lookup_failure(
+        self, summary: PostCallSummary, error: Exception
+    ) -> CustomerSummaryDelivery | None:
+        if self._repository is None:
+            return None
+        now = time()
+        key = f"customer-summary:{summary.call_id}:customer-lookup"
+        existing = self._repository.get_by_idempotency_key(key)
+        if existing is None:
+            failed = CustomerSummaryDelivery(
+                delivery_id=f"delivery-{uuid4()}",
+                customer_id=UNKNOWN_CUSTOMER_ID,
+                call_id=summary.call_id,
+                channel=self._deliverable_channel(MessagingChannel.SMS),
+                status=DeliveryStatus.FAILED,
+                message=summary.customer_summary,
+                provider=self._provider.__class__.__name__,
+                idempotency_key=key,
+                attempts=1,
+                created_at=now,
+                updated_at=now,
+                failure_reason=CUSTOMER_LOOKUP_FAILED,
+                last_error=_error_text(error),
+            )
+            self._repository.add_if_absent(failed)
+            return failed
+        if existing.status is not DeliveryStatus.FAILED:
+            return existing
+        return self._persist(
+            replace(
+                existing,
+                attempts=existing.attempts + 1,
+                updated_at=now,
+                last_error=_error_text(error),
+            )
         )
-        return self._persist(delivery)
+
+    def _close_unfinished(self, call_id: str) -> CustomerSummaryDelivery | None:
+        """The call turned out to have no known customer: stop retrying."""
+        if self._repository is None:
+            return None
+        closed = None
+        for delivery in self._repository.get_by_call_id(call_id):
+            if delivery.status in (DeliveryStatus.FAILED, DeliveryStatus.QUEUED):
+                closed = self._persist(
+                    replace(
+                        delivery,
+                        status=DeliveryStatus.REJECTED,
+                        updated_at=time(),
+                        failure_reason="customer_not_identified",
+                        last_error="The call has no identified customer to send the summary to.",
+                    )
+                )
+        return closed
+
+    # --- Sending ---
 
     def send_summary_to_customer(
         self,
@@ -155,106 +266,165 @@ class CustomerSummaryDeliveryService:
         )
 
     def send(self, request: CustomerSummaryDeliveryRequest) -> CustomerSummaryDelivery:
+        """Send once. A delivery already made (or refused) for this call
+        and customer is returned as it is; one that failed is attempted
+        again while it has attempts left."""
         if not isinstance(request, CustomerSummaryDeliveryRequest):
             raise TypeError(
                 f"request must be a CustomerSummaryDeliveryRequest, got {type(request).__name__}."
             )
 
+        now = time()
         idempotency_key = self._idempotency_key(
             request.contact,
             request.summary.call_id,
             request.channel,
         )
-        if self._repository is not None:
-            existing = self._repository.get_by_idempotency_key(idempotency_key)
-            if existing is not None:
-                return existing
-
-        now = time()
-        existing = None
-        if self._repository is not None:
-            existing = self._repository.get_latest_by_call_id(request.summary.call_id)
-        if existing is not None and existing.customer_id == request.contact.customer_id:
+        existing = self._existing_delivery(request, idempotency_key)
+        if existing is not None and not self._may_retry(existing, now):
             return existing
 
-        can_receive = request.contact.can_receive_summary(request.channel)
-        if self._require_consent and not can_receive:
-            rejected = CustomerSummaryDelivery(
-                delivery_id=f"delivery-{uuid4()}",
-                customer_id=request.contact.customer_id,
-                call_id=request.summary.call_id,
-                channel=request.channel,
-                status=DeliveryStatus.REJECTED,
-                message=request.message,
-                provider=self._provider.__class__.__name__,
-                idempotency_key=idempotency_key,
-                attempts=1,
-                created_at=now,
-                updated_at=now,
-                failure_reason="customer_consent_missing",
-                last_error="Customer consent is not granted for this channel.",
-            )
-            return self._persist(rejected)
+        # Recorded as queued before anything is sent: of two runs for the
+        # same call (a retry overlapping the first attempt), only the one
+        # that gets the record sends.
+        delivery = self._claim(request, idempotency_key, existing, now)
+        if delivery is None:
+            return self._existing_delivery(request, idempotency_key) or existing  # type: ignore[return-value]
 
-        if not self._require_consent and request.contact.consent_status == ConsentStatus.UNKNOWN:
-            can_receive = True
-
-        if not can_receive:
-            rejected = CustomerSummaryDelivery(
-                delivery_id=f"delivery-{uuid4()}",
-                customer_id=request.contact.customer_id,
-                call_id=request.summary.call_id,
-                channel=request.channel,
-                status=DeliveryStatus.REJECTED,
-                message=request.message,
-                provider=self._provider.__class__.__name__,
-                idempotency_key=idempotency_key,
-                attempts=1,
-                created_at=now,
-                updated_at=now,
-                failure_reason="customer_not_eligible",
-                last_error="Customer is not eligible to receive a summary.",
+        rejection = self._rejection(request)
+        if rejection is not None:
+            reason, error = rejection
+            return self._finish(
+                delivery, DeliveryStatus.REJECTED, failure_reason=reason, last_error=error
             )
-            return self._persist(rejected)
 
         try:
-            provider_message_id = self._provider.send_summary(
+            provider_message_id = self._provider.send_summary_once(
                 request.contact,
                 request.message,
                 request.channel,
+                idempotency_key,
             )
-            sent = CustomerSummaryDelivery(
-                delivery_id=f"delivery-{uuid4()}",
-                customer_id=request.contact.customer_id,
-                call_id=request.summary.call_id,
-                channel=request.channel,
-                status=DeliveryStatus.SENT,
-                message=request.message,
-                provider=self._provider.__class__.__name__,
-                provider_message_id=provider_message_id,
-                idempotency_key=idempotency_key,
-                attempts=1,
-                created_at=now,
-                updated_at=now,
-            )
-            return self._persist(sent)
         except Exception as exc:
-            error_text = str(exc)
-            if len(error_text) > 500:
-                error_text = error_text[:497] + "..."
-            failed = CustomerSummaryDelivery(
+            return self._finish(
+                delivery,
+                DeliveryStatus.FAILED,
+                failure_reason="provider_delivery_failed",
+                last_error=_error_text(exc),
+            )
+        return self._finish(
+            delivery, DeliveryStatus.SENT, provider_message_id=provider_message_id
+        )
+
+    def _existing_delivery(
+        self, request: CustomerSummaryDeliveryRequest, idempotency_key: str
+    ) -> CustomerSummaryDelivery | None:
+        if self._repository is None:
+            return None
+        existing = self._repository.get_by_idempotency_key(idempotency_key)
+        if existing is not None:
+            return existing
+        latest = self._repository.get_latest_by_call_id(request.summary.call_id)
+        if latest is not None and (
+            latest.customer_id == request.contact.customer_id
+            # Recorded while the customer could not be looked up: this is
+            # that delivery, now that we know who it is for.
+            or latest.failure_reason == CUSTOMER_LOOKUP_FAILED
+        ):
+            return latest
+        return None
+
+    def _may_retry(self, delivery: CustomerSummaryDelivery, now: float) -> bool:
+        if delivery.attempts >= self._max_attempts:
+            return False
+        if delivery.status is DeliveryStatus.FAILED:
+            return True
+        return (
+            delivery.status is DeliveryStatus.QUEUED
+            and now - delivery.updated_at >= QUEUED_STALE_SECONDS
+        )
+
+    def _claim(
+        self,
+        request: CustomerSummaryDeliveryRequest,
+        idempotency_key: str,
+        existing: CustomerSummaryDelivery | None,
+        now: float,
+    ) -> CustomerSummaryDelivery | None:
+        """The delivery record, marked queued for this attempt; None when
+        another run got it first."""
+        if existing is None:
+            queued = CustomerSummaryDelivery(
                 delivery_id=f"delivery-{uuid4()}",
                 customer_id=request.contact.customer_id,
                 call_id=request.summary.call_id,
                 channel=request.channel,
-                status=DeliveryStatus.FAILED,
+                status=DeliveryStatus.QUEUED,
                 message=request.message,
                 provider=self._provider.__class__.__name__,
                 idempotency_key=idempotency_key,
                 attempts=1,
                 created_at=now,
                 updated_at=now,
-                failure_reason="provider_delivery_failed",
-                last_error=error_text,
             )
-            return self._persist(failed)
+            if self._repository is not None and not self._repository.add_if_absent(queued):
+                return None
+            return queued
+
+        if self._repository is not None and not self._repository.claim_retry(
+            existing.delivery_id, existing.attempts, now
+        ):
+            return None
+        return replace(
+            existing,
+            customer_id=request.contact.customer_id,
+            channel=request.channel,
+            status=DeliveryStatus.QUEUED,
+            message=request.message,
+            idempotency_key=idempotency_key,
+            attempts=existing.attempts + 1,
+            updated_at=now,
+            failure_reason=None,
+            last_error=None,
+        )
+
+    def _rejection(self, request: CustomerSummaryDeliveryRequest) -> tuple[str, str] | None:
+        """Why this must not be sent (reason, explanation), or None."""
+        if not self._provider.delivers:
+            return "delivery_not_configured", "No delivery provider is configured."
+
+        can_receive = request.contact.can_receive_summary(request.channel)
+        if self._require_consent and not can_receive:
+            return "customer_consent_missing", "Customer consent is not granted for this channel."
+        if not self._require_consent and request.contact.consent_status == ConsentStatus.UNKNOWN:
+            can_receive = True
+        if not can_receive:
+            return "customer_not_eligible", "Customer is not eligible to receive a summary."
+        return None
+
+    def _finish(
+        self,
+        delivery: CustomerSummaryDelivery,
+        status: DeliveryStatus,
+        *,
+        provider_message_id: str | None = None,
+        failure_reason: str | None = None,
+        last_error: str | None = None,
+    ) -> CustomerSummaryDelivery:
+        return self._persist(
+            replace(
+                delivery,
+                status=status,
+                provider_message_id=provider_message_id,
+                updated_at=time(),
+                failure_reason=failure_reason,
+                last_error=last_error,
+            )
+        )
+
+
+def _error_text(error: Exception) -> str:
+    text = str(error) or type(error).__name__
+    if len(text) > _MAX_ERROR_LENGTH:
+        text = text[: _MAX_ERROR_LENGTH - 3] + "..."
+    return text

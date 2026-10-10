@@ -93,6 +93,9 @@ def build_post_call_summary_service(
 
 
 class NullCustomerSummaryDeliveryProvider(CustomerSummaryDeliveryProvider):
+    """"noop": records each delivery as sent without sending it (demos
+    and tests)."""
+
     def send_summary(
         self,
         contact: CustomerContact,
@@ -102,12 +105,24 @@ class NullCustomerSummaryDeliveryProvider(CustomerSummaryDeliveryProvider):
         return f"noop-{uuid4()}"
 
 
+class DisabledCustomerSummaryDeliveryProvider(NullCustomerSummaryDeliveryProvider):
+    """No delivery provider is set up: nothing is sent, and deliveries
+    are recorded as not sent."""
+
+    delivers = False
+
+
+DISABLED_DELIVERY_PROVIDERS = frozenset({"disabled", "none", "null"})
+
+
 def create_customer_summary_delivery_provider(
     settings: Settings | None = None,
 ) -> CustomerSummaryDeliveryProvider:
     settings = settings or Settings()
     provider_name = settings.customer_summary_delivery_provider.strip().lower()
-    if provider_name in {"disabled", "none", "null", "noop"}:
+    if provider_name in DISABLED_DELIVERY_PROVIDERS:
+        return DisabledCustomerSummaryDeliveryProvider()
+    if provider_name == "noop":
         return NullCustomerSummaryDeliveryProvider()
     if provider_name == "sms_gate":
         return SmsGateDeliveryProvider(
@@ -135,10 +150,12 @@ def build_customer_summary_delivery_service(
     return CustomerSummaryDeliveryService(
         provider=provider,
         message_service=CustomerSummaryMessageService(
-            default_channel=MessagingChannel(settings.customer_summary_default_channel)
+            default_channel=MessagingChannel(settings.customer_summary_default_channel),
+            sms_max_parts=settings.customer_summary_sms_max_parts,
         ),
         repository=repository,
         require_consent=settings.customer_summary_consent_required,
+        max_attempts=settings.customer_summary_max_attempts,
     )
 
 

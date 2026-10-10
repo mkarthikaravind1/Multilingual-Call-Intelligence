@@ -239,7 +239,7 @@ def build_api_services(
         default_country_code=settings.phone_default_country_code,
     )
     if customer_contact_resolver is None:
-        customer_contact_resolver = call_customer_service.resolve_contact
+        customer_contact_resolver = call_customer_service.resolve_contact_for_delivery
 
     # --- The service centre's price list (what estimates are priced with) ---
     price_list_service = PriceListService(
@@ -441,6 +441,16 @@ def build_api_services(
                 "post_call_repair",
                 settings.post_call_repair_interval_seconds,
                 post_call_repair_service.run,
+            ),
+            PeriodicJob(
+                "customer_summary_retry",
+                settings.customer_summary_retry_interval_seconds
+                if settings.customer_summary_enabled
+                and customer_summary_delivery_service is not None
+                else 0.0,
+                lambda: customer_summary_delivery_service.retry_unfinished(
+                    post_call_summary_repository.get, customer_contact_resolver
+                ),
             ),
             PeriodicJob(
                 "stale_call_sweep",

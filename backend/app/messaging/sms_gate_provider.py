@@ -16,7 +16,7 @@ asynchronously, so a successful call means "accepted by the gateway", not
 import logging
 import time
 from collections.abc import Callable
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import httpx
 
@@ -74,13 +74,39 @@ class SmsGateDeliveryProvider(CustomerSummaryDeliveryProvider):
         message: str,
         channel: MessagingChannel,
     ) -> str:
+        return self._send(contact, message, channel, uuid4().hex, repeated=False)
+
+    def send_summary_once(
+        self,
+        contact: CustomerContact,
+        message: str,
+        channel: MessagingChannel,
+        delivery_key: str,
+    ) -> str:
+        # The same id whenever this delivery is attempted, so an attempt
+        # repeated later (after a crash, or by another instance) is the
+        # same message to the gateway.
+        message_id = uuid5(NAMESPACE_URL, delivery_key).hex
+        return self._send(contact, message, channel, message_id, repeated=True)
+
+    def _send(
+        self,
+        contact: CustomerContact,
+        message: str,
+        channel: MessagingChannel,
+        message_id: str,
+        *,
+        repeated: bool,
+    ) -> str:
+        """repeated: this id may have reached the gateway before, in an
+        earlier call."""
         if channel is not MessagingChannel.SMS:
             raise SmsGatewayError(f"SMS gateway cannot send {channel.value} messages.")
 
         # One id for every attempt: the gateway treats a repeated id as the
         # same message, so a retry after a timeout cannot text the customer twice.
         payload: dict = {
-            "id": uuid4().hex,
+            "id": message_id,
             "textMessage": {"text": message},
             "phoneNumbers": [contact.normalized_phone_number],
             "withDeliveryReport": True,
@@ -105,7 +131,7 @@ class SmsGateDeliveryProvider(CustomerSummaryDeliveryProvider):
             if response.status_code in _RETRYABLE_STATUS and attempt < self._retry_attempts:
                 attempt = self._back_off(attempt, f"HTTP {response.status_code}")
                 continue
-            if response.status_code == 409 and attempt > 0:
+            if response.status_code == 409 and (attempt > 0 or repeated):
                 # An earlier attempt already reached the gateway with this id.
                 return payload["id"]
             return self._message_id(response, payload["id"])

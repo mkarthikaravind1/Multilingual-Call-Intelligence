@@ -46,6 +46,22 @@ def configuration_problems(settings: Settings) -> list[str]:
                 "PLIVO_ICR_DIAL_TARGETS is empty: incoming calls would not be connected to an ICR."
             )
 
+    if settings.customer_summary_enabled:
+        delivery = settings.customer_summary_delivery_provider.strip().lower()
+        if delivery in {"disabled", "none", "null", "noop"}:
+            problems.append(
+                "CUSTOMER_SUMMARY_ENABLED is true but CUSTOMER_SUMMARY_DELIVERY_PROVIDER "
+                f"is {delivery!r}: no customer would receive a summary."
+            )
+        elif delivery == "sms_gate" and (
+            settings.sms_gate_username.strip() in _UNSET
+            or settings.sms_gate_password.strip() in _UNSET
+        ):
+            problems.append(
+                "SMS_GATE_USERNAME and SMS_GATE_PASSWORD are required to send customer "
+                "summaries through the SMS gateway."
+            )
+
     if settings.role_provider.strip().lower() != "session":
         problems.append("ROLE_PROVIDER must be session (static is for tests).")
 

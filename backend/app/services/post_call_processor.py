@@ -253,12 +253,8 @@ class PostCallProcessor:
         ):
             return
 
-        def deliver() -> None:
-            contact = self._customer_contact_resolver(summary.call_id)
-            if contact is not None:
-                self._customer_summary_delivery_service.send_summary_to_customer(
-                    summary=summary,
-                    contact=contact,
-                )
-
-        best_effort("Customer summary delivery", summary.call_id, deliver)
+        best_effort(
+            "Customer summary delivery", summary.call_id,
+            self._customer_summary_delivery_service.deliver_for_call,
+            summary, self._customer_contact_resolver,
+        )

@@ -780,6 +780,36 @@ def test_customer_summary_delivery_idempotency_key_is_unique(session_factory):
     assert repo.get_by_call_id("call-summary") == (delivery,)
 
 
+def test_customer_summary_delivery_is_claimed_by_one_run_only(session_factory):
+    repo = PostgresCustomerSummaryDeliveryRepository(session_factory)
+    failed = CustomerSummaryDelivery(
+        delivery_id="delivery-1",
+        customer_id="cust-1",
+        call_id="call-summary",
+        channel=MessagingChannel.SMS,
+        status=DeliveryStatus.FAILED,
+        message="Summary",
+        idempotency_key="customer-summary:call-summary:cust-1:sms",
+        attempts=1,
+        updated_at=1.0,
+    )
+
+    assert repo.add_if_absent(failed) is True
+    assert repo.add_if_absent(dataclasses.replace(failed, delivery_id="delivery-2")) is False
+    assert repo.list_unfinished(10) == (failed,)
+
+    assert repo.claim_retry("delivery-1", 1, 5.0) is True
+    assert repo.claim_retry("delivery-1", 1, 6.0) is False
+    queued = dataclasses.replace(
+        failed, status=DeliveryStatus.QUEUED, attempts=2, updated_at=5.0
+    )
+    assert repo.get_by_call_id("call-summary") == (queued,)
+
+    repo.save(dataclasses.replace(queued, status=DeliveryStatus.SENT))
+    assert repo.list_unfinished(10) == ()
+    assert repo.claim_retry("delivery-1", 2, 7.0) is False
+
+
 # Caller identity -------------------------------------------------------------
 
 
