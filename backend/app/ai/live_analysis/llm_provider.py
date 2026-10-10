@@ -4,20 +4,22 @@ During a call these were three requests, each sending the whole transcript
 again. Here the transcript is sent once, followed by each task's own
 instructions (built by its provider, so they match its separate request),
 and the answer is checked section by section with each provider's own
-checks. A section that is missing or unusable comes back as None, and the
-caller asks that provider on its own instead: a bad combined answer costs
-an extra request, never a result.
+checks. An answer that cannot be read at all is asked for once more. A
+section that is missing or unusable comes back as None, and the caller asks
+that provider on its own instead: a bad combined answer costs an extra
+request, never a result.
 """
 
-import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from app.ai.complaint.llm_provider import LLMComplaintProvider
 from app.ai.complaint.provider import ComplaintDetectionResult
 from app.ai.escalation.llm_provider import LLMEscalationProvider
 from app.ai.escalation.provider import EscalationContext
 from app.ai.llm.client import LLMClient, LLMRequest
+from app.ai.llm.json_answer import UnusableAnswer, ask_for_json, decode_json
 from app.ai.sentiment.llm_provider import LLMSentimentProvider, lines_to_rate, transcript_for
 from app.ai.sentiment.provider import SentimentResult
 from app.domain.conversation import Conversation
@@ -59,12 +61,14 @@ class LLMLiveAnalysisProvider:
     ) -> LiveAnalysis:
         complaint_task, allowed = self._complaints.task_instructions(complaint_guidance)
         try:
-            response = self._llm_client.complete(
-                self._build_request(conversation, complaint_task, sentiment_guidance)
+            # An unreadable answer is asked for once more here: one more
+            # combined request is cheaper than every part on its own.
+            data = ask_for_json(
+                self._llm_client,
+                self._build_request(conversation, complaint_task, sentiment_guidance),
+                _decode_sections,
+                "live_analysis",
             )
-            data = json.loads(_strip_code_fence(response.text or ""))
-            if not isinstance(data, dict):
-                raise ValueError("the answer is not a JSON object")
         except Exception as exc:
             logger.warning(
                 "Combined live analysis failed for call %r (%s); asking each part separately",
@@ -122,9 +126,13 @@ class LLMLiveAnalysisProvider:
         return LLMRequest(prompt=prompt)
 
 
-def _strip_code_fence(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.removeprefix("```json").removeprefix("```")
-        text = text.removesuffix("```")
-    return text.strip()
+_SECTIONS = ("complaints", "sentiment", "escalation")
+
+
+def _decode_sections(text: Any) -> dict:
+    data = decode_json(text)
+    if not isinstance(data, dict):
+        raise UnusableAnswer("the answer is not a JSON object")
+    if not any(section in data for section in _SECTIONS):
+        raise UnusableAnswer("the answer has none of the sections asked for")
+    return data

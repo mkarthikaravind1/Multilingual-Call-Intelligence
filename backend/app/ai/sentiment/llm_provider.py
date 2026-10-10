@@ -1,9 +1,9 @@
-import json
 import logging
 from typing import Any
 
 from app.ai.learning_guidance import format_learning_guidance
 from app.ai.llm.client import LLMClient, LLMRequest
+from app.ai.llm.json_answer import UnusableAnswer, ask_for_json, decode_json
 from app.ai.sentiment.provider import (
     SentimentAnalysisProvider,
     SentimentLabel,
@@ -105,10 +105,15 @@ class LLMSentimentProvider(SentimentAnalysisProvider):
     ) -> SentimentResult:
         if not conversation.utterances:
             return SentimentResult(SentimentLabel.NEUTRAL, 0.0, _NO_CONTENT_EVIDENCE)
-        response = self._llm_client.complete(
-            self._build_request(conversation, learning_context)
-        )
-        return self._parse_response(response.text, conversation)
+        try:
+            return ask_for_json(
+                self._llm_client,
+                self._build_request(conversation, learning_context),
+                lambda text: self._parse_answer(text, conversation),
+                "sentiment",
+            )
+        except UnusableAnswer:
+            return SentimentResult(SentimentLabel.NEUTRAL, 0.0, _UNDETERMINED_EVIDENCE)
 
     def _build_request(
         self,
@@ -132,18 +137,11 @@ class LLMSentimentProvider(SentimentAnalysisProvider):
         )
         return LLMRequest(prompt=prompt)
 
-    def _parse_response(
-        self, text: str, conversation: Conversation | None = None
-    ) -> SentimentResult:
-        if not isinstance(text, str):
-            return self._reject("response text is not a string")
-        try:
-            data = json.loads(_strip_code_fence(text))
-        except json.JSONDecodeError:
-            return self._reject("response is not valid JSON")
-
-        result = self.parse_object(data, conversation)
-        return result if result is not None else self._reject_quietly()
+    def _parse_answer(self, text: Any, conversation: Conversation) -> SentimentResult:
+        result = self.parse_object(decode_json(text), conversation)
+        if result is None:
+            raise UnusableAnswer("the answer is not a usable sentiment")
+        return result
 
     def task_instructions(
         self,
@@ -187,11 +185,6 @@ class LLMSentimentProvider(SentimentAnalysisProvider):
         )
 
     @staticmethod
-    def _reject_quietly() -> SentimentResult:
-        # parse_object() has already logged why.
-        return SentimentResult(SentimentLabel.NEUTRAL, 0.0, _UNDETERMINED_EVIDENCE)
-
-    @staticmethod
     def _build_result(data: dict[str, Any]) -> SentimentResult:
         missing = [f for f in _REQUIRED_FIELDS if f not in data]
         if missing:
@@ -201,16 +194,19 @@ class LLMSentimentProvider(SentimentAnalysisProvider):
         if not isinstance(evidence, str):
             raise TypeError("evidence must be a string")
 
+        label = data["label"]
+        if not isinstance(label, str):
+            raise TypeError("label must be a string")
         return SentimentResult(
-            label=SentimentLabel(data["label"]),
+            # The model may change the label's case or spacing ("Negative").
+            label=SentimentLabel(label.strip().upper()),
             confidence=data["confidence"],
             evidence=evidence.strip(),
         )
 
     @staticmethod
-    def _reject(reason: str) -> SentimentResult:
+    def _reject(reason: str) -> None:
         logger.warning("Discarding invalid LLM sentiment response: %s", reason)
-        return SentimentResult(SentimentLabel.NEUTRAL, 0.0, _UNDETERMINED_EVIDENCE)
 
 
 def _line_tones(items: Any, asked: dict[int, Utterance]) -> tuple[UtteranceSentiment, ...]:
@@ -237,11 +233,3 @@ def _line_tones(items: Any, asked: dict[int, Utterance]) -> tuple[UtteranceSenti
     if len(tones) < len(asked):
         logger.info("The model rated %d of the %d lines it was asked about", len(tones), len(asked))
     return tuple(tones.values())
-
-
-def _strip_code_fence(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.removeprefix("```json").removeprefix("```")
-        text = text.removesuffix("```")
-    return text.strip()

@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import Any
 
@@ -8,6 +7,7 @@ from app.ai.complaint.provider import (
 )
 from app.ai.learning_guidance import format_learning_guidance
 from app.ai.llm.client import LLMClient, LLMRequest
+from app.ai.llm.json_answer import UnusableAnswer, ask_for_json, decode_json
 from app.domain.complaint_category import ComplaintCategory
 from app.domain.conversation import Conversation
 from app.domain.runtime_improvement_context import RuntimeImprovementContext
@@ -55,10 +55,16 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
         if not conversation.utterances:
             return []
         categories = self._catalog.categories()
-        response = self._llm_client.complete(
-            self._build_request(conversation, learning_context, categories)
-        )
-        return self._parse_response(response.text, {c.name for c in categories})
+        allowed = {c.name for c in categories}
+        try:
+            return ask_for_json(
+                self._llm_client,
+                self._build_request(conversation, learning_context, categories),
+                lambda text: self._parse_answer(text, allowed),
+                "complaints",
+            )
+        except UnusableAnswer:
+            return []
 
     @staticmethod
     def _transcript(conversation: Conversation) -> str:
@@ -132,30 +138,30 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
         # The model may change a category's case or spacing ("wiper noise");
         # match it to the catalog's spelling.
         canonical = {_category_key(name): name for name in allowed}
-        try:
-            built = [self._build_result(item, canonical) for item in data]
-        except (TypeError, ValueError) as exc:
-            self._reject(str(exc))
-            return None
-        results = [result for result in built if result is not None]
+        # One per category, in the order first reported.
+        results: dict[str, ComplaintDetectionResult] = {}
+        malformed = 0
+        for item in data:
+            try:
+                result = self._build_result(item, canonical)
+            except (TypeError, ValueError) as exc:
+                # One bad item does not cost the complaints reported beside it.
+                malformed += 1
+                logger.warning("Skipping a malformed LLM complaint item: %s", exc)
+                continue
+            if result is not None:
+                results[result.category] = _merged(results.get(result.category), result)
 
-        if len({r.category for r in results}) != len(results):
-            self._reject("duplicate categories in response")
+        if malformed and not results:
+            self._reject("no usable items in response")
             return None
+        return list(results.values())
+
+    def _parse_answer(self, text: Any, allowed: set[str]) -> list[ComplaintDetectionResult]:
+        results = self.parse_items(decode_json(text), allowed)
+        if results is None:
+            raise UnusableAnswer("the answer is not a usable list of complaints")
         return results
-
-    def _parse_response(
-        self, text: str, allowed: set[str] | None = None
-    ) -> list[ComplaintDetectionResult]:
-        if allowed is None:
-            allowed = set(self._catalog.names())
-        if not isinstance(text, str):
-            return self._reject("response text is not a string")
-        try:
-            data = json.loads(_strip_code_fence(text))
-        except json.JSONDecodeError:
-            return self._reject("response is not valid JSON")
-        return self.parse_items(data, allowed) or []
 
     @staticmethod
     def _build_result(
@@ -192,9 +198,8 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
         )
 
     @staticmethod
-    def _reject(reason: str) -> list[ComplaintDetectionResult]:
+    def _reject(reason: str) -> None:
         logger.warning("Discarding invalid LLM complaint response: %s", reason)
-        return []
 
 
 def _is_true(value: Any) -> bool:
@@ -207,9 +212,17 @@ def _category_key(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
-def _strip_code_fence(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.removeprefix("```json").removeprefix("```")
-        text = text.removesuffix("```")
-    return text.strip()
+def _merged(
+    first: ComplaintDetectionResult | None, again: ComplaintDetectionResult
+) -> ComplaintDetectionResult:
+    """One result for a category the answer reports twice: the more
+    confident report, asked about if either says so."""
+    if first is None:
+        return again
+    best = again if again.confidence > first.confidence else first
+    return ComplaintDetectionResult(
+        category=best.category,
+        confidence=best.confidence,
+        evidence=best.evidence,
+        probed=first.probed or again.probed,
+    )

@@ -35,11 +35,14 @@ customer lines makes up to 15 analyses, so expect roughly 3 to 4 times the
 tokens per call. This is an estimate from the request sizes, not a
 measurement: step 3 gives the real figure.
 
-**Known weak spot.** Once in three real answers, the complaint detector
-returned malformed output, which is dropped (the call keeps the complaints
-it already had). There is no retry. If a call ends with fewer complaints
-than were clearly raised, look for "Discarding invalid LLM complaint
-response" in the backend log.
+**Malformed answers.** Once in three real answers, the complaint detector
+returned malformed output. Such an answer is now asked for once more (the
+same for sentiment, escalation and the combined live answer), and one bad
+item no longer costs the rest of the answer. This is tested with stand-in
+answers only, not yet seen on a real call. If a call ends with fewer
+complaints than were clearly raised, look for "Unusable LLM" in the backend
+log: it shows how the answer began. The metric `llm_unusable_answers_total`
+counts answers recovered by the second request and answers dropped.
 
 ## 2. Sarvam (speech to text)
 

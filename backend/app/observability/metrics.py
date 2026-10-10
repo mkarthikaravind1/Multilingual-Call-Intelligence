@@ -200,6 +200,17 @@ PROVIDER_ERRORS = REGISTRY.register(
         ("provider",),
     )
 )
+# An answer that was not the JSON asked for is asked for once more:
+# "recovered" when the second answer was usable, "dropped" when not.
+LLM_UNUSABLE_ANSWERS = REGISTRY.register(
+    Counter(
+        "llm_unusable_answers_total",
+        "LLM answers that could not be used and were asked for again, by task "
+        "(complaints, sentiment, escalation, live_analysis) and outcome "
+        "(recovered, dropped).",
+        ("task", "outcome"),
+    )
+)
 LIVE_CHUNKS = REGISTRY.register(
     Counter(
         "live_audio_chunks_total",

@@ -154,15 +154,6 @@ INVALID_RESPONSES = [
     pytest.param(_response(_item(evidence="   ")), id="blank-evidence"),
     pytest.param(_response(_item(evidence=123)), id="evidence-wrong-type"),
     pytest.param(_response(_item(evidence=None)), id="evidence-null"),
-    pytest.param(_response(_item("Cost"), _item("Cost")), id="duplicate-categories"),
-    pytest.param(
-        _response(_item("Cost"), _item("Communication"), _item("Cost", 0.5)),
-        id="duplicate-among-valid-items",
-    ),
-    pytest.param(
-        _response(_item("Cost"), _item("Communication", 2.0)),
-        id="one-invalid-item-rejects-whole-response",
-    ),
 ]
 
 
@@ -187,8 +178,18 @@ def test_unknown_category_is_skipped_and_the_rest_kept(caplog):
     assert "unknown category" in caplog.text
 
 
-def test_categories_differing_only_in_case_are_duplicates():
-    assert _detect(_response(_item("Cost"), _item(category="cost"))) == []
+def test_categories_differing_only_in_case_are_one_complaint():
+    results = _detect(_response(_item("Cost", 0.5), _item(category="cost")))
+
+    assert [(r.category, r.confidence) for r in results] == [("Cost", 0.93)]
+
+
+def test_one_invalid_item_is_skipped_and_the_rest_kept(caplog):
+    with caplog.at_level(logging.WARNING):
+        results = _detect(_response(_item("Cost"), _item("Communication", 2.0)))
+
+    assert [r.category for r in results] == ["Cost"]
+    assert "malformed LLM complaint item" in caplog.text
 
 
 def test_non_string_response_text_returns_empty_list():
@@ -199,9 +200,9 @@ def test_non_string_response_text_returns_empty_list():
 
 def test_invalid_response_is_logged(caplog):
     with caplog.at_level(logging.WARNING):
-        _detect(_response(_item("Cost"), _item("Cost")))
+        _detect(json.dumps(_item()))
 
-    assert "duplicate categories" in caplog.text
+    assert "JSON response is not a list" in caplog.text
 
 
 def test_llm_client_failure_propagates():

@@ -2,7 +2,6 @@
 them): it understands intent phrased in any supported language, and it can
 only add signals to what the rules found."""
 
-import json
 import logging
 import re
 from typing import Any
@@ -13,6 +12,7 @@ from app.ai.escalation.rule_based_provider import (
     combined_level,
 )
 from app.ai.llm.client import LLMClient, LLMRequest
+from app.ai.llm.json_answer import UnusableAnswer, ask_for_json, decode_json
 from app.domain.escalation import (
     EscalationAssessment,
     EscalationLevel,
@@ -51,8 +51,13 @@ class LLMEscalationProvider(EscalationDetectionProvider):
     def assess(self, context: EscalationContext) -> EscalationAssessment:
         if not context.conversation.utterances:
             return EscalationAssessment(EscalationLevel.NONE)
-        response = self._llm_client.complete(self._build_request(context))
-        signals = _grounded(self._parse(response.text), context)
+        try:
+            signals = ask_for_json(
+                self._llm_client, self._build_request(context), self._parse, "escalation"
+            )
+        except UnusableAnswer:
+            signals = ()
+        signals = _grounded(signals, context)
         return EscalationAssessment(level=combined_level(signals), signals=signals)
 
     @staticmethod
@@ -121,12 +126,11 @@ class LLMEscalationProvider(EscalationDetectionProvider):
             raise TypeError("signals must be a list")
         return tuple(self._signal(item) for item in raw_signals)
 
-    def _parse(self, text: str) -> tuple[EscalationSignal, ...]:
+    def _parse(self, text: Any) -> tuple[EscalationSignal, ...]:
         try:
-            return self._signals(json.loads(_strip_code_fence(text)))
+            return self._signals(decode_json(text))
         except (ValueError, TypeError, KeyError) as exc:
-            logger.warning("Discarding invalid LLM escalation response: %s", exc)
-            return ()
+            raise UnusableAnswer(f"invalid escalation signals: {exc!r}") from exc
 
     @staticmethod
     def _signal(item: Any) -> EscalationSignal:
@@ -235,11 +239,3 @@ def _with_llm(
         from_rules.level, combined_level(llm_signals), combined_level(signals)
     )
     return EscalationAssessment(level=level, signals=signals)
-
-
-def _strip_code_fence(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.removeprefix("```json").removeprefix("```")
-        text = text.removesuffix("```")
-    return text.strip()

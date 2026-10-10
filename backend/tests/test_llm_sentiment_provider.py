@@ -126,7 +126,7 @@ def test_malformed_response_returns_safe_result(text):
     _assert_safe_result(_analyze(text))
 
 
-@pytest.mark.parametrize("label", ["ANGRY", "negative", "", None, 1, ["NEGATIVE"]])
+@pytest.mark.parametrize("label", ["ANGRY", "", None, 1, ["NEGATIVE"]])
 def test_invalid_label_returns_safe_result(label):
     _assert_safe_result(_analyze(_payload(label=label)))
 
