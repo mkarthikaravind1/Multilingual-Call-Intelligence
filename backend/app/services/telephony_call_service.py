@@ -4,13 +4,19 @@ import time
 from collections.abc import Callable
 from uuid import uuid4
 
-from app.domain.conversation import ConversationStatus
+from app.domain.conversation import CallDirection, ConversationStatus
 from app.domain.telephony_call_mapping import TelephonyCallMapping
 from app.services.call_customer_service import CallCustomerService
+from app.services.call_routing_service import CallRoute, CallRoutingService
 from app.services.call_service import CallService
 from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
 from app.services.telephony_call_mapping_repository import TelephonyCallMappingRepository
-from app.telephony.provider import CallProviderStatus, CallStatusEvent, InboundCallEvent
+from app.telephony.provider import (
+    CallProviderStatus,
+    CallStatusEvent,
+    DialAnswerEvent,
+    InboundCallEvent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +58,10 @@ class TelephonyCallService:
         call_customer_service: CallCustomerService | None = None,
         live_state: LiveStateStore | None = None,
         clock: Callable[[], float] = time.time,
+        call_routing: CallRoutingService | None = None,
     ) -> None:
         self._call_service = call_service
+        self._call_routing = call_routing
         self._mapping_repository = mapping_repository
         self._call_customer_service = call_customer_service
         self._stream_drain_timeout_seconds = stream_drain_timeout_seconds
@@ -68,7 +76,16 @@ class TelephonyCallService:
         # calls, so a call's duration is right whichever way it is ended.
         self._clock = clock
 
-    def start_call_from_provider(self, provider: str, event: InboundCallEvent) -> str:
+    def route_call(self, event: InboundCallEvent) -> CallRoute:
+        """Where the phone call belongs and who to ring for it."""
+        if self._call_routing is None:
+            return CallRoute(customer_number=event.from_number)
+        return self._call_routing.route(event.from_number, event.to_number)
+
+    def start_call_from_provider(
+        self, provider: str, event: InboundCallEvent, route: CallRoute | None = None
+    ) -> str:
+        route = route or CallRoute(customer_number=event.from_number)
         # The provider can send its answer webhook again for the same
         # phone call (a retry after a slow response): that is the call we
         # already have, not a second one.
@@ -81,7 +98,13 @@ class TelephonyCallService:
             )
             return existing
         call_id = f"{provider}-{uuid4()}"
-        self._call_service.start_call(call_id, self._clock())
+        self._call_service.start_call(
+            call_id,
+            self._clock(),
+            direction=route.direction,
+            location_id=route.location_id,
+            executive_user_id=route.executive_user_id,
+        )
         self._mapping_repository.save(
             TelephonyCallMapping(
                 provider=provider,
@@ -90,8 +113,28 @@ class TelephonyCallService:
                 created_at=time.time(),
             )
         )
-        self._record_caller(call_id, event.from_number)
+        self._record_caller(call_id, route.customer_number)
         return call_id
+
+    def executive_answered(self, event: DialAnswerEvent) -> bool:
+        """One of the executives rung for an incoming call picked up: the
+        call is theirs. False when the call or the executive is not known."""
+        call_id = self.resolve_call_id(event.provider_call_id)
+        if call_id is None or self._call_routing is None:
+            return False
+        if self._call_service.get_call(call_id).direction is CallDirection.OUTBOUND:
+            # The party rung on an outgoing call is the customer.
+            return False
+        executive = self._call_routing.executive_for_target(event.answered_target)
+        if executive is None:
+            logger.warning(
+                "Call %r was answered at %r, which is no active user's dial target",
+                call_id,
+                event.answered_target,
+            )
+            return False
+        self._call_service.assign_executive(call_id, executive.user_id, executive.location_id)
+        return True
 
     def _record_caller(self, call_id: str, from_number: str) -> None:
         if self._call_customer_service is None:

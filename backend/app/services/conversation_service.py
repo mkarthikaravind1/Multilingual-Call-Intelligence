@@ -1,7 +1,7 @@
 import threading
 from dataclasses import dataclass
 
-from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.conversation import CallDirection, Conversation, ConversationStatus
 from app.domain.utterance import Utterance
 from app.services.conversation_repository import ConversationRepository
 
@@ -35,12 +35,36 @@ class ConversationService:
                 self._locks[call_id] = lock
             return lock
 
-    def create_conversation(self, call_id: str, start_time: float = 0.0) -> Conversation:
+    def create_conversation(
+        self,
+        call_id: str,
+        start_time: float = 0.0,
+        direction: CallDirection | None = None,
+        location_id: str | None = None,
+        executive_user_id: str | None = None,
+    ) -> Conversation:
         # Insert-only: an existing call_id raises ConversationAlreadyExistsError
         # instead of resetting that call.
-        conversation = Conversation(call_id=call_id, start_time=start_time)
+        conversation = Conversation(
+            call_id=call_id,
+            start_time=start_time,
+            direction=direction,
+            location_id=location_id,
+            executive_user_id=executive_user_id,
+        )
         self._repository.add(conversation)
         return conversation
+
+    def assign_executive(
+        self, call_id: str, executive_user_id: str, location_id: str | None = None
+    ) -> Conversation:
+        """Record who took the call (see Conversation.assign). Allowed on a
+        completed call: the provider can report who answered late."""
+        with self._lock_for(call_id):
+            conversation = self.get_conversation(call_id)
+            conversation.assign(executive_user_id, location_id)
+            self._repository.save(conversation)
+            return conversation
 
     def get_conversation(self, call_id: str) -> Conversation:
         conversation = self._repository.get(call_id)

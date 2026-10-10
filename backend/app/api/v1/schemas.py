@@ -7,7 +7,7 @@ from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.customer_contact import ConsentStatus, MessagingChannel
 from app.domain.customer_summary_delivery import DeliveryStatus
 from app.domain.escalation import EscalationLevel, EscalationSignalType, EscalationStatus
-from app.domain.conversation import ConversationStatus
+from app.domain.conversation import CallDirection, ConversationStatus
 from app.domain.question_suggestion import SuggestionSource
 from app.domain.utterance import SpeakerRole
 
@@ -24,6 +24,8 @@ class StartCallRequest(_Request):
     start_time: float | None = 0.0
     # Optional: the customer's number when it is known up front.
     caller_number: str | None = Field(default=None, min_length=1, max_length=32)
+    # Whether the customer called (the default) or was called.
+    direction: CallDirection = CallDirection.INBOUND
 
 
 class IdentifyCustomerRequest(_Request):
@@ -126,6 +128,10 @@ class CallResponse(_Response):
     end_time: float | None
     utterance_count: int
     utterances: list[UtteranceResponse]
+    # null: not recorded for this call.
+    direction: CallDirection | None = None
+    location_id: str | None = None
+    executive_user_id: str | None = None
 
 class CallSummaryResponse(_Response):
     call_id: str
@@ -144,6 +150,26 @@ class CallSummaryResponse(_Response):
     # When the last of the call's complaints was resolved (epoch seconds);
     # null while any is open, or when the call raised none.
     complaints_resolved_at: float | None = None
+    # Where the call was taken and by whom; null when not recorded.
+    direction: CallDirection | None = None
+    location_id: str | None = None
+    location_name: str | None = None
+    executive_user_id: str | None = None
+    executive_name: str | None = None
+
+
+class CallDirectoryEntry(BaseModel):
+    id: str
+    name: str
+    is_active: bool
+
+
+class CallDirectoryResponse(BaseModel):
+    """What calls can be filtered by: the locations and the executives."""
+
+    locations: list[CallDirectoryEntry]
+    executives: list[CallDirectoryEntry]
+
 
 class CallListResponse(BaseModel):
     items: list[CallSummaryResponse]

@@ -33,6 +33,27 @@ export interface CallSummaryDto {
   // Epoch seconds the last complaint was resolved; null while any is open
   // or when the call raised none.
   complaints_resolved_at?: number | null
+  // Where the call was taken and by whom; null when not recorded. The
+  // names are present on call-list items only.
+  direction?: CallDirection | null
+  location_id?: string | null
+  location_name?: string | null
+  executive_user_id?: string | null
+  executive_name?: string | null
+}
+
+export type CallDirection = 'inbound' | 'outbound'
+
+export interface CallDirectoryEntryDto {
+  id: string
+  name: string
+  is_active: boolean
+}
+
+// What calls can be filtered by.
+export interface CallDirectoryDto {
+  locations: CallDirectoryEntryDto[]
+  executives: CallDirectoryEntryDto[]
 }
 
 export interface CallResponseDto extends CallSummaryDto {

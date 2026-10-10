@@ -23,7 +23,6 @@ from app.ai.asr.provider import NoSpeechDetected
 from app.api.v1.live import AUTH_FAILED_CLOSE_CODE, CALL_NOT_FOUND_CLOSE_CODE
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.conversation import ConversationAlreadyCompletedError, ConversationStatus
-from app.domain.utterance import SpeakerRole
 from app.services.audio_chunking_service import AudioChunk
 from app.services.call_recording_store import CallRecording, CallRecordingStore
 from app.services.call_service import CallService
@@ -49,7 +48,13 @@ from app.observability.metrics import (
 )
 from app.security.stream_token import is_valid_stream_token
 from app.telephony.plivo.provider import parse_plivo_media_stream_event
-from app.telephony.provider import MediaStreamEvent, TelephonyStreamError, TelephonyProvider
+from app.telephony.provider import (
+    TRACKS,
+    MediaStreamEvent,
+    TelephonyProvider,
+    TelephonyStreamError,
+    track_roles,
+)
 from app.api.v1.test_calls import TEST_PROVIDER
 
 logger = logging.getLogger(__name__)
@@ -68,14 +73,6 @@ _MIN_FLUSH_AUDIO_SECONDS = 0.25
 # this often while audio flows: media frames arrive ~50 times a second per
 # track, and each lookup loads the whole call.
 COMPLETION_CHECK_SECONDS = 1.0
-
-# A call streamed as two tracks (Plivo dials the ICR, see
-# PlivoTelephonyProvider.build_stream_response): the caller is the customer,
-# and what the caller hears is the ICR.
-TRACK_ROLES: dict[str, SpeakerRole] = {
-    "inbound": SpeakerRole.CUSTOMER,
-    "outbound": SpeakerRole.ICR,
-}
 
 
 @router.websocket("/{call_id}/telephony-stream")
@@ -296,7 +293,10 @@ class _StreamSession:
         self._worker.stream_started()
         settings = get_settings()
         self._encoding = stream_event.encoding
-        split = set(TRACK_ROLES) <= set(stream_event.tracks)
+        # A call streamed as two tracks (Plivo dials the other party, see
+        # PlivoTelephonyProvider.build_stream_response); who speaks on
+        # which depends on who placed the call (see track_roles).
+        split = set(TRACKS) <= set(stream_event.tracks)
         # A restarted stream starts its chunk times at 0 again, so
         # the audio recorded so far no longer lines up: stop keeping it.
         self._recording = (
@@ -315,7 +315,7 @@ class _StreamSession:
                 min_speech_seconds=settings.plivo_stream_min_speech_seconds,
                 silence_rms=settings.plivo_stream_silence_rms,
             )
-            for track in (tuple(TRACK_ROLES) if split else (None,))
+            for track in (TRACKS if split else (None,))
         }
         if split:
             logger.info(
@@ -547,7 +547,9 @@ async def _process_chunk(
                 ends_on_pause=chunk.ends_on_pause,
                 continues_previous=chunk.continues_previous,
                 track=track,
-                speaker_role=TRACK_ROLES.get(track) if track is not None else None,
+                speaker_role=(
+                    track_roles(conversation.direction).get(track) if track is not None else None
+                ),
             ),
         )
     except ConversationNotFoundError:

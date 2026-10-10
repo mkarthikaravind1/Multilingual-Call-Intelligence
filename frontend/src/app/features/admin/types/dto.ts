@@ -6,16 +6,48 @@ export interface ManagedUserDto {
   role: UserRole
   is_active: boolean
   created_at: number
+  // Shown on calls and reports; null: the email is shown.
+  display_name: string | null
+  location_id: string | null
+  // The phone number or SIP address the user's phone is reached at.
+  dial_target: string | null
 }
 
 export interface CreateUserDto {
   email: string
   password: string
   role: UserRole
+  display_name?: string | null
+  location_id?: string | null
+  dial_target?: string | null
 }
 
+// A field left out is unchanged; null clears it.
 export interface UpdateUserDto {
   role?: UserRole
+  is_active?: boolean
+  display_name?: string | null
+  location_id?: string | null
+  dial_target?: string | null
+}
+
+export interface LocationDto {
+  location_id: string
+  name: string
+  // The number customers dial, as "+<digits>".
+  phone_number: string
+  is_active: boolean
+  created_at: number
+}
+
+export interface CreateLocationDto {
+  name: string
+  phone_number: string
+}
+
+export interface UpdateLocationDto {
+  name?: string
+  phone_number?: string
   is_active?: boolean
 }
 

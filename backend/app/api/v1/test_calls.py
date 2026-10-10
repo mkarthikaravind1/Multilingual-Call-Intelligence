@@ -21,6 +21,7 @@ from app.api.security_dependencies import require_roles
 from app.core.config import get_settings
 from app.domain.user import User, UserRole
 from app.security.stream_token import create_stream_token
+from app.services.call_routing_service import CallRoute
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import CallProviderStatus, CallStatusEvent, InboundCallEvent
@@ -64,7 +65,7 @@ class EndTestCallRequest(BaseModel):
 async def start_test_call(
     request: StartTestCallRequest,
     telephony_call_service: TelephonyCallService = Depends(get_telephony_call_service),
-    _: User = Depends(_SUPERVISORS),
+    user: User = Depends(_SUPERVISORS),
 ) -> StartTestCallResponse:
     provider_call_id = f"{TEST_PROVIDER}-{uuid4()}"
     event = InboundCallEvent(
@@ -72,8 +73,14 @@ async def start_test_call(
         from_number=request.from_number.strip(),
         to_number=_TEST_LINE_NUMBER,
     )
+    # No number was dialled: the test call is taken by whoever replays it.
+    route = CallRoute(
+        location_id=user.location_id,
+        executive_user_id=user.user_id,
+        customer_number=event.from_number,
+    )
     call_id = await run_in_threadpool(
-        telephony_call_service.start_call_from_provider, TEST_PROVIDER, event
+        telephony_call_service.start_call_from_provider, TEST_PROVIDER, event, route
     )
     token = create_stream_token(call_id, get_settings())
     return StartTestCallResponse(

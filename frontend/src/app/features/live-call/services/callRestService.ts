@@ -2,6 +2,8 @@ import { apiClient } from '../../../api/client'
 
 import type {
   CallAnalysisResponseDto,
+  CallDirection,
+  CallDirectoryDto,
   CallListResponseDto,
   CallResponseDto,
   CallStatsResponseDto,
@@ -25,6 +27,9 @@ export interface CallListFilters {
   startedTo?: number
   resolvedFrom?: number
   resolvedTo?: number
+  locationId?: string
+  executiveUserId?: string
+  direction?: CallDirection
 }
 
 export interface StartCallRequest {
@@ -68,9 +73,16 @@ export class CallRestService {
     for (const [name, value] of bounds) {
       if (value !== undefined) query.set(name, String(value))
     }
+    if (filters.locationId) query.set('location_id', filters.locationId)
+    if (filters.executiveUserId) query.set('executive_user_id', filters.executiveUserId)
+    if (filters.direction) query.set('direction', filters.direction)
     return apiClient.get<CallListResponseDto>(
       `/api/v1/calls?${query.toString()}`,
     )
+  }
+
+  getCallDirectory() {
+    return apiClient.get<CallDirectoryDto>('/api/v1/call-directory')
   }
 
   getCallStats() {

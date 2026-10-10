@@ -66,6 +66,7 @@ def build_app():
         complaint_category_catalog=complaint_categories,
         call_listing_query=repositories.call_listing,
         price_list_repository=repositories.price_list,
+        location_repository=repositories.location,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),
     )
     services = dataclasses.replace(

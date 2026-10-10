@@ -1,4 +1,4 @@
-from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.conversation import CallDirection, Conversation, ConversationStatus
 from app.domain.utterance import Utterance
 from app.services.conversation_service import ConversationCompletion, ConversationService
 
@@ -11,10 +11,23 @@ class CallService:
         self,
         call_id: str,
         start_time: float = 0.0,
+        direction: CallDirection | None = None,
+        location_id: str | None = None,
+        executive_user_id: str | None = None,
     ) -> Conversation:
         return self._conversation_service.create_conversation(
             call_id=call_id,
             start_time=start_time,
+            direction=direction,
+            location_id=location_id,
+            executive_user_id=executive_user_id,
+        )
+
+    def assign_executive(
+        self, call_id: str, executive_user_id: str, location_id: str | None = None
+    ) -> Conversation:
+        return self._conversation_service.assign_executive(
+            call_id, executive_user_id, location_id
         )
 
     def get_call(self, call_id: str) -> Conversation:

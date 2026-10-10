@@ -7,6 +7,14 @@ class ConversationStatus(str, Enum):
     COMPLETED = "completed"
 
 
+class CallDirection(str, Enum):
+    """INBOUND: the customer called. OUTBOUND: an executive called the
+    customer."""
+
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+
+
 class ConversationAlreadyCompletedError(Exception):
     """Raised when something tries to mutate a call that has already ended
     (e.g. an utterance arriving after the status webhook completed the
@@ -43,6 +51,12 @@ class Conversation:
 
     _utterances: list[Utterance] = field(default_factory=list)
     # Private: mutated only via add_utterance(), so ordering can't be bypassed.
+
+    # Who took the call and where; None when it was not recorded (calls from
+    # before these were kept, or a phone call nobody could be matched to).
+    direction: CallDirection | None = None
+    location_id: str | None = None
+    executive_user_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.call_id.strip():
@@ -100,6 +114,13 @@ class Conversation:
     @property
     def duration(self) -> float | None:
         return None if self.end_time is None else self.end_time - self.start_time
+
+    def assign(self, executive_user_id: str, location_id: str | None = None) -> None:
+        """Record who took the call, e.g. once a ringing phone call is
+        answered. A location already on the call is kept."""
+        self.executive_user_id = executive_user_id
+        if self.location_id is None:
+            self.location_id = location_id
 
     def complete(self, end_time: float) -> None:
         if end_time < self.start_time:

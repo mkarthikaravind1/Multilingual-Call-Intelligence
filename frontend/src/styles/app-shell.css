@@ -394,12 +394,37 @@
 
 .table-row--calls {
   grid-template-columns:
-    minmax(0, 1.7fr) minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)
-    0.75fr 0.65fr minmax(0, 1.5fr);
-  min-width: 1040px;
+    minmax(0, 1.7fr) minmax(0, 1.15fr) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr)
+    minmax(0, 1fr) 0.75fr 0.65fr minmax(0, 1.5fr);
+  min-width: 1180px;
 }
 
-/* Eight columns: scroll sideways rather than squeeze on narrower screens. */
+/* Who took the call, with its direction and location underneath. */
+.call-table__taken-by {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.call-table__taken-by span,
+.call-table__taken-by small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-table__taken-by small {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.live-call__taken-by {
+  color: var(--color-text-muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+/* Nine columns: scroll sideways rather than squeeze on narrower screens. */
 .call-table {
   overflow-x: auto;
 }
@@ -2449,6 +2474,12 @@
   min-width: 0;
 }
 
+.call-filters__choice {
+  flex: 0 1 180px;
+  min-width: 140px;
+}
+
+.call-filters select,
 .call-filters input[type='search'],
 .call-filters input[type='date'] {
   width: 100%;
@@ -2463,6 +2494,7 @@
   outline: none;
 }
 
+.call-filters select:focus,
 .call-filters input[type='search']:focus,
 .call-filters input[type='date']:focus {
   border-color: var(--color-accent);

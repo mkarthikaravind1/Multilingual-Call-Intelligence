@@ -3,6 +3,8 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.dependencies import (
+    get_location_service,
+    get_user_repository,
     get_call_customer_service,
     get_call_listing,
     get_call_service,
@@ -19,6 +21,8 @@ from app.api.v1.mappers import (
 from app.api.v1.schemas import (
     CallAnalysisResponse,
     CallCustomerResponse,
+    CallDirectoryEntry,
+    CallDirectoryResponse,
     CallListResponse,
     CallSummaryDeliveriesResponse,
     CustomerSummaryDeliveryResponse,
@@ -30,7 +34,9 @@ from app.api.v1.schemas import (
     StartCallRequest,
     UtteranceRequest,
 )
-from app.domain.conversation import ConversationStatus
+from app.domain.conversation import CallDirection, ConversationStatus
+from app.domain.user_repository import UserRepository
+from app.services.location_service import LocationService
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_listing import CallListFilters, CallListingQuery
 from app.services.call_service import CallService
@@ -67,6 +73,9 @@ def list_calls(
     started_to: float | None = Query(None, ge=0),
     resolved_from: float | None = Query(None, ge=0),
     resolved_to: float | None = Query(None, ge=0),
+    location_id: str | None = Query(None, max_length=64),
+    executive_user_id: str | None = Query(None, max_length=64),
+    direction: CallDirection | None = Query(None),
     listing: CallListingQuery = Depends(get_call_listing),
     _: User = Depends(get_current_user),
 ) -> CallListResponse:
@@ -79,8 +88,32 @@ def list_calls(
         started_to=started_to,
         resolved_from=resolved_from,
         resolved_to=resolved_to,
+        location_id=location_id,
+        executive_user_id=executive_user_id,
+        direction=direction,
     )
     return to_call_list_response(listing.search(filters, limit, offset), limit, offset)
+
+@stats_router.get("/call-directory", response_model=CallDirectoryResponse)
+def get_call_directory(
+    locations: LocationService = Depends(get_location_service),
+    users: UserRepository = Depends(get_user_repository),
+    _: User = Depends(get_current_user),
+) -> CallDirectoryResponse:
+    return CallDirectoryResponse(
+        locations=[
+            CallDirectoryEntry(id=l.location_id, name=l.name, is_active=l.is_active)
+            for l in locations.list_locations()
+        ],
+        executives=sorted(
+            (
+                CallDirectoryEntry(id=u.user_id, name=u.name, is_active=u.is_active)
+                for u in users.list_all()
+            ),
+            key=lambda entry: entry.name.casefold(),
+        ),
+    )
+
 
 @stats_router.get("/call-stats", response_model=CallStatsResponse)
 def get_call_stats(
@@ -96,7 +129,7 @@ def start_call(
     call_customer_service: CallCustomerService | None = Depends(
         get_optional_call_customer_service
     ),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> CallResponse:
     caller_number = None
     if payload.caller_number is not None:
@@ -105,7 +138,14 @@ def start_call(
         # Validate before creating the call, so a bad number never leaves a call behind.
         caller_number = call_customer_service.normalize(payload.caller_number)
     start_time = time.time() if payload.start_time is None else payload.start_time
-    call = call_service.start_call(payload.call_id, start_time)
+    # A call started here is taken by whoever is signed in, at their location.
+    call = call_service.start_call(
+        payload.call_id,
+        start_time,
+        direction=payload.direction,
+        location_id=user.location_id,
+        executive_user_id=user.user_id,
+    )
     if call_customer_service is not None and caller_number is not None:
         call_customer_service.record_caller(call.call_id, caller_number)
     return to_call_response(call)

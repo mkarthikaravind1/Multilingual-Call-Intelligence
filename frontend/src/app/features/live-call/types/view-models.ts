@@ -1,3 +1,4 @@
+import type { CallDirection } from './dto'
 import type { EscalationLevel, EscalationStatus } from '../../escalation/types/dto'
 import type { EscalationViewModel } from '../../escalation/types/view-models'
 
@@ -45,6 +46,11 @@ export interface CallMetadataViewModel {
   customerName: string | null
   vehicleRegistration: string | null
   complaintsResolvedAt: number | null
+  direction: CallDirection | null
+  locationId: string | null
+  locationName: string | null
+  executiveUserId: string | null
+  executiveName: string | null
 }
 
 // Monetary values are kept as the backend's Decimal strings; never recalculated here.

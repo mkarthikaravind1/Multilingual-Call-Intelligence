@@ -31,3 +31,22 @@ def normalize_phone_number(raw: str | None, default_country_code: str = "") -> s
     if not _MIN_DIGITS <= len(digits) <= _MAX_DIGITS:
         return None
     return f"+{digits}"
+
+
+_SIP_PREFIX = "sip:"
+
+
+def normalize_dial_target(raw: str | None, default_country_code: str = "") -> str | None:
+    """Where a call is sent to or comes from, in one form: a phone number as
+    "+<digits>", or a SIP address in lower case ("sip:name@host"). None if
+    it is neither."""
+    if raw is None:
+        return None
+    text = raw.strip()
+    if text.lower().startswith(_SIP_PREFIX):
+        address = text[len(_SIP_PREFIX) :].strip().lower()
+        name, at, host = address.partition("@")
+        if not name or not at or not host or any(c.isspace() for c in address):
+            return None
+        return f"{_SIP_PREFIX}{address}"
+    return normalize_phone_number(text, default_country_code)

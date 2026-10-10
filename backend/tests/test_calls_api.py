@@ -139,6 +139,10 @@ def test_start_call():
         "end_time": None,
         "utterance_count": 0,
         "utterances": [],
+        # Taken by whoever started it; they belong to no location.
+        "direction": "inbound",
+        "location_id": None,
+        "executive_user_id": "test-icr",
     }
 
 
@@ -396,6 +400,11 @@ def test_list_calls_returns_newest_first_with_pagination():
         "customer_name": None,
         "vehicle_registration": None,
         "complaints_resolved_at": None,
+        "direction": "inbound",
+        "location_id": None,
+        "location_name": None,
+        "executive_user_id": "test-icr",
+        "executive_name": "test-icr@example.com",
     }
     assert first_page["items"][0]["escalation_level"] is None
 

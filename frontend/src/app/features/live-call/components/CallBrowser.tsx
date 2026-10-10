@@ -4,7 +4,9 @@ import { useSearchParams } from 'react-router-dom'
 import { ApiError } from '../../../api/errors'
 import { StatePanel } from '../../../components/StatePanel'
 import { toCallMetadataViewModel } from '../adapters/toViewModel'
+import { useCallDirectory } from '../hooks/useCallDirectory'
 import { callRestService, type CallListFilters } from '../services/callRestService'
+import type { CallDirectoryEntryDto } from '../types/dto'
 import type { CallMetadataViewModel } from '../types/view-models'
 import { CallTable } from './CallTable'
 
@@ -21,8 +23,16 @@ const PARAM = {
   startedTo: 'called_to',
   resolvedFrom: 'resolved_from',
   resolvedTo: 'resolved_to',
+  location: 'location',
+  executive: 'executive',
+  direction: 'direction',
   offset: 'offset',
 } as const
+
+const DIRECTION_OPTIONS = [
+  { id: 'inbound', name: 'Incoming' },
+  { id: 'outbound', name: 'Outgoing' },
+] as const
 
 type DateParam =
   | typeof PARAM.startedFrom
@@ -60,6 +70,9 @@ function toApiFilters(params: URLSearchParams): CallListFilters {
     startedTo: day(PARAM.startedTo, 1),
     resolvedFrom: day(PARAM.resolvedFrom),
     resolvedTo: day(PARAM.resolvedTo, 1),
+    locationId: params.get(PARAM.location) ?? undefined,
+    executiveUserId: params.get(PARAM.executive) ?? undefined,
+    direction: DIRECTION_OPTIONS.find((o) => o.id === params.get(PARAM.direction))?.id,
   }
 }
 
@@ -92,6 +105,7 @@ type CallBrowserProps = {
 export function CallBrowser({ emptyState }: CallBrowserProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [reloadCount, setReloadCount] = useState(0)
+  const directory = useCallDirectory()
   const [result, setResult] = useState<ListState | null>(null)
 
   // Typed text is applied after a short pause, not on every keystroke.
@@ -186,6 +200,33 @@ export function CallBrowser({ emptyState }: CallBrowserProps) {
       />
     </label>
   )
+
+  // A deactivated entry is offered only while it is the one chosen.
+  const choice = (
+    name: typeof PARAM.location | typeof PARAM.executive | typeof PARAM.direction,
+    label: string,
+    options: ReadonlyArray<Pick<CallDirectoryEntryDto, 'id' | 'name'> & { is_active?: boolean }>,
+  ) => {
+    const value = searchParams.get(name) ?? ''
+    return (
+      <label className="call-filters__choice">
+        <span>{label}</span>
+        <select
+          value={value}
+          onChange={(event) => updateParams({ [name]: event.target.value || null })}
+        >
+          <option value="">All</option>
+          {options
+            .filter((option) => option.is_active !== false || option.id === value)
+            .map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+        </select>
+      </label>
+    )
+  }
 
   const dateRange = (title: string, from: DateParam, to: DateParam) => {
     const fromValue = searchParams.get(from) ?? undefined
@@ -333,6 +374,9 @@ export function CallBrowser({ emptyState }: CallBrowserProps) {
         </div>
 
         <div className="call-filters__row">
+          {choice(PARAM.location, 'Location', directory.locations)}
+          {choice(PARAM.executive, 'Executive', directory.executives)}
+          {choice(PARAM.direction, 'Direction', DIRECTION_OPTIONS)}
           {dateRange('Call date', PARAM.startedFrom, PARAM.startedTo)}
           {dateRange('Resolved date', PARAM.resolvedFrom, PARAM.resolvedTo)}
           <div className="call-filters__actions">

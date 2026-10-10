@@ -16,6 +16,9 @@ def _to_domain(model: UserModel) -> User:
         is_active=model.is_active,
         created_at=model.created_at,
         password_changed_at=model.password_changed_at,
+        display_name=model.display_name,
+        location_id=model.location_id,
+        dial_target=model.dial_target,
     )
 
 
@@ -28,6 +31,9 @@ def _to_model(user: User) -> UserModel:
         is_active=user.is_active,
         created_at=user.created_at,
         password_changed_at=user.password_changed_at,
+        display_name=user.display_name,
+        location_id=user.location_id,
+        dial_target=user.dial_target,
     )
 
 

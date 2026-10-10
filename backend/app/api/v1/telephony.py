@@ -10,7 +10,7 @@ from app.core.config import get_settings
 from app.security.stream_token import create_stream_token
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.telephony_call_service import TelephonyCallService
-from app.telephony.provider import TelephonyProvider, TelephonyWebhookError
+from app.telephony.provider import DialPlan, TelephonyProvider, TelephonyWebhookError
 
 router = APIRouter(prefix="/telephony/plivo", tags=["telephony"])
 
@@ -27,6 +27,11 @@ def _webhook_url(request: Request) -> str:
     # As Plivo called it: the signature covers the query string too.
     query = f"?{request.url.query}" if request.url.query else ""
     return f"{base.rstrip('/')}{request.url.path}{query}"
+
+
+def _dial_callback_url(request: Request) -> str:
+    base = get_settings().plivo_public_base_url.strip() or str(request.base_url)
+    return f"{base.rstrip('/')}{request.url.path.rsplit('/', 1)[0]}/dial"
 
 
 def _require_provider(provider: TelephonyProvider | None) -> TelephonyProvider:
@@ -52,8 +57,9 @@ async def plivo_answer(
     except TelephonyWebhookError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    route = await run_in_threadpool(telephony_call_service.route_call, event)
     call_id = await run_in_threadpool(
-        telephony_call_service.start_call_from_provider, "plivo", event
+        telephony_call_service.start_call_from_provider, "plivo", event, route
     )
 
     settings = get_settings()
@@ -62,11 +68,42 @@ async def plivo_answer(
         f"/api/v1/calls/{call_id}/telephony-stream"
         f"?token={create_stream_token(call_id, settings)}"
     )
-    telephony_response = provider.build_stream_response(stream_url)
+    telephony_response = provider.build_stream_response(
+        stream_url,
+        DialPlan(
+            targets=route.dial_targets,
+            caller_id=route.caller_id,
+            callback_url=_dial_callback_url(request),
+        ),
+    )
 
     return Response(
         content=telephony_response.content, media_type=telephony_response.content_type
     )
+
+
+@router.post("/dial")
+async def plivo_dial(
+    request: Request,
+    provider: TelephonyProvider | None = Depends(get_telephony_provider),
+    telephony_call_service: TelephonyCallService = Depends(get_telephony_call_service),
+) -> Response:
+    """Plivo's callback about the executives it rang: the one who picks up
+    becomes the call's executive."""
+    provider = _require_provider(provider)
+    params = await _form_params(request)
+
+    if not provider.validate_signature(request.headers, _webhook_url(request), params):
+        raise HTTPException(status_code=403, detail="Invalid webhook signature.")
+
+    try:
+        event = provider.parse_dial_answer(params)
+    except TelephonyWebhookError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if event is not None:
+        await run_in_threadpool(telephony_call_service.executive_answered, event)
+    return Response(status_code=200)
 
 
 @router.post("/status")

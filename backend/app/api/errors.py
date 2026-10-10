@@ -11,6 +11,7 @@ from app.services.complaint_lifecycle_service import (
 from app.services.emerging_complaint_service import EmergingComplaintNotFoundError
 from app.services.post_call_repair_service import CallNotRepairableError
 from app.services.user_management_service import UserManagementError, UserNotFoundError
+from app.services.location_service import LocationError, LocationNotFoundError
 from app.services.conversation_service import ConversationNotFoundError
 from app.services.improvement_application_service import ActiveImprovementNotFoundError
 from app.services.learning_management_service import (
@@ -107,6 +108,16 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_user_management(
         request: Request, exc: UserManagementError
     ) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(LocationNotFoundError)
+    async def handle_location_not_found(
+        request: Request, exc: LocationNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(LocationError)
+    async def handle_location(request: Request, exc: LocationError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     @app.exception_handler(CallNotRepairableError)

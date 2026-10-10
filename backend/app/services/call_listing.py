@@ -18,8 +18,10 @@ from app.domain.complaint_lifecycle import (
     ComplaintLifecycleStatus,
 )
 from app.domain.complaint_lifecycle_repository import ComplaintLifecycleRepository
-from app.domain.conversation import ConversationStatus
+from app.domain.conversation import CallDirection, ConversationStatus
 from app.domain.escalation import EscalationLevel, EscalationStatus
+from app.domain.location import LocationRepository
+from app.domain.user_repository import UserRepository
 from app.services.call_customer_repository import CallCustomerRepository
 from app.services.conversation_repository import ConversationRepository
 from app.services.escalation_repository import EscalationRepository
@@ -47,6 +49,9 @@ class CallListFilters:
     started_to: float | None = None
     resolved_from: float | None = None
     resolved_to: float | None = None
+    location_id: str | None = None
+    executive_user_id: str | None = None
+    direction: CallDirection | None = None
 
     @property
     def customer_text(self) -> str | None:
@@ -73,6 +78,13 @@ class CallListItem:
     # When the last of the call's complaints was resolved; None while any is
     # still open, or when the call raised no complaints.
     complaints_resolved_at: float | None = None
+    # Where the call was taken and by whom; None when not recorded.
+    direction: CallDirection | None = None
+    location_id: str | None = None
+    location_name: str | None = None
+    executive_user_id: str | None = None
+    # The executive's name, or their email when they have none.
+    executive_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +146,15 @@ def matches(item: CallListItem, filters: CallListFilters) -> bool:
     digits = filters.phone_digits
     if digits is not None and (item.caller_number is None or digits not in item.caller_number):
         return False
+    if filters.location_id is not None and item.location_id != filters.location_id:
+        return False
+    if (
+        filters.executive_user_id is not None
+        and item.executive_user_id != filters.executive_user_id
+    ):
+        return False
+    if filters.direction is not None and item.direction is not filters.direction:
+        return False
     return _in_range(item.start_time, filters.started_from, filters.started_to) and _in_range(
         item.complaints_resolved_at, filters.resolved_from, filters.resolved_to
     )
@@ -148,7 +169,11 @@ class InMemoryCallListingQuery(CallListingQuery):
         call_customers: CallCustomerRepository,
         escalations: EscalationRepository,
         complaints: ComplaintLifecycleRepository,
+        locations: LocationRepository | None = None,
+        users: UserRepository | None = None,
     ) -> None:
+        self._locations = locations
+        self._users = users
         self._conversations = conversations
         self._call_customers = call_customers
         self._escalations = escalations
@@ -168,7 +193,22 @@ class InMemoryCallListingQuery(CallListingQuery):
         link = self._call_customers.get(conversation.call_id)
         records = self._complaints.list_for_call(conversation.call_id)
         events = self._complaints.list_events(r.complaint_id for r in records)
+        location = (
+            None
+            if self._locations is None or conversation.location_id is None
+            else self._locations.get(conversation.location_id)
+        )
+        executive = (
+            None
+            if self._users is None or conversation.executive_user_id is None
+            else self._users.get_by_id(conversation.executive_user_id)
+        )
         return CallListItem(
+            direction=conversation.direction,
+            location_id=conversation.location_id,
+            location_name=None if location is None else location.name,
+            executive_user_id=conversation.executive_user_id,
+            executive_name=None if executive is None else executive.name,
             call_id=conversation.call_id,
             status=conversation.status,
             start_time=conversation.start_time,

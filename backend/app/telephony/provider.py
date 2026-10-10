@@ -4,10 +4,20 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from app.domain.conversation import CallDirection
+from app.domain.utterance import SpeakerRole
 
-class CallDirection(str, Enum):
-    INBOUND = "inbound"
-    OUTBOUND = "outbound"
+# The two sides of a call a provider can stream separately: "inbound" is
+# whoever placed the call, "outbound" whoever they hear.
+TRACKS = ("inbound", "outbound")
+
+
+def track_roles(direction: CallDirection | None) -> dict[str, SpeakerRole]:
+    """Who speaks on each track: the customer places an incoming call, the
+    executive an outgoing one."""
+    if direction is CallDirection.OUTBOUND:
+        return {"inbound": SpeakerRole.ICR, "outbound": SpeakerRole.CUSTOMER}
+    return {"inbound": SpeakerRole.CUSTOMER, "outbound": SpeakerRole.ICR}
 
 
 class CallProviderStatus(str, Enum):
@@ -45,6 +55,26 @@ class CallStatusEvent:
             raise ValueError("provider_call_id must not be empty.")
         if not isinstance(self.status, CallProviderStatus):
             raise TypeError("status must be a CallProviderStatus.")
+
+
+@dataclass(frozen=True)
+class DialPlan:
+    """Who the provider rings once the call's audio is being streamed."""
+
+    # Phone numbers or SIP addresses; empty: the configured ones.
+    targets: tuple[str, ...] = ()
+    # The number shown to whoever is rung; None: the configured one.
+    caller_id: str | None = None
+    # Where the provider reports who answered.
+    callback_url: str | None = None
+
+
+@dataclass(frozen=True)
+class DialAnswerEvent:
+    """One of the rung parties picked up."""
+
+    provider_call_id: str
+    answered_target: str
 
 
 @dataclass(frozen=True)
@@ -107,8 +137,16 @@ class TelephonyProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def build_stream_response(self, stream_url: str) -> TelephonyResponse:
+    def build_stream_response(
+        self, stream_url: str, dial: DialPlan | None = None
+    ) -> TelephonyResponse:
         raise NotImplementedError
+
+    def parse_dial_answer(self, params: Mapping[str, str]) -> DialAnswerEvent | None:
+        """Who answered, from the provider's callback about the parties it
+        rang; None for any other stage of the ringing (or a provider that
+        does not report it)."""
+        return None
 
     @abstractmethod
     def parse_media_stream_event(

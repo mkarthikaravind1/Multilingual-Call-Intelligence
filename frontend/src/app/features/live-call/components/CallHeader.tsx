@@ -8,6 +8,8 @@ import type {
   LiveSocketStatus,
 } from '../services/liveCallSocket'
 
+import { formatCallDirection } from '../adapters/toViewModel'
+import { useCallDirectory } from '../hooks/useCallDirectory'
 import { ConnectionStatus } from './ConnectionStatus'
 
 type CallHeaderProps = {
@@ -37,6 +39,19 @@ export function CallHeader({
   children,
 }: CallHeaderProps) {
   const isActive = call?.status.toLowerCase() === 'active'
+  const directory = useCallDirectory()
+  const nameOf = (entries: typeof directory.locations, id: string | null) =>
+    entries.find((entry) => entry.id === id)?.name ?? null
+  // "Incoming · Chennai · Asha", or as much of it as was recorded.
+  const takenBy = call
+    ? [
+        formatCallDirection(call.direction),
+        call.locationName ?? nameOf(directory.locations, call.locationId),
+        call.executiveName ?? nameOf(directory.executives, call.executiveUserId),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
 
   const canComplete =
     Boolean(call) &&
@@ -77,6 +92,7 @@ export function CallHeader({
         )}
 
         <div className="live-call__header-status">
+          {takenBy && <span className="live-call__taken-by">{takenBy}</span>}
           {call && (
             <span
               className={`live-call__call-status live-call__call-status--${call.status.toLowerCase()}`}

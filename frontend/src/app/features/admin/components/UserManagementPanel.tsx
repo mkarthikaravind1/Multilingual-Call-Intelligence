@@ -6,20 +6,56 @@ import { AUTH_ROLES, type UserRole } from '../../../api/types/auth'
 import { StatePanel } from '../../../components/StatePanel'
 import { adminRestService } from '../services/adminRestService'
 
-import type { ManagedUserDto, UpdateUserDto } from '../types/dto'
+import type { LocationDto, ManagedUserDto, UpdateUserDto } from '../types/dto'
 
 const MIN_PASSWORD_LENGTH = 8
 
 const errorMessage = (err: unknown, fallback: string) =>
   err instanceof ApiError ? err.message : fallback
 
+const DIAL_TARGET_HINT = 'Phone number or SIP address'
+
+type LocationSelectProps = {
+  id: string
+  value: string
+  locations: LocationDto[]
+  disabled: boolean
+  onChange: (locationId: string) => void
+}
+
+// A deactivated location stays selectable only for the user who has it.
+function LocationSelect({ id, value, locations, disabled, onChange }: LocationSelectProps) {
+  return (
+    <select
+      id={id}
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">No location</option>
+      {locations
+        .filter((location) => location.is_active || location.location_id === value)
+        .map((location) => (
+          <option key={location.location_id} value={location.location_id}>
+            {location.name}
+            {location.is_active ? '' : ' (deactivated)'}
+          </option>
+        ))}
+    </select>
+  )
+}
+
 type UserCardProps = {
   user: ManagedUserDto
+  locations: LocationDto[]
   isCurrentUser: boolean
   onUpdated: (user: ManagedUserDto) => void
 }
 
-function UserCard({ user, isCurrentUser, onUpdated }: UserCardProps) {
+function UserCard({ user, locations, isCurrentUser, onUpdated }: UserCardProps) {
+  const [displayName, setDisplayName] = useState(user.display_name ?? '')
+  const [locationId, setLocationId] = useState(user.location_id ?? '')
+  const [dialTarget, setDialTarget] = useState(user.dial_target ?? '')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -31,7 +67,11 @@ function UserCard({ user, isCurrentUser, onUpdated }: UserCardProps) {
     setError(null)
     setNotice(null)
     try {
-      onUpdated(await adminRestService.updateUser(user.user_id, payload))
+      const updated = await adminRestService.updateUser(user.user_id, payload)
+      setDisplayName(updated.display_name ?? '')
+      setLocationId(updated.location_id ?? '')
+      setDialTarget(updated.dial_target ?? '')
+      onUpdated(updated)
     } catch (err) {
       setError(errorMessage(err, 'Unable to update the user.'))
     } finally {
@@ -55,13 +95,32 @@ function UserCard({ user, isCurrentUser, onUpdated }: UserCardProps) {
     }
   }
 
+  const detailsChanged =
+    displayName.trim() !== (user.display_name ?? '') ||
+    locationId !== (user.location_id ?? '') ||
+    dialTarget.trim() !== (user.dial_target ?? '')
+
+  const saveDetails = (event: FormEvent) => {
+    event.preventDefault()
+    void update({
+      display_name: displayName.trim() || null,
+      location_id: locationId || null,
+      dial_target: dialTarget.trim() || null,
+    })
+  }
+
   const roleId = `role-${user.user_id}`
   const passwordId = `password-${user.user_id}`
+  const nameId = `name-${user.user_id}`
+  const locationFieldId = `location-${user.user_id}`
+  const dialTargetId = `dial-target-${user.user_id}`
 
   return (
     <article className={`list-card${user.is_active ? '' : ' user-card--inactive'}`}>
       <div className="section-heading complaint-card__heading">
-        <strong className="list-card__title">{user.email}</strong>
+        <strong className="list-card__title">
+          {user.display_name ? `${user.display_name} · ${user.email}` : user.email}
+        </strong>
         <div className="list-card__meta">
           {isCurrentUser && <span className="badge badge--active">You</span>}
           <span className="badge">{user.role}</span>
@@ -112,6 +171,38 @@ function UserCard({ user, isCurrentUser, onUpdated }: UserCardProps) {
         )}
       </div>
 
+      <form className="review-form" onSubmit={saveDetails}>
+        <label htmlFor={nameId}>Name</label>
+        <input
+          id={nameId}
+          maxLength={100}
+          placeholder="Shown on calls and reports"
+          value={displayName}
+          disabled={isSaving}
+          onChange={(event) => setDisplayName(event.target.value)}
+        />
+        <label htmlFor={locationFieldId}>Location</label>
+        <LocationSelect
+          id={locationFieldId}
+          value={locationId}
+          locations={locations}
+          disabled={isSaving}
+          onChange={setLocationId}
+        />
+        <label htmlFor={dialTargetId}>Dial target</label>
+        <input
+          id={dialTargetId}
+          maxLength={200}
+          placeholder={DIAL_TARGET_HINT}
+          value={dialTarget}
+          disabled={isSaving}
+          onChange={(event) => setDialTarget(event.target.value)}
+        />
+        <button type="submit" className="button" disabled={isSaving || !detailsChanged}>
+          {isSaving ? 'Saving…' : 'Save details'}
+        </button>
+      </form>
+
       {isResetting && (
         <form className="review-form" onSubmit={(event) => void resetPassword(event)}>
           <label htmlFor={passwordId}>New password</label>
@@ -160,9 +251,16 @@ function UserCard({ user, isCurrentUser, onUpdated }: UserCardProps) {
 
 type UserManagementPanelProps = {
   currentUserId: string | null
+  locations: LocationDto[]
+  // Told the users whenever they are loaded or changed.
+  onUsersChanged?: (users: ManagedUserDto[]) => void
 }
 
-export function UserManagementPanel({ currentUserId }: UserManagementPanelProps) {
+export function UserManagementPanel({
+  currentUserId,
+  locations,
+  onUsersChanged,
+}: UserManagementPanelProps) {
   const [users, setUsers] = useState<ManagedUserDto[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -170,6 +268,9 @@ export function UserManagementPanel({ currentUserId }: UserManagementPanelProps)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<UserRole>('ICR')
+  const [displayName, setDisplayName] = useState('')
+  const [locationId, setLocationId] = useState('')
+  const [dialTarget, setDialTarget] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [createdEmail, setCreatedEmail] = useState<string | null>(null)
@@ -198,18 +299,32 @@ export function UserManagementPanel({ currentUserId }: UserManagementPanelProps)
     }
   }, [load])
 
+  useEffect(() => {
+    onUsersChanged?.(users)
+  }, [users, onUsersChanged])
+
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
     setIsCreating(true)
     setCreateError(null)
     setCreatedEmail(null)
     try {
-      const created = await adminRestService.createUser({ email, password, role })
+      const created = await adminRestService.createUser({
+        email,
+        password,
+        role,
+        display_name: displayName.trim() || null,
+        location_id: locationId || null,
+        dial_target: dialTarget.trim() || null,
+      })
       setUsers((current) => [...current, created])
       setCreatedEmail(created.email)
       setEmail('')
       setPassword('')
       setRole('ICR')
+      setDisplayName('')
+      setLocationId('')
+      setDialTarget('')
     } catch (err) {
       setCreateError(errorMessage(err, 'Unable to create the user.'))
     } finally {
@@ -264,6 +379,36 @@ export function UserManagementPanel({ currentUserId }: UserManagementPanelProps)
           />
         </div>
         <div className="review-form">
+          <label htmlFor="new-user-name">Name</label>
+          <input
+            id="new-user-name"
+            maxLength={100}
+            placeholder="Shown on calls and reports"
+            value={displayName}
+            disabled={isCreating}
+            onChange={(event) => setDisplayName(event.target.value)}
+          />
+          <label htmlFor="new-user-location">Location</label>
+          <LocationSelect
+            id="new-user-location"
+            value={locationId}
+            locations={locations}
+            disabled={isCreating}
+            onChange={setLocationId}
+          />
+        </div>
+        <div className="review-form">
+          <label htmlFor="new-user-dial-target">Dial target</label>
+          <input
+            id="new-user-dial-target"
+            maxLength={200}
+            placeholder={`${DIAL_TARGET_HINT}, e.g. +91 98000 00001 or sip:name@phone.plivo.com`}
+            value={dialTarget}
+            disabled={isCreating}
+            onChange={(event) => setDialTarget(event.target.value)}
+          />
+        </div>
+        <div className="review-form">
           <label htmlFor="new-user-role">Role</label>
           <select
             id="new-user-role"
@@ -303,6 +448,7 @@ export function UserManagementPanel({ currentUserId }: UserManagementPanelProps)
             <UserCard
               key={user.user_id}
               user={user}
+              locations={locations}
               isCurrentUser={user.user_id === currentUserId}
               onUpdated={replace}
             />

@@ -37,6 +37,10 @@ class ConversationModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
+    # NULL: not recorded (see Conversation).
+    direction: Mapped[str | None] = mapped_column(String, nullable=True)
+    location_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    executive_user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     utterances: Mapped[list["UtteranceModel"]] = relationship(
         back_populates="conversation",
@@ -309,8 +313,21 @@ class UserModel(Base):
     created_at: Mapped[float] = mapped_column(Float, nullable=False)
     # Sessions signed in before this no longer count (see User).
     password_changed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    location_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    dial_target: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
 
     __table_args__ = (Index("ix_users_email", "email"),)
+
+
+class LocationModel(Base):
+    __tablename__ = "locations"
+
+    location_id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    phone_number: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[float] = mapped_column(Float, nullable=False)
 
 
 class CallCustomerModel(Base):

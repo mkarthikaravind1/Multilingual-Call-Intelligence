@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.domain.conversation import (
+    CallDirection,
     Conversation,
     ConversationAlreadyExistsError,
     ConversationStatus,
@@ -32,6 +33,9 @@ def _conversation_to_domain(model: ConversationModel) -> Conversation:
         status=ConversationStatus.ACTIVE,
         start_time=model.start_time,
         end_time=model.end_time,
+        direction=None if model.direction is None else CallDirection(model.direction),
+        location_id=model.location_id,
+        executive_user_id=model.executive_user_id,
     )
     for utterance_model in model.utterances:
         conversation.add_utterance(_utterance_to_domain(utterance_model))
@@ -55,17 +59,25 @@ def _utterance_to_model(call_id: str, utterance: Utterance) -> UtteranceModel:
     )
 
 
+def _write_call_fields(model: ConversationModel, conversation: Conversation) -> None:
+    model.status = conversation.status.value
+    model.start_time = conversation.start_time
+    model.end_time = conversation.end_time
+    model.direction = None if conversation.direction is None else conversation.direction.value
+    model.location_id = conversation.location_id
+    model.executive_user_id = conversation.executive_user_id
+
+
 def _conversation_to_model(conversation: Conversation) -> ConversationModel:
-    return ConversationModel(
+    model = ConversationModel(
         call_id=conversation.call_id,
-        status=conversation.status.value,
-        start_time=conversation.start_time,
-        end_time=conversation.end_time,
         utterances=[
             _utterance_to_model(conversation.call_id, utterance)
             for utterance in conversation.utterances
         ],
     )
+    _write_call_fields(model, conversation)
+    return model
 
 
 class PostgresConversationRepository(ConversationRepository):
@@ -93,9 +105,7 @@ class PostgresConversationRepository(ConversationRepository):
             # only what changed is written (deleting and re-inserting the
             # call rewrote its whole transcript each time), and the row
             # keeps its created_at.
-            existing.status = conversation.status.value
-            existing.start_time = conversation.start_time
-            existing.end_time = conversation.end_time
+            _write_call_fields(existing, conversation)
             stored = {model.utterance_id: model for model in existing.utterances}
             # Utterances no longer in the call (a revised transcript) are
             # deleted with this assignment.

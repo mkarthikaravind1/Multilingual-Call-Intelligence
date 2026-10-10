@@ -135,6 +135,9 @@ from app.services.price_list_repository import (
 from app.services.price_list_service import PriceListService
 from app.services.login_throttle import LoginLimits, LoginThrottle
 from app.services.complaint_category_catalog import ComplaintCategoryCatalog
+from app.domain.location import InMemoryLocationRepository, LocationRepository
+from app.services.call_routing_service import CallRoutingService
+from app.services.location_service import LocationService
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +173,7 @@ def build_api_services(
     live_state_store: LiveStateStore | None = None,
     call_listing_query: CallListingQuery | None = None,
     price_list_repository: PriceListRepository | None = None,
+    location_repository: LocationRepository | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -205,8 +209,23 @@ def build_api_services(
         emerging_complaint_repository or InMemoryEmergingComplaintRepository()
     )
 
+    location_repository = location_repository or InMemoryLocationRepository()
+
     call_service = CallService(ConversationService(conversation_repository))
-    auth_service, user_management_service = _build_user_services(settings, user_repository)
+    auth_service, user_management_service = _build_user_services(
+        settings, user_repository, location_repository
+    )
+    # --- Where calls are taken, and by whom ---
+    location_service = LocationService(
+        location_repository,
+        user_repository,
+        default_country_code=settings.phone_default_country_code,
+    )
+    call_routing = CallRoutingService(
+        location_repository,
+        user_repository,
+        default_country_code=settings.phone_default_country_code,
+    )
 
     # --- Caller identity and the CRM boundary ---
     call_customer_service = CallCustomerService(
@@ -256,6 +275,8 @@ def build_api_services(
             call_customer_repository,
             escalation_repository,
             complaint_lifecycle_repository,
+            location_repository,
+            user_repository,
         )
 
     # --- Parts that are simply absent when not configured ---
@@ -325,7 +346,7 @@ def build_api_services(
         settings, call_service, workflow_service, post_call_summary_repository, live_state_store
     )
     telephony_call_service = _build_telephony_call_service(
-        settings, call_service, call_customer_service, live_state_store
+        settings, call_service, call_customer_service, live_state_store, call_routing
     )
     background_jobs = _build_background_jobs(
         settings,
@@ -393,6 +414,7 @@ def build_api_services(
         live_call_push_interval_seconds=settings.live_call_push_interval_seconds,
         post_call_repair_service=post_call_repair_service,
         user_management_service=user_management_service,
+        location_service=location_service,
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
         background_jobs=background_jobs,
@@ -446,10 +468,17 @@ def _live_state(
 
 
 def _build_user_services(
-    settings: Settings, user_repository: UserRepository
+    settings: Settings,
+    user_repository: UserRepository,
+    location_repository: LocationRepository,
 ) -> tuple[AuthService, UserManagementService]:
     auth_service = AuthService(user_repository)
-    user_management_service = UserManagementService(user_repository, auth_service)
+    user_management_service = UserManagementService(
+        user_repository,
+        auth_service,
+        locations=location_repository,
+        default_country_code=settings.phone_default_country_code,
+    )
     try:
         user_management_service.bootstrap_admin(
             settings.bootstrap_admin_email, settings.bootstrap_admin_password
@@ -556,6 +585,7 @@ def _build_telephony_call_service(
     call_service: CallService,
     call_customer_service: CallCustomerService,
     live_state_store: LiveStateStore,
+    call_routing: CallRoutingService,
 ) -> TelephonyCallService:
     # Degrades to in-memory by itself, so an unconfigured store never
     # prevents the rest of the app (learning, auth, the manual /live
@@ -569,6 +599,7 @@ def _build_telephony_call_service(
         ),
         call_customer_service=call_customer_service,
         live_state=live_state_store,
+        call_routing=call_routing,
     )
 
 

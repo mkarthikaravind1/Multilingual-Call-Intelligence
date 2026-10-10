@@ -19,6 +19,17 @@ class User:
     # When the password was last set by a reset; sessions signed in before
     # it no longer count. None: never reset.
     password_changed_at: float | None = None
+    # The name shown on calls and reports; None: the email is shown.
+    display_name: str | None = None
+    # The service centre the user works at (see Location).
+    location_id: str | None = None
+    # Where the telephony provider reaches the user: a phone number as
+    # "+<digits>", or a SIP address ("sip:name@host").
+    dial_target: str | None = None
+
+    @property
+    def name(self) -> str:
+        return self.display_name or self.email
 
     def __post_init__(self) -> None:
         if not self.user_id.strip():

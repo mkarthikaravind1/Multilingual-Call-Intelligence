@@ -144,6 +144,8 @@ rest of the call, and the session is shared between instances (Redis).
   dials the ICR. The caller's track (inbound) is the customer and the other
   track (outbound) is the ICR, so roles are exact and no diarization runs.
   A track that is silent while the other side speaks is not sent to ASR.
+  On an outgoing call (an executive dialling out through Plivo) the roles
+  are the other way round.
 - **Mixed audio** (test-audio upload, no ICR dialled). Diarization
   (`DIARIZATION_PROVIDER=pyannote`, model `pyannote/speaker-diarization-community-1`)
   labels speakers per chunk, but those labels change from chunk to chunk.
@@ -538,13 +540,13 @@ With the backend running, interactive OpenAPI docs are at
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/login` |
-| Calls | `GET/POST /calls`, `GET /calls/{id}`, `POST /calls/{id}/utterances`, `GET /calls/{id}/analysis`, `POST /calls/{id}/complete`, `GET /call-stats`, customer and summary-delivery endpoints |
+| Calls | `GET/POST /calls`, `GET /calls/{id}`, `POST /calls/{id}/utterances`, `GET /calls/{id}/analysis`, `POST /calls/{id}/complete`, `GET /call-stats`, `GET /call-directory`, customer and summary-delivery endpoints |
 | Live | `POST /calls/{id}/live-token`, `WS /calls/{id}/live?ticket=…` |
-| Telephony | `POST /telephony/plivo/answer`, `POST /telephony/plivo/status`, `WS /calls/{id}/telephony-stream?token=…` |
+| Telephony | `POST /telephony/plivo/answer`, `POST /telephony/plivo/status`, `POST /telephony/plivo/dial`, `WS /calls/{id}/telephony-stream?token=…` |
 | Complaints | `/complaints`, `/calls/{id}/complaints`, `/emerging-complaints` (+ `/discover`, `/{id}/review`) |
 | Escalations | `GET /escalations`, `POST /escalations/{call_id}/acknowledge`, `/resolve` |
 | Learning | `/learning/candidates` (+ approve/reject), `/learning/patterns`, `/learning/evidence`, `/learning/calls/{id}/observations`, `/learning/calls/{id}/feedback`, `/learning/improvements` |
-| Admin | `/admin/users`, `/admin/post-call` (+ repair/retry) |
+| Admin | `/admin/users`, `/admin/locations`, `/admin/post-call` (+ repair/retry) |
 | Test calls | `/test-calls` (disabled in production) |
 | Ops (no prefix) | `/health/live`, `/health/ready`, `/metrics` |
 

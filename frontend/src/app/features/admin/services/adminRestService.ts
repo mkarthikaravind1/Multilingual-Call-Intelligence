@@ -1,11 +1,14 @@
 import { apiClient } from '../../../api/client'
 
 import type {
+  CreateLocationDto,
   CreateUserDto,
+  LocationDto,
   ManagedUserDto,
   PostCallRepairStatusDto,
   RepairRunDto,
   RetryPostCallDto,
+  UpdateLocationDto,
   UpdateUserDto,
 } from '../types/dto'
 
@@ -31,6 +34,21 @@ export const adminRestService = {
     return apiClient.post<void>(`${basePath}/users/${encodeURIComponent(userId)}/password`, {
       password,
     })
+  },
+
+  listLocations(): Promise<LocationDto[]> {
+    return apiClient.get<LocationDto[]>(`${basePath}/locations`)
+  },
+
+  createLocation(payload: CreateLocationDto): Promise<LocationDto> {
+    return apiClient.post<LocationDto>(`${basePath}/locations`, payload)
+  },
+
+  updateLocation(locationId: string, payload: UpdateLocationDto): Promise<LocationDto> {
+    return apiClient.request<LocationDto>(
+      `${basePath}/locations/${encodeURIComponent(locationId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+    )
   },
 
   getPostCallStatus(): Promise<PostCallRepairStatusDto> {

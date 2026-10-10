@@ -2,7 +2,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.complaint_lifecycle import ComplaintLifecycleStatus
-from app.domain.conversation import ConversationStatus
+from app.domain.conversation import CallDirection, ConversationStatus
 from app.domain.escalation import EscalationLevel, EscalationStatus
 from app.infrastructure.database.models import (
     CallCustomerModel,
@@ -10,6 +10,8 @@ from app.infrastructure.database.models import (
     ComplaintLifecycleRecordModel,
     ConversationModel,
     EscalationModel,
+    LocationModel,
+    UserModel,
     UtteranceModel,
 )
 from app.services.call_listing import (
@@ -78,6 +80,8 @@ class PostgresCallListingQuery(CallListingQuery):
         conversation = ConversationModel
         customer = CallCustomerModel
         escalation = EscalationModel
+        location = LocationModel
+        executive = UserModel
         resolved = _complaints_resolved_at()
         utterances = _utterance_counts()
 
@@ -94,7 +98,14 @@ class PostgresCallListingQuery(CallListingQuery):
                 escalation.level,
                 escalation.status.label("escalation_status"),
                 resolved.c.resolved_at,
+                conversation.direction,
+                conversation.location_id,
+                location.name.label("location_name"),
+                conversation.executive_user_id,
+                func.coalesce(executive.display_name, executive.email).label("executive_name"),
             )
+            .outerjoin(location, location.location_id == conversation.location_id)
+            .outerjoin(executive, executive.user_id == conversation.executive_user_id)
             .outerjoin(customer, customer.call_id == conversation.call_id)
             .outerjoin(escalation, escalation.call_id == conversation.call_id)
             .outerjoin(resolved, resolved.c.call_id == conversation.call_id)
@@ -120,6 +131,12 @@ class PostgresCallListingQuery(CallListingQuery):
         digits = filters.phone_digits
         if digits is not None:
             query = query.where(customer.caller_number.like(_like_pattern(digits)))
+        if filters.location_id is not None:
+            query = query.where(conversation.location_id == filters.location_id)
+        if filters.executive_user_id is not None:
+            query = query.where(conversation.executive_user_id == filters.executive_user_id)
+        if filters.direction is not None:
+            query = query.where(conversation.direction == filters.direction.value)
         query = _apply_range(
             query, conversation.start_time, filters.started_from, filters.started_to
         )
@@ -153,6 +170,11 @@ class PostgresCallListingQuery(CallListingQuery):
                         else EscalationStatus(row.escalation_status)
                     ),
                     complaints_resolved_at=row.resolved_at,
+                    direction=None if row.direction is None else CallDirection(row.direction),
+                    location_id=row.location_id,
+                    location_name=row.location_name,
+                    executive_user_id=row.executive_user_id,
+                    executive_name=row.executive_name,
                 )
                 for row in rows
             ),

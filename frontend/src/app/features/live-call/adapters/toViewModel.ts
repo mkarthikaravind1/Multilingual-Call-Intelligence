@@ -2,6 +2,7 @@ import { toEscalationViewModel } from '../../escalation/adapters/toEscalationVie
 
 import type {
   CallAnalysisResponseDto,
+  CallDirection,
   CallSummaryDto,
   ComplaintDto,
   ComplaintSummaryDto,
@@ -55,7 +56,18 @@ export function toCallMetadataViewModel(
     customerName: call.customer_name ?? null,
     vehicleRegistration: call.vehicle_registration ?? null,
     complaintsResolvedAt: call.complaints_resolved_at ?? null,
+    direction: call.direction ?? null,
+    locationId: call.location_id ?? null,
+    locationName: call.location_name ?? null,
+    executiveUserId: call.executive_user_id ?? null,
+    executiveName: call.executive_name ?? null,
   }
+}
+
+export function formatCallDirection(direction: CallDirection | null): string | null {
+  if (direction === 'inbound') return 'Incoming'
+  if (direction === 'outbound') return 'Outgoing'
+  return null
 }
 
 // "Customer Name(Vehicle Number)", or as much of it as is known.

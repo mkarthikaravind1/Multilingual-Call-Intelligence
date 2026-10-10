@@ -149,6 +149,7 @@ def test_schema_creates_all_expected_tables(engine):
         "escalations",
         "emerging_complaint_candidates",
         "price_list_versions",
+        "locations",
     }
 
 

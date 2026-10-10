@@ -13,15 +13,10 @@ from app.domain.conversation import Conversation
 from app.domain.customer_language import main_indic_language
 from app.domain.utterance import SpeakerRole, Utterance
 from app.services.call_recording_store import CallRecordingStore
+from app.telephony.provider import track_roles
 
 logger = logging.getLogger(__name__)
 
-# As the live stream assigns them (see app.api.v1.telephony_ws): the caller
-# is the customer, the dialled party the ICR.
-_TRACK_ROLES: dict[str, SpeakerRole] = {
-    "inbound": SpeakerRole.CUSTOMER,
-    "outbound": SpeakerRole.ICR,
-}
 _FRAME_SECONDS = 0.02
 _LEAD_IN_FRAMES = 10  # 0.2 s
 
@@ -80,9 +75,11 @@ class PostCallRetranscriptionService:
             )
             return None
 
+        # As the live stream assigns them (see app.api.v1.telephony_ws).
+        roles = track_roles(conversation.direction)
         windows: list[_Window] = []
         for track, pcm in recording.tracks.items():
-            role = _TRACK_ROLES.get(track) if track is not None else None
+            role = roles.get(track) if track is not None else None
             hint = self._language_hint(conversation.utterances, role)
             for start, end in _speech_windows(
                 bytes(pcm), recording.sample_rate, self._window_seconds, self._silence_rms

@@ -13,6 +13,8 @@ from app.telephony.plivo.signature import validate_signature as _validate_plivo_
 from app.telephony.provider import (
     CallProviderStatus,
     CallStatusEvent,
+    DialAnswerEvent,
+    DialPlan,
     InboundCallEvent,
     MediaStreamEvent,
     TelephonyProvider,
@@ -46,6 +48,8 @@ _STREAM_CONTENT_TYPES = {
 _STREAM_TIMEOUT_SECONDS = 86400
 _ATTRIBUTE_ENTITIES = {'"': "&quot;"}
 _TRACKS = frozenset({"inbound", "outbound"})
+# What the <Dial> callback reports once a rung party has picked up.
+_DIAL_ANSWERED = frozenset({"answer", "connected"})
 
 
 class PlivoConfigurationError(Exception):
@@ -112,8 +116,22 @@ class PlivoTelephonyProvider(TelephonyProvider):
             provider_call_id=call_uuid, status=status, duration_seconds=duration_seconds
         )
 
-    def build_stream_response(self, stream_url: str) -> TelephonyResponse:
-        if not self._icr_dial_targets:
+    def parse_dial_answer(self, params: Mapping[str, str]) -> DialAnswerEvent | None:
+        stage = (params.get("DialAction") or params.get("DialBLegStatus") or "").strip().lower()
+        if stage not in _DIAL_ANSWERED:
+            return None
+        call_uuid = (params.get("DialALegUUID") or params.get("CallUUID") or "").strip()
+        target = (params.get("DialBLegTo") or "").strip()
+        if not call_uuid or not target:
+            raise TelephonyWebhookError("Plivo dial callback missing the call or who answered.")
+        return DialAnswerEvent(provider_call_id=call_uuid, answered_target=target)
+
+    def build_stream_response(
+        self, stream_url: str, dial: DialPlan | None = None
+    ) -> TelephonyResponse:
+        dial = dial or DialPlan()
+        dial_targets = dial.targets or self._icr_dial_targets
+        if not dial_targets:
             # No ICR to dial: stream the caller only, and hold the call open
             # for as long as the stream runs.
             stream = (
@@ -130,14 +148,19 @@ class PlivoTelephonyProvider(TelephonyProvider):
             f'streamTimeout="{_STREAM_TIMEOUT_SECONDS}" '
             f'contentType="{self._content_type}">{escape(stream_url)}</Stream>'
         )
-        caller_id = (
-            f' callerId="{escape(self._icr_caller_id, _ATTRIBUTE_ENTITIES)}"'
-            if self._icr_caller_id
-            else ""
-        )
-        targets = "".join(_dial_target(target) for target in self._icr_dial_targets)
+        attributes = ""
+        caller_id = dial.caller_id or self._icr_caller_id
+        if caller_id:
+            attributes += f' callerId="{escape(caller_id, _ATTRIBUTE_ENTITIES)}"'
+        if dial.callback_url:
+            # Plivo reports who picked up here (see parse_dial_answer).
+            attributes += (
+                f' callbackUrl="{escape(dial.callback_url, _ATTRIBUTE_ENTITIES)}"'
+                ' callbackMethod="POST"'
+            )
+        targets = "".join(_dial_target(target) for target in dial_targets)
         return _xml_response(
-            f"{stream}<Dial{caller_id} timeout=\"{self._icr_dial_timeout}\">{targets}</Dial>"
+            f"{stream}<Dial{attributes} timeout=\"{self._icr_dial_timeout}\">{targets}</Dial>"
         )
 
     def parse_media_stream_event(

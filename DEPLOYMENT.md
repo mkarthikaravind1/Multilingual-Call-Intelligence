@@ -75,6 +75,29 @@ ICR arrive as separate tracks, which makes speaker roles exact.
 `PLIVO_ICR_CALLER_ID` sets the number the ICR sees (by default, the
 caller's). Production refuses to start with telephony on and no dial target.
 
+### Locations and executives
+
+Every call records its location, its executive and its direction. Set them
+up in Administration:
+
+- **Locations**: one per service centre, each with the Plivo number its
+  customers dial. A call is recorded under the location whose number was
+  dialled.
+- **Users**: give each executive a name, a location and a dial target (the
+  phone number or `sip:` address of their phone). An incoming call rings the
+  active users of its location that have a dial target; whoever picks up
+  becomes the call's executive. Plivo reports this to
+  `https://<host>/api/v1/telephony/plivo/dial` (set by the answer XML; no
+  Plivo setting needed). `PLIVO_ICR_DIAL_TARGETS` is rung only for a call
+  whose location has nobody to ring.
+- **Outgoing calls**: a call an executive places through Plivo from their
+  dial target (to a number that is not a location's) is recorded as an
+  outgoing call of theirs. The customer is rung and sees the location's
+  number, and the speaker roles are swapped (the caller is the executive).
+
+A call started in the web app, or a test call, is recorded under the
+signed-in user and their location.
+
 Plivo's docs do not state the byte order of 16 kHz linear PCM (`l16_16k`);
 the backend reads it as little-endian. Check the first real call's transcript:
 if it is empty or nonsense, set `PLIVO_STREAM_AUDIO=mulaw_8k` and report it.
