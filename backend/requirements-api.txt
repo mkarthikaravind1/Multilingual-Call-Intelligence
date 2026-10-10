@@ -21,3 +21,4 @@ bcrypt==4.3.0
 PyJWT==2.10.1
 groq==1.7.0
 openpyxl==3.1.5
+reportlab==4.2.5

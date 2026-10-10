@@ -80,6 +80,8 @@ from app.infrastructure.database.repositories.price_list_repository import (
 )
 from app.services.price_list_repository import PriceListRepository
 from app.domain.location import LocationRepository
+from app.infrastructure.database.repositories.report_source import PostgresReportSource
+from app.services.reporting import ReportSource
 from app.infrastructure.database.repositories.location_repository import (
     PostgresLocationRepository,
 )
@@ -107,6 +109,8 @@ class PostgresRepositories:
     emerging_complaint: EmergingComplaintRepository
     price_list: PriceListRepository | None = None
     location: LocationRepository | None = None
+    # Read model over calls, their complaints and their summaries.
+    report_source: ReportSource | None = None
     # Read model over conversations, customers, escalations and complaints.
     call_listing: CallListingQuery | None = None
     session_factory: sessionmaker[Session] | None = None
@@ -141,6 +145,7 @@ def build_postgres_repositories(
         call_listing=PostgresCallListingQuery(session_factory),
         price_list=PostgresPriceListRepository(session_factory),
         location=PostgresLocationRepository(session_factory),
+        report_source=PostgresReportSource(session_factory),
         session_factory=session_factory,
     )
 

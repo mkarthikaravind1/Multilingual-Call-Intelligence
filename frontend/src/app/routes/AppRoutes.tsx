@@ -13,6 +13,7 @@ import { AdministrationPage } from '../pages/AdministrationPage'
 import { EscalationsPage } from '../pages/EscalationsPage'
 import { ComplaintsPage } from '../pages/ComplaintsPage'
 import { PriceListPage } from '../pages/PriceListPage'
+import { ReportsPage } from '../pages/ReportsPage'
 import { isCallDetailsView } from '../features/live-call/liveCallMode'
 
 // "Call details" for a call opened from a list, "Live Call" otherwise.
@@ -137,6 +138,19 @@ export function AppRoutes() {
             <SupervisorOnly>
               <AppShell title="Escalations" subtitle="Calls that need a supervisor, most severe first">
                 <EscalationsPage />
+              </AppShell>
+            </SupervisorOnly>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute>
+            <SupervisorOnly>
+              <AppShell title="Reports" subtitle="Complaint trends by category, location and executive">
+                <ReportsPage />
               </AppShell>
             </SupervisorOnly>
           </ProtectedRoute>

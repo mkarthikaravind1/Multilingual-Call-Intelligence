@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
 
 const supervisorNavItems: NavItem[] = [
   { to: '/escalations', label: 'Escalations', icon: 'escalations' },
+  { to: '/reports', label: 'Reports', icon: 'reports' },
 ]
 
 // Supervisors only, not admins.

@@ -42,4 +42,21 @@
   --space-10: 40px;
 
   --sidebar-width: 280px;
+
+  /* Charts. Series colours are taken in this order and never reused for
+     anything else; the heat steps run light to dark in one hue. */
+  --chart-series-1: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-series-3: #1baf7a;
+  --chart-series-4: #eda100;
+  --chart-series-5: #e87ba4;
+  --chart-series-other: #898781;
+  --chart-grid: #e3e8ee;
+  --chart-axis: #b9c4d0;
+  --chart-heat-1: #cde2fb;
+  --chart-heat-2: #9ec5f4;
+  --chart-heat-3: #6da7ec;
+  --chart-heat-4: #3987e5;
+  --chart-heat-5: #256abf;
+  --chart-heat-6: #104281;
 }

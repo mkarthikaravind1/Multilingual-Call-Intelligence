@@ -547,6 +547,7 @@ With the backend running, interactive OpenAPI docs are at
 | Escalations | `GET /escalations`, `POST /escalations/{call_id}/acknowledge`, `/resolve` |
 | Learning | `/learning/candidates` (+ approve/reject), `/learning/patterns`, `/learning/evidence`, `/learning/calls/{id}/observations`, `/learning/calls/{id}/feedback`, `/learning/improvements` |
 | Admin | `/admin/users`, `/admin/locations`, `/admin/post-call` (+ repair/retry) |
+| Reports | `GET /reports/complaints` (category totals, trend by day or week, category by location, root causes), `GET /reports/complaints/export?format=csv\|xlsx\|pdf`; filters: dates, location, executive, category, tone, direction. Supervisors and admins. |
 | Test calls | `/test-calls` (disabled in production) |
 | Ops (no prefix) | `/health/live`, `/health/ready`, `/metrics` |
 

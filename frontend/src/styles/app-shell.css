@@ -2847,3 +2847,282 @@
   gap: 12px;
   margin-bottom: 16px;
 }
+
+/* Reports */
+.report-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.report-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 170px;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid rgba(13, 41, 63, 0.08);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-card);
+}
+
+.report-tile span {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.report-tile strong {
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.report-bars {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.report-bars__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 200px) minmax(0, 1fr) minmax(110px, auto);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.report-bars__label {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-bars__track {
+  display: block;
+  height: 14px;
+}
+
+.report-bars__bar {
+  display: block;
+  min-width: 3px;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--chart-series-1);
+}
+
+.report-bars__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.report-bars__value small {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+  color: var(--color-text);
+  font-size: 0.82rem;
+}
+
+.chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chart-legend__swatch {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.trend-chart__plot {
+  position: relative;
+}
+
+.trend-chart__plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.trend-chart__line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trend-chart__point {
+  stroke: var(--color-bg-elevated);
+  stroke-width: 2;
+}
+
+.chart-grid {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+}
+
+.chart-axis {
+  stroke: var(--chart-axis);
+  stroke-width: 1;
+}
+
+.chart-crosshair {
+  stroke: var(--chart-axis);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-tick {
+  fill: var(--color-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: var(--space-2);
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 170px;
+  margin-left: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-soft);
+  color: var(--color-text);
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+/* Past the middle of the plot the tooltip sits left of the crosshair. */
+.chart-tooltip--left {
+  margin-left: 0;
+  transform: translateX(calc(-100% - var(--space-3)));
+}
+
+.chart-tooltip__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table-toggle {
+  margin-top: var(--space-3);
+}
+
+.report-table-toggle summary {
+  width: fit-content;
+  color: var(--color-accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.report-table-scroll {
+  overflow-x: auto;
+}
+
+.report-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table th,
+.report-table td {
+  padding: 6px 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.report-table thead th {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.report-table th[scope='row'],
+.report-table thead th:first-child {
+  color: var(--color-text);
+  font-weight: 600;
+  text-align: left;
+}
+
+.report-heatmap__cell {
+  min-width: 72px;
+  border-radius: 4px;
+  color: var(--color-text);
+  text-align: center;
+}
+
+.report-heatmap__cell--0 {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.report-heatmap__cell--1 { background: var(--chart-heat-1); }
+.report-heatmap__cell--2 { background: var(--chart-heat-2); }
+.report-heatmap__cell--3 { background: var(--chart-heat-3); }
+.report-heatmap__cell--4 { background: var(--chart-heat-4); color: #ffffff; }
+.report-heatmap__cell--5 { background: var(--chart-heat-5); color: #ffffff; }
+.report-heatmap__cell--6 { background: var(--chart-heat-6); color: #ffffff; }
+
+.report-themes {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.report-themes li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.report-themes__count {
+  color: var(--color-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.report-themes__calls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: var(--space-3);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .report-bars__row {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+}
