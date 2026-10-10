@@ -39,8 +39,14 @@ DEFAULT_LIVE_ANALYSIS_TTL_SECONDS = 4 * 3600.0
 @dataclass(frozen=True)
 class LiveAnalysisSnapshot:
     sentiment: SentimentResult | None
-    question_suggestion: QuestionSuggestion | None
+    # The suggested questions, the most relevant first.
+    question_suggestions: tuple[QuestionSuggestion, ...]
     service_estimate: CallServiceEstimate | None
+
+    @property
+    def question_suggestion(self) -> QuestionSuggestion | None:
+        """The most relevant suggestion."""
+        return self.question_suggestions[0] if self.question_suggestions else None
 
 
 class LiveAnalysisStore:
@@ -129,7 +135,6 @@ def _revision_key(call_id: str) -> str:
 
 def _serialize(snapshot: LiveAnalysisSnapshot) -> dict[str, Any]:
     sentiment = snapshot.sentiment
-    suggestion = snapshot.question_suggestion
     estimate = snapshot.service_estimate
     return {
         "v": _FORMAT_VERSION,
@@ -140,27 +145,52 @@ def _serialize(snapshot: LiveAnalysisSnapshot) -> dict[str, Any]:
             "confidence": sentiment.confidence,
             "evidence": sentiment.evidence,
         },
-        "question_suggestion": None
-        if suggestion is None
-        else {
-            "question": suggestion.question,
-            "target_category": suggestion.target_category,
-            "priority": suggestion.priority,
-            "reason": suggestion.reason,
-            "source": suggestion.source.value,
-            "confidence": suggestion.confidence,
-            "language": suggestion.language,
-            "question_en": suggestion.question_en,
-        },
+        # The first one alone as well: an instance still running the
+        # version before the list reads that.
+        "question_suggestion": _suggestion_to_json(snapshot.question_suggestion),
+        "question_suggestions": [
+            _suggestion_to_json(suggestion) for suggestion in snapshot.question_suggestions
+        ],
         "service_estimate": None if estimate is None else call_estimate_to_json(estimate),
     }
+
+
+def _suggestion_to_json(suggestion: QuestionSuggestion | None) -> dict[str, Any] | None:
+    if suggestion is None:
+        return None
+    return {
+        "question": suggestion.question,
+        "target_category": suggestion.target_category,
+        "priority": suggestion.priority,
+        "reason": suggestion.reason,
+        "source": suggestion.source.value,
+        "confidence": suggestion.confidence,
+        "language": suggestion.language,
+        "question_en": suggestion.question_en,
+    }
+
+
+def _suggestion_from_json(suggestion: dict[str, Any]) -> QuestionSuggestion:
+    return QuestionSuggestion(
+        question=suggestion["question"],
+        target_category=suggestion["target_category"],
+        priority=suggestion["priority"],
+        reason=suggestion["reason"],
+        source=SuggestionSource(suggestion["source"]),
+        confidence=suggestion["confidence"],
+        language=suggestion.get("language", "en"),
+        question_en=suggestion.get("question_en"),
+    )
 
 
 def _deserialize(data: dict[str, Any]) -> LiveAnalysisSnapshot:
     if data.get("v") != _FORMAT_VERSION:
         raise ValueError(f"Unsupported live analysis format {data.get('v')!r}.")
     sentiment = data["sentiment"]
-    suggestion = data["question_suggestion"]
+    # Written before the list: the one question it had.
+    suggestions = data.get("question_suggestions")
+    if suggestions is None:
+        suggestions = [] if data["question_suggestion"] is None else [data["question_suggestion"]]
     estimate = data["service_estimate"]
     return LiveAnalysisSnapshot(
         sentiment=None
@@ -170,17 +200,6 @@ def _deserialize(data: dict[str, Any]) -> LiveAnalysisSnapshot:
             confidence=sentiment["confidence"],
             evidence=sentiment["evidence"],
         ),
-        question_suggestion=None
-        if suggestion is None
-        else QuestionSuggestion(
-            question=suggestion["question"],
-            target_category=suggestion["target_category"],
-            priority=suggestion["priority"],
-            reason=suggestion["reason"],
-            source=SuggestionSource(suggestion["source"]),
-            confidence=suggestion["confidence"],
-            language=suggestion.get("language", "en"),
-            question_en=suggestion.get("question_en"),
-        ),
+        question_suggestions=tuple(_suggestion_from_json(s) for s in suggestions),
         service_estimate=None if estimate is None else call_estimate_from_json(estimate),
     )

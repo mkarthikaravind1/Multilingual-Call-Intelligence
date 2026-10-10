@@ -173,9 +173,7 @@ export function LiveCallPage() {
               />
 
               <NextQuestionPanel
-                suggestion={
-                  liveCall.analysis?.questionSuggestion ?? null
-                }
+                suggestions={liveCall.analysis?.questionSuggestions ?? []}
                 callId={callId}
                 isCallActive={liveCall.call.status.toLowerCase() === 'active'}
               />

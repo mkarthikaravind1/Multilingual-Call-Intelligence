@@ -349,7 +349,11 @@ class CallAnalysisResponse(_Response):
     call_id: str
     coverage: CoverageResponse
     sentiment: SentimentResponse | None
+    # The most relevant suggested question (the first of
+    # question_suggestions).
     question_suggestion: QuestionSuggestionResponse | None
+    # Every suggested question, the most relevant first.
+    question_suggestions: list[QuestionSuggestionResponse] = []
     service_estimate: ServiceEstimateResponse | None = None
     post_call_summary: PostCallSummaryResponse | None = None
     # null while the call has not escalated

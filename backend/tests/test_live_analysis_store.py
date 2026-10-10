@@ -273,13 +273,15 @@ def test_revision_changes_on_speech_but_not_on_reads(shared_store):
 def test_snapshot_round_trips_every_field(shared_store):
     snapshot = LiveAnalysisSnapshot(
         sentiment=SentimentResult(SentimentLabel.POSITIVE, 0.75, "Thanks a lot."),
-        question_suggestion=QuestionSuggestion(
-            question="Anything else?",
-            target_category="Communication",
-            priority=2,
-            reason="Wrap up.",
-            source=SuggestionSource.RULE_BASED,
-            confidence=None,
+        question_suggestions=(
+            QuestionSuggestion(
+                question="Anything else?",
+                target_category="Communication",
+                priority=2,
+                reason="Wrap up.",
+                source=SuggestionSource.RULE_BASED,
+                confidence=None,
+            ),
         ),
         service_estimate=CallServiceEstimate(
             currency="INR",

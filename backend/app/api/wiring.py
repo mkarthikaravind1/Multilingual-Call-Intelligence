@@ -390,6 +390,13 @@ def build_api_services(
         transcript_reviser=transcript_reviser,
         vehicle_model_resolver=call_customer_service.resolve_vehicle_model,
         alert_service=alert_service,
+        # Accepted or skipped already: not suggested again.
+        handled_questions=lambda call_id: tuple(
+            outcome.question
+            for outcome in question_outcome_repository.list_for_calls([call_id]).get(
+                call_id, ()
+            )
+        ),
     )
 
     recording_archive = _build_recording_archive(settings, recording_repository)

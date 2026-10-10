@@ -268,7 +268,7 @@ def test_live_analysis_keeps_the_question_language():
         question_en="How long was the work delayed?",
     )
     snapshot = LiveAnalysisSnapshot(
-        sentiment=None, question_suggestion=suggestion, service_estimate=None
+        sentiment=None, question_suggestions=(suggestion,), service_estimate=None
     )
 
     restored = _deserialize(_serialize(snapshot)).question_suggestion

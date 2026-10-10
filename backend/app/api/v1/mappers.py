@@ -54,6 +54,7 @@ def to_analysis_response(
     call_id: str, result: CallAnalysisResult
 ) -> CallAnalysisResponse:
     suggestion = result.question_suggestion
+    suggestions = result.question_suggestions or (() if suggestion is None else (suggestion,))
     estimate = result.service_estimate
     summary = result.post_call_summary
     return CallAnalysisResponse(
@@ -69,6 +70,9 @@ def to_analysis_response(
             if suggestion is not None
             else None
         ),
+        question_suggestions=[
+            QuestionSuggestionResponse.model_validate(each) for each in suggestions
+        ],
         service_estimate=(
             ServiceEstimateResponse.model_validate(estimate)
             if estimate is not None

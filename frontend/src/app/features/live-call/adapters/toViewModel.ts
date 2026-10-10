@@ -215,6 +215,12 @@ export function toCallAnalysisViewModel(
           )
         : null,
 
+    // A server from before the list sends only the one question.
+    questionSuggestions: (
+      analysis.question_suggestions ??
+      (analysis.question_suggestion ? [analysis.question_suggestion] : [])
+    ).map(toQuestionSuggestionViewModel),
+
     serviceEstimate: analysis.service_estimate
       ? toServiceEstimateViewModel(analysis.service_estimate)
       : null,

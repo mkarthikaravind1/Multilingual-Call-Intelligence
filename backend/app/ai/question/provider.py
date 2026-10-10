@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.question_suggestion import QuestionSuggestion
 from app.domain.utterance import Utterance
@@ -33,8 +33,31 @@ class QuestionGenerationContext:
     previous_question: str | None = None
     # Questions found to ask for something the customer already gave.
     answered_questions: tuple[str, ...] = ()
+    # Questions the executive has already accepted or skipped on this call:
+    # they are not suggested again.
+    handled_questions: tuple[str, ...] = ()
 
 class QuestionSuggestionProvider(ABC):
     @abstractmethod
     def generate(self, context: QuestionGenerationContext) -> QuestionSuggestion | None:
         raise NotImplementedError
+
+    def generate_ranked(
+        self, context: QuestionGenerationContext, limit: int
+    ) -> tuple[QuestionSuggestion, ...]:
+        """Up to `limit` questions, the most relevant first. This default
+        suits a provider that asks about one given complaint: one question
+        per open complaint, in their order."""
+        complaints = context.open_complaints or (
+            OpenComplaint(context.category, context.status),
+        )
+        suggestions: list[QuestionSuggestion] = []
+        for complaint in complaints:
+            if len(suggestions) >= limit:
+                break
+            suggestion = self.generate(
+                replace(context, category=complaint.category, status=complaint.status)
+            )
+            if suggestion is not None:
+                suggestions.append(suggestion)
+        return tuple(suggestions)

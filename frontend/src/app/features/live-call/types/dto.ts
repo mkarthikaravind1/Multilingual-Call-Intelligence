@@ -272,7 +272,11 @@ export interface CallAnalysisResponseDto {
   coverage: ComplaintCoverageDto
   // null for a completed call whose post-call summary was never stored
   sentiment: SentimentDto | null
+  // The most relevant suggested question (the first of
+  // question_suggestions).
   question_suggestion: QuestionSuggestionDto | null
+  // Every suggested question, the most relevant first.
+  question_suggestions?: QuestionSuggestionDto[]
   service_estimate?: ServiceEstimateDto | null
   post_call_summary?: PostCallSummaryDto | null
   // null while the call has not escalated

@@ -137,6 +137,8 @@ export interface CallAnalysisViewModel {
   complaints: ComplaintViewModel[]
   sentiment: SentimentViewModel | null
   questionSuggestion: QuestionSuggestionViewModel | null
+  // Every suggested question, the most relevant first.
+  questionSuggestions: QuestionSuggestionViewModel[]
   serviceEstimate: ServiceEstimateViewModel | null
   postCallSummary: PostCallSummaryViewModel | null
   escalation: EscalationViewModel | null

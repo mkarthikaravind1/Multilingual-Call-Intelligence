@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 from app.ai.complaint.provider import UtteranceCategories, line_categories
 from app.ai.live_analysis.llm_provider import LLMLiveAnalysisProvider
@@ -20,6 +21,10 @@ class ConversationAnalysisResult:
     # The complaint categories each line raises; None when the complaint
     # detection did not say (the lines keep what they have).
     line_categories: tuple[UtteranceCategories, ...] | None = None
+    # The suggested questions a combined live-analysis request wrote, as
+    # decoded from its answer (see NextQuestionService.drafted_questions);
+    # None when it wrote none, and they are asked for on their own.
+    question_answer: Any = None
 
 
 class ConversationAnalysisService:
@@ -41,13 +46,17 @@ class ConversationAnalysisService:
         coverage: ConversationCoverage,
         *,
         live: bool = False,
+        question_task: str | None = None,
     ) -> ConversationAnalysisResult:
+        """question_task: the suggested questions' task, for a combined
+        live request to write them too (ignored when the analysis is made
+        with separate requests)."""
         if conversation.call_id != coverage.call_id:
             raise ValueError(
                 "conversation.call_id must match coverage.call_id."
             )
         if live and self._live_analyzer is not None and conversation.utterances:
-            return self._analyze_together(conversation, coverage)
+            return self._analyze_together(conversation, coverage, question_task)
 
         updated_coverage, detections = self._complaint_service.analyze_with_detections(
             conversation,
@@ -63,12 +72,19 @@ class ConversationAnalysisService:
         )
 
     def _analyze_together(
-        self, conversation: Conversation, coverage: ConversationCoverage
+        self,
+        conversation: Conversation,
+        coverage: ConversationCoverage,
+        question_task: str | None = None,
     ) -> ConversationAnalysisResult:
         complaint_guidance = self._complaint_service.guidance()
         sentiment_guidance = self._sentiment_service.guidance()
-        together = self._live_analyzer.analyze(
-            conversation, complaint_guidance, sentiment_guidance
+        together = (
+            self._live_analyzer.analyze(conversation, complaint_guidance, sentiment_guidance)
+            if question_task is None
+            else self._live_analyzer.analyze(
+                conversation, complaint_guidance, sentiment_guidance, question_task
+            )
         )
         # A section the combined answer lacks is asked for on its own.
         if together.complaints is None:
@@ -92,4 +108,7 @@ class ConversationAnalysisService:
             sentiment=sentiment,
             escalation_signals=together.escalation_signals,
             line_categories=line_categories(conversation, detections),
+            # Questions written against complaints the answer got wrong
+            # would be wrong too: they are asked for again with the rest.
+            question_answer=None if together.complaints is None else together.questions,
         )

@@ -253,9 +253,16 @@ class Settings(BaseSettings):
     # unusable); "separate": three requests. The final analysis after the
     # call always uses separate requests.
     live_analysis_mode: str = "combined"
-    # Check each suggested question against what the customer already said
-    # (one extra short LLM request per suggestion); one that asks for it is
-    # replaced once, else nothing is suggested.
+    # How many questions are suggested at a time, the most relevant first.
+    question_suggestion_limit: int = 3
+    # With LIVE_ANALYSIS_MODE=combined: have that one request write the
+    # suggested questions too, instead of a request of their own after it.
+    # They then appear with the analysis (the SRD asks for 1.5 s), and the
+    # check below takes out any already answered a moment later.
+    live_questions_in_analysis: bool = True
+    # Check the suggested questions against what the customer already said
+    # (one extra short LLM request for all of them); those asking for it
+    # are dropped.
     question_answered_check: bool = True
     # The model for that check (empty: GROQ_MODEL). On the test calls
     # gpt-oss-120b judged 12/12 checks right where gpt-oss-20b missed some.

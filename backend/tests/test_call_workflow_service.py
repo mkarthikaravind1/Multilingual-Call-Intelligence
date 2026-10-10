@@ -491,6 +491,10 @@ class CountingNextQuestionService(NextQuestionService):
         self.calls += 1
         return super().suggest_next_question(*args, **kwargs)
 
+    def suggest_questions(self, *args, **kwargs):
+        self.calls += 1
+        return super().suggest_questions(*args, **kwargs)
+
 
 class CountingCoverageRepository(InMemoryConversationCoverageRepository):
     def __init__(self) -> None:

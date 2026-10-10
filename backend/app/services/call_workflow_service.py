@@ -50,6 +50,8 @@ class CallAnalysisResult:
     coverage: ConversationCoverage
     # None only for a completed call whose post-call summary was never stored.
     sentiment: SentimentResult | None
+    # The most relevant suggested question (the first of
+    # question_suggestions).
     question_suggestion: QuestionSuggestion | None
     service_estimate: CallServiceEstimate | None
     post_call_summary: PostCallSummary | None = None
@@ -57,6 +59,8 @@ class CallAnalysisResult:
     escalation: Escalation | None = None
     # The call's alerts, standing and cleared (see CallAlertService).
     alerts: tuple[CallAlert, ...] = ()
+    # Every suggested question, the most relevant first.
+    question_suggestions: tuple[QuestionSuggestion, ...] = ()
 
 
 def _customer_speech(conversation: Conversation) -> tuple[int, int]:
@@ -65,15 +69,6 @@ def _customer_speech(conversation: Conversation) -> tuple[int, int]:
     line that grows as live speech continues it."""
     lines = [u.transcript for u in conversation.utterances if u.speaker_role != SpeakerRole.ICR]
     return len(lines), sum(len(line) for line in lines)
-
-
-def _question_text(snapshot) -> str | None:
-    """The question last suggested on this call (its English when it was
-    translated), from the stored live analysis."""
-    suggestion = None if snapshot is None else snapshot.question_suggestion
-    if suggestion is None:
-        return None
-    return suggestion.question_en or suggestion.question
 
 
 def rate_lines(call_service: CallService, call_id: str, sentiment) -> None:
@@ -133,8 +128,12 @@ class CallWorkflowService:
         vehicle_model_resolver: Callable[[str], str | None] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         alert_service: CallAlertService | None = None,
+        handled_questions: Callable[[str], tuple[str, ...]] | None = None,
     ) -> None:
         self._alert_service = alert_service
+        # call_id -> the suggested questions its executive has accepted or
+        # skipped, which are not suggested again; None: none are known.
+        self._handled_questions = handled_questions
         # The model of the caller's vehicle (from the CRM), so the estimate
         # uses that model's prices; None when it is not known.
         self._vehicle_model_resolver = vehicle_model_resolver
@@ -273,7 +272,7 @@ class CallWorkflowService:
             conversation.call_id,
             LiveAnalysisSnapshot(
                 sentiment=None if previous is None else previous.sentiment,
-                question_suggestion=None if previous is None else previous.question_suggestion,
+                question_suggestions=() if previous is None else previous.question_suggestions,
                 service_estimate=estimate,
             ),
         )
@@ -305,7 +304,7 @@ class CallWorkflowService:
             call_id,
             LiveAnalysisSnapshot(
                 sentiment=result.sentiment,
-                question_suggestion=result.question_suggestion,
+                question_suggestions=result.question_suggestions,
                 service_estimate=result.service_estimate,
             ),
         )
@@ -360,6 +359,7 @@ class CallWorkflowService:
             coverage=coverage or ConversationCoverage(call_id=call_id),
             sentiment=None if latest is None else latest.sentiment,
             question_suggestion=None if latest is None else latest.question_suggestion,
+            question_suggestions=() if latest is None else latest.question_suggestions,
             service_estimate=None if latest is None else latest.service_estimate,
             escalation=self._stored_escalation(call_id),
             alerts=self._alerts(call_id),
@@ -381,26 +381,61 @@ class CallWorkflowService:
     ) -> tuple[CallAnalysisResult, tuple | None]:
         """The analysis, and the LLM escalation signals when a combined
         live-analysis request already found them."""
-        analysis = self._analyze_and_save_coverage(conversation, still_active, live=True)
-        previous = self._live_analysis.load(conversation.call_id)
+        call_id = conversation.call_id
+        utterances = conversation.utterances
+        handled = self._handled(call_id)
+        analysis = self._analyze_and_save_coverage(
+            conversation,
+            still_active,
+            live=True,
+            # A combined request then writes the questions too.
+            question_task=self._next_question_service.live_task(utterances, handled),
+        )
+        previous = self._live_analysis.load(call_id)
         # An unusable sentiment answer does not wipe the tone found so far.
         sentiment = keeping_earlier(
             analysis.sentiment, None if previous is None else previous.sentiment
         )
-        suggestion = self._next_question_service.suggest_next_question(
-            analysis.coverage,
-            conversation.utterances,
-            previous_question=_question_text(previous),
+        estimate = self._estimate_call(conversation, live=True)
+
+        drafted = self._next_question_service.drafted_questions(
+            analysis.coverage, utterances, getattr(analysis, "question_answer", None), handled
         )
+        if drafted is None:
+            # No combined request wrote them: they get a request of their own.
+            suggestions = self._next_question_service.suggest_questions(
+                analysis.coverage, utterances, handled
+            )
+        elif drafted:
+            # Shown at once; the check that follows takes out any the
+            # customer has already answered.
+            self._live_analysis.save(call_id, LiveAnalysisSnapshot(sentiment, drafted, estimate))
+            suggestions = self._next_question_service.checked(
+                analysis.coverage, utterances, drafted
+            )
+        else:
+            suggestions = ()
 
         return (
             CallAnalysisResult(
                 coverage=analysis.coverage,
                 sentiment=sentiment,
-                question_suggestion=suggestion,
-                service_estimate=self._estimate_call(conversation, live=True),
+                question_suggestion=suggestions[0] if suggestions else None,
+                question_suggestions=suggestions,
+                service_estimate=estimate,
             ),
             analysis.escalation_signals,
+        )
+
+    def _handled(self, call_id: str) -> tuple[str, ...]:
+        if self._handled_questions is None:
+            return ()
+        return (
+            best_effort(
+                "Reading the questions already dealt with", call_id,
+                self._handled_questions, call_id,
+            )
+            or ()
         )
 
     def _stored_escalation(self, call_id: str) -> Escalation | None:
@@ -443,14 +478,23 @@ class CallWorkflowService:
         still_active: Callable[[], bool] | None = None,
         *,
         live: bool = False,
+        question_task: str | None = None,
     ) -> ConversationAnalysisResult:
         """live: during the call (a combined request when configured); the
-        final analysis after the call always uses separate requests."""
+        final analysis after the call always uses separate requests.
+        question_task: for a combined request to write the suggested
+        questions too."""
         coverage = self._coverage_repository.get(conversation.call_id)
         if coverage is None:
             coverage = ConversationCoverage(call_id=conversation.call_id)
 
-        analysis = self._analysis_service.analyze(conversation, coverage, live=live)
+        analysis = (
+            self._analysis_service.analyze(conversation, coverage, live=live)
+            if question_task is None
+            else self._analysis_service.analyze(
+                conversation, coverage, live=live, question_task=question_task
+            )
+        )
         if still_active is not None and not still_active():
             raise _CallCompletedDuringAnalysis(conversation.call_id)
         self._coverage_repository.save(analysis.coverage)

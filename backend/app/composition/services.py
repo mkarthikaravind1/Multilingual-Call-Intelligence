@@ -206,12 +206,16 @@ def build_next_question_service(
     runtime_improvement_service: RuntimeImprovementService | None = None,
     improvement_usage_recorder: ImprovementEffectivenessService | None = None,
     category_descriptions: Callable[[], Mapping[str, str | None]] | None = None,
+    settings: Settings | None = None,
 ) -> NextQuestionService:
+    settings = settings or Settings()
     return NextQuestionService(
         provider=provider,
         runtime_improvement_service=runtime_improvement_service,
         improvement_usage_recorder=improvement_usage_recorder,
         category_descriptions=category_descriptions,
+        limit=settings.question_suggestion_limit,
+        in_live_analysis=settings.live_questions_in_analysis,
     )
 
 def build_conversation_analysis_service(
@@ -268,6 +272,7 @@ def build_call_workflow_service(
     transcript_reviser: Callable[[Conversation], tuple[Utterance, ...] | None] | None = None,
     vehicle_model_resolver: Callable[[str], str | None] | None = None,
     alert_service: CallAlertService | None = None,
+    handled_questions: Callable[[str], tuple[str, ...]] | None = None,
 ) -> CallWorkflowService:
     """The one place the call workflow is put together.
 
@@ -314,6 +319,7 @@ def build_call_workflow_service(
             runtime_improvement_service=runtime_improvement_service,
             improvement_usage_recorder=improvement_usage_recorder,
             category_descriptions=category_descriptions,
+            settings=settings,
         ),
         estimation_service=estimation_service
         or build_estimation_service(settings=settings, llm_client=llm_client),
@@ -334,6 +340,7 @@ def build_call_workflow_service(
         transcript_reviser=transcript_reviser,
         vehicle_model_resolver=vehicle_model_resolver,
         alert_service=alert_service,
+        handled_questions=handled_questions,
     )
 
 def build_audio_processing_pipeline(

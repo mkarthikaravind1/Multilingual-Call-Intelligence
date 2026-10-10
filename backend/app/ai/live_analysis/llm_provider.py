@@ -39,6 +39,10 @@ class LiveAnalysis:
     sentiment: SentimentResult | None
     # None as well when no LLM escalation detector is configured.
     escalation_signals: tuple[EscalationSignal, ...] | None
+    # The answer's "questions" as decoded, for the question provider to
+    # check against the complaints this analysis leaves open; None when
+    # they were not asked for or the answer has none.
+    questions: Any = None
 
 
 class LLMLiveAnalysisProvider:
@@ -59,14 +63,20 @@ class LLMLiveAnalysisProvider:
         conversation: Conversation,
         complaint_guidance: tuple[RuntimeImprovementContext, ...] = (),
         sentiment_guidance: tuple[RuntimeImprovementContext, ...] = (),
+        question_task: str | None = None,
     ) -> LiveAnalysis:
+        """question_task: the suggested questions' task (see
+        LLMQuestionProvider.ranked_task), to have them written by this
+        request too."""
         complaint_task, allowed = self._complaints.task_instructions(complaint_guidance)
         try:
             # An unreadable answer is asked for once more here: one more
             # combined request is cheaper than every part on its own.
             data = ask_for_json(
                 self._llm_client,
-                self._build_request(conversation, complaint_task, sentiment_guidance),
+                self._build_request(
+                    conversation, complaint_task, sentiment_guidance, question_task
+                ),
                 _decode_sections,
                 "live_analysis",
             )
@@ -90,6 +100,7 @@ class LLMLiveAnalysisProvider:
             complaints=self._complaints.parse_items(data.get("complaints"), allowed),
             sentiment=self._sentiment.parse_object(data.get("sentiment"), conversation),
             escalation_signals=escalation,
+            questions=None if question_task is None else data.get("questions"),
         )
 
     def _build_request(
@@ -97,6 +108,7 @@ class LLMLiveAnalysisProvider:
         conversation: Conversation,
         complaint_task: str,
         sentiment_guidance: tuple[RuntimeImprovementContext, ...],
+        question_task: str | None = None,
     ) -> LLMRequest:
         # Numbered: complaints name the lines that raise them, and the
         # sentiment task the lines it rates.
@@ -110,6 +122,15 @@ class LLMLiveAnalysisProvider:
                 "supervisor.\n\n"
                 f"{self._escalation.task_instructions()}\n\n"
             )
+        questions_task = ""
+        if question_task is not None:
+            keys += ', "questions"'
+            questions_task = (
+                "TASK 4 - questions. Suggest questions for the ICR to ask the customer "
+                "next, about the complaints you report in TASK 1. You only suggest; the "
+                "ICR decides whether to ask them.\n\n"
+                f"{question_task}\n\n"
+            )
         prompt = (
             "You analyse a transcript of a live automotive service call between an ICR "
             "(customer service representative) and a customer. The conversation may be "
@@ -121,6 +142,7 @@ class LLMLiveAnalysisProvider:
             "TASK 2 - sentiment. Determine the overall sentiment of the conversation.\n\n"
             f"{self._sentiment.task_instructions(sentiment_guidance, conversation)}\n\n"
             f"{escalation_task}"
+            f"{questions_task}"
             f"Respond with ONLY one JSON object with the keys {keys} (each answer in the "
             "shape given in its task) and nothing else (no markdown, no commentary). "
             "Every confidence must be a number between 0.0 and 1.0, not text."
@@ -128,7 +150,7 @@ class LLMLiveAnalysisProvider:
         return LLMRequest(prompt=prompt)
 
 
-_SECTIONS = ("complaints", "sentiment", "escalation")
+_SECTIONS = ("complaints", "sentiment", "escalation", "questions")
 
 
 def _decode_sections(text: Any) -> dict:

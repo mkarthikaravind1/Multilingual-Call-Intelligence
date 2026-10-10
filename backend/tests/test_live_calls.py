@@ -145,7 +145,7 @@ def _coverage(call_id: str, category: str = "Cost", detected_at: float = NOW, co
 
 
 def _tone(label: SentimentLabel) -> LiveAnalysisSnapshot:
-    return LiveAnalysisSnapshot(SentimentResult(label, 0.8, "Said so."), None, None)
+    return LiveAnalysisSnapshot(SentimentResult(label, 0.8, "Said so."), (), None)
 
 
 class _World:
