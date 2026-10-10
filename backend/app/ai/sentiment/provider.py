@@ -63,6 +63,19 @@ class SentimentResult:
             raise ValueError("evidence must not be empty.")
 
 
+def keeping_earlier(result: SentimentResult, earlier: SentimentResult | None) -> SentimentResult:
+    """`result`, unless it says nothing (confidence 0: the model's answer
+    could not be used) and the call already has a sentiment: then that one
+    stands, with any line tones `result` did bring."""
+    if earlier is None or getattr(result, "confidence", None) != 0.0:
+        return result
+    if getattr(earlier, "confidence", 0.0) == 0.0:
+        return result
+    return SentimentResult(
+        earlier.label, earlier.confidence, earlier.evidence, getattr(result, "lines", ())
+    )
+
+
 class SentimentAnalysisProvider(ABC):
     @abstractmethod
     def analyze(

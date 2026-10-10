@@ -1,8 +1,10 @@
+import dataclasses
 import logging
 import time
 from typing import Callable, TypeVar
 
 from app.ai.llm.client import rate_limit_in
+from app.ai.sentiment.provider import SentimentResult, keeping_earlier
 from app.ai.summary.provider import PostCallSummaryRequest
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
@@ -90,6 +92,9 @@ class PostCallProcessor:
         # call_id -> how long the LLM asked to wait, for calls whose last
         # processing was stopped by a rate limit (see rate_limit_wait).
         self._rate_limit_waits: dict[str, float] = {}
+        # call_id -> the sentiment the call had when it ended, until its
+        # summary is stored (see _final_sentiment).
+        self._live_sentiments: dict[str, SentimentResult] = {}
 
     def process(self, call_id: str) -> PostCallSummary | None:
         """Generate, store and deliver the post-call summary once.
@@ -102,12 +107,14 @@ class PostCallProcessor:
         if conversation.status != ConversationStatus.COMPLETED:
             logger.warning("Skipping post-call processing for active call %r", call_id)
             return None
+        self._remember_live_sentiment(call_id)
         self._forget_live_result(call_id)
         # Open live views learn that the call has completed.
         self._live_analysis.touch(call_id)
 
         existing = self._post_call_summary_repository.get(call_id)
         if existing is not None:
+            self._live_sentiments.pop(call_id, None)
             return existing
 
         conversation = self._revise_transcript(conversation)
@@ -125,6 +132,14 @@ class PostCallProcessor:
             logger.exception("Final analysis failed for call %r", call_id)
             self._note_rate_limit(call_id, exc)
             return None
+        sentiment = keeping_earlier(analysis.sentiment, self._live_sentiments.get(call_id))
+        if sentiment is not analysis.sentiment:
+            logger.warning(
+                "The final sentiment of call %r could not be determined; keeping its "
+                "last live one",
+                call_id,
+            )
+            analysis = dataclasses.replace(analysis, sentiment=sentiment)
 
         self._close_out_complaints(call_id, analysis.coverage)
         self._assess_final_escalation(conversation, analysis)
@@ -155,10 +170,21 @@ class PostCallProcessor:
             logger.exception("Storing the post-call summary failed for call %r", call_id)
             return None
 
+        self._live_sentiments.pop(call_id, None)
         self._deliver_summary(stored)
         # Lets open live views pick up the summary.
         self._live_analysis.touch(call_id)
         return stored
+
+    def _remember_live_sentiment(self, call_id: str) -> None:
+        """The final analysis replaces the live one. When its sentiment
+        answer cannot be used, the call keeps the tone it had while live
+        rather than being stored as neutral. Remembered here because the
+        live result is dropped before the final analysis, which may be
+        tried more than once."""
+        live = self._live_analysis.load(call_id)
+        if live is not None and live.sentiment is not None:
+            self._live_sentiments[call_id] = live.sentiment
 
     def rate_limit_wait(self, call_id: str) -> float | None:
         """When the call's last processing here was stopped by an LLM rate

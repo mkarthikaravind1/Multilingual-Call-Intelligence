@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Callable, Protocol
 
-from app.ai.sentiment.provider import SentimentResult
+from app.ai.sentiment.provider import SentimentResult, keeping_earlier
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.customer_contact import CustomerContact
@@ -380,6 +380,10 @@ class CallWorkflowService:
         live-analysis request already found them."""
         analysis = self._analyze_and_save_coverage(conversation, still_active, live=True)
         previous = self._live_analysis.load(conversation.call_id)
+        # An unusable sentiment answer does not wipe the tone found so far.
+        sentiment = keeping_earlier(
+            analysis.sentiment, None if previous is None else previous.sentiment
+        )
         suggestion = self._next_question_service.suggest_next_question(
             analysis.coverage,
             conversation.utterances,
@@ -389,7 +393,7 @@ class CallWorkflowService:
         return (
             CallAnalysisResult(
                 coverage=analysis.coverage,
-                sentiment=analysis.sentiment,
+                sentiment=sentiment,
                 question_suggestion=suggestion,
                 service_estimate=self._estimate_call(conversation, live=True),
             ),
