@@ -5,6 +5,8 @@ import { clearSessionStorage, decodeJwtClaims, readSessionToken, writeSessionTok
 
 export class AuthService {
   private session: AuthSessionState | null = null
+  // The renewal under way, shared by everyone who asks meanwhile.
+  private refreshing: Promise<AuthSessionState> | null = null
 
   constructor() {
     this.restoreSession()
@@ -45,10 +47,21 @@ export class AuthService {
   }
 
   // Swaps the current, still-valid token for a fresh one (used to keep a
-  // live call signed in). A 401 means the session already ended.
-  async refresh(): Promise<AuthSessionState> {
-    const response = await apiClient.post<TokenResponse>('/api/v1/auth/refresh', {})
-    return this.startSession(response.access_token)
+  // working user signed in). A refusal does not sign the user out: the
+  // token they have stays good until it expires (the server refuses to
+  // renew a sign-in that has reached its maximum length).
+  refresh(): Promise<AuthSessionState> {
+    this.refreshing ??= apiClient
+      .request<TokenResponse>(
+        '/api/v1/auth/refresh',
+        { method: 'POST', body: JSON.stringify({}) },
+        true,
+      )
+      .then((response) => this.startSession(response.access_token))
+      .finally(() => {
+        this.refreshing = null
+      })
+    return this.refreshing
   }
 
   private startSession(accessToken: string): AuthSessionState {

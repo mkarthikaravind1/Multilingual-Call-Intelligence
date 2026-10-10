@@ -31,7 +31,9 @@ export class ApiClient {
     return this.accessToken
   }
 
-  async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // quiet: a 401/403 is only thrown, not also reported to the error
+  // handlers (which sign the user out on a 401).
+  async request<T>(path: string, options: RequestInit = {}, quiet = false): Promise<T> {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`
     const url = `${this.baseUrl}${normalizedPath}`
     const headers = new Headers(options.headers ?? {})
@@ -68,11 +70,11 @@ export class ApiClient {
     if (!response.ok) {
       const message = getErrorMessage(payload, 'Request failed.')
 
-      if (response.status === 401) {
+      if (response.status === 401 && !quiet) {
         this.errorHandlers.onUnauthorized?.()
       }
 
-      if (response.status === 403) {
+      if (response.status === 403 && !quiet) {
         this.errorHandlers.onForbidden?.()
       }
 

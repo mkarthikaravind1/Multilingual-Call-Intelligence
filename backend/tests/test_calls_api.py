@@ -338,11 +338,14 @@ def test_out_of_order_utterance_is_rejected():
 
     assert response.status_code == 422
 
-def test_complete_call_rejects_missing_end_time():
+def test_complete_call_without_an_end_time_uses_the_server_clock():
     client = _client()
     _start_call(client)
 
-    assert client.post(f"{BASE}/{CALL_ID}/complete", json={}).status_code == 422
+    response = client.post(f"{BASE}/{CALL_ID}/complete", json={})
+
+    assert response.status_code == 200
+    assert response.json()["end_time"] > 1_000_000_000  # now, not a time the client chose
 
 def test_routes_are_only_available_under_api_v1():
     client = _client()

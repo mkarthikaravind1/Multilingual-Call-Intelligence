@@ -171,9 +171,7 @@ export function PostCallAnalysisPage() {
     setError(null)
 
     try {
-      await callRestService.completeCall(callId, {
-        end_time: Date.now() / 1000,
-      })
+      await callRestService.completeCall(callId)
 
       const callResponse = await callRestService.getCall(callId)
       const analysisResponse = await callRestService.getAnalysis(callId)

@@ -19,7 +19,9 @@ class _Response(BaseModel):
 
 class StartCallRequest(_Request):
     call_id: str = Field(min_length=1)
-    start_time: float = 0.0
+    # null: now, by the server's clock. The web app sends null: a PC's
+    # clock can be minutes off, and phone calls start on the server's.
+    start_time: float | None = 0.0
     # Optional: the customer's number when it is known up front.
     caller_number: str | None = Field(default=None, min_length=1, max_length=32)
 
@@ -105,7 +107,8 @@ class UtteranceRequest(_Request):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 class CompleteCallRequest(_Request):
-    end_time: float
+    # Left out (or null): now, by the server's clock.
+    end_time: float | None = None
 
 class UtteranceResponse(_Response):
     utterance_id: str

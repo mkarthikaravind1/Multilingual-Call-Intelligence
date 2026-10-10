@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.dependencies import (
@@ -102,7 +104,8 @@ def start_call(
             raise HTTPException(status_code=503, detail="Customer lookup is not configured.")
         # Validate before creating the call, so a bad number never leaves a call behind.
         caller_number = call_customer_service.normalize(payload.caller_number)
-    call = call_service.start_call(payload.call_id, payload.start_time)
+    start_time = time.time() if payload.start_time is None else payload.start_time
+    call = call_service.start_call(payload.call_id, start_time)
     if call_customer_service is not None and caller_number is not None:
         call_customer_service.record_caller(call.call_id, caller_number)
     return to_call_response(call)
@@ -210,5 +213,6 @@ def complete_call(
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
     _: User = Depends(get_current_user),
 ) -> CallResponse:
-    completion = workflow_service.complete_call(call_id, payload.end_time)
+    end_time = time.time() if payload.end_time is None else payload.end_time
+    completion = workflow_service.complete_call(call_id, end_time)
     return to_call_response(completion.conversation)

@@ -23,8 +23,9 @@ export function useKeepSessionAlive(active: boolean) {
 
     const renew = () => {
       refreshSession().catch(() => {
-        // A 401 signs the user out (see AuthProvider); anything else, such as
-        // a network blip, is retried while the token is still valid.
+        // Retried while the token is still valid: a network blip passes. A
+        // refusal (the sign-in reached its maximum length) is reported by
+        // the session notice in the page frame.
         if (!cancelled && Date.now() + RETRY_AFTER_FAILURE_MS < expiresAt) {
           timer = window.setTimeout(renew, RETRY_AFTER_FAILURE_MS)
         }

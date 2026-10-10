@@ -29,7 +29,8 @@ export interface CallListFilters {
 
 export interface StartCallRequest {
   call_id: string
-  start_time?: number
+  // null: the server's clock (the browser's may be wrong).
+  start_time?: number | null
 }
 
 export class CallRestService {
@@ -45,7 +46,7 @@ export class CallRestService {
   startManualCall() {
     return this.startCall({
       call_id: `manual-${crypto.randomUUID()}`,
-      start_time: Date.now() / 1000,
+      start_time: null,
     })
   }
 
@@ -109,9 +110,10 @@ export class CallRestService {
     )
   }
 
+  // The server sets the end time from its own clock.
   completeCall(
     callId: string,
-    request: CompleteCallRequestDto,
+    request: CompleteCallRequestDto = {},
   ) {
     return apiClient.post<CallResponseDto>(
       `/api/v1/calls/${encodeURIComponent(callId)}/complete`,

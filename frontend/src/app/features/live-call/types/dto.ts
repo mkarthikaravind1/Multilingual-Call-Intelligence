@@ -165,7 +165,8 @@ export interface CallAnalysisResponseDto {
 }
 
 export interface CompleteCallRequestDto {
-  end_time: number
+  // Left out: the server's clock.
+  end_time?: number
 }
 
 export interface LiveTokenResponseDto {

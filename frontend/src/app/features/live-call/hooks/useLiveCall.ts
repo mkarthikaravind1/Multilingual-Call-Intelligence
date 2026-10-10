@@ -279,9 +279,6 @@ export function useLiveCall(
         const callResponse =
           await callRestService.completeCall(
             targetCallId,
-            {
-              end_time: Date.now() / 1000,
-            },
           )
 
         if (
