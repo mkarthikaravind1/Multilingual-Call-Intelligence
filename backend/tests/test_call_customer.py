@@ -487,11 +487,12 @@ def test_customer_routes_return_404_for_unknown_calls_and_require_login(api):
 
 def _answer(client: TestClient, call_uuid: str, from_number: str) -> str:
     url = "http://testserver/api/v1/telephony/plivo/answer"
+    data = {"CallUUID": call_uuid, "From": from_number, "To": "+918000000000"}
     response = client.post(
         "/api/v1/telephony/plivo/answer",
-        data={"CallUUID": call_uuid, "From": from_number, "To": "+918000000000"},
+        data=data,
         headers={
-            SIGNATURE_HEADER: compute_signature("test-auth-token", url, "nonce-1"),
+            SIGNATURE_HEADER: compute_signature("test-auth-token", url, "nonce-1", data),
             NONCE_HEADER: "nonce-1",
         },
     )

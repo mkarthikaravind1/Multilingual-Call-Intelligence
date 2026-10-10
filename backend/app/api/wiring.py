@@ -125,6 +125,7 @@ from app.services.background_jobs import BackgroundJobRunner, PeriodicJob
 from app.services.live_analysis_scheduler import LiveAnalysisScheduler
 from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
 from app.services.post_call_repair_service import PostCallRepairService
+from app.services.stale_call_service import StaleCallSweeper
 from app.services.user_management_service import UserManagementService
 from app.services.auth_service import AuthService
 from app.services.price_list_repository import (
@@ -404,15 +405,6 @@ def build_api_services(
         scan_limit=settings.post_call_repair_scan_limit,
         background_interval_seconds=settings.post_call_repair_interval_seconds,
     )
-    background_jobs = BackgroundJobRunner(
-        [
-            PeriodicJob(
-                "post_call_repair",
-                settings.post_call_repair_interval_seconds,
-                post_call_repair_service.run,
-            )
-        ]
-    )
 
     # --- Telephony (Production Telephony) ---
     # Each piece degrades to None/in-memory independently, so an
@@ -433,6 +425,29 @@ def build_api_services(
         call_mapping_repository,
         call_customer_service=call_customer_service,
         live_state=live_state_store,
+    )
+
+    # --- Background jobs ---
+    stale_call_sweeper = StaleCallSweeper(
+        call_service,
+        telephony_call_service.stream_is_open,
+        workflow_service.complete_call,
+        idle_seconds=settings.stale_call_idle_seconds,
+        call_id_prefixes=(f"{settings.telephony_provider.strip().lower()}-",),
+    )
+    background_jobs = BackgroundJobRunner(
+        [
+            PeriodicJob(
+                "post_call_repair",
+                settings.post_call_repair_interval_seconds,
+                post_call_repair_service.run,
+            ),
+            PeriodicJob(
+                "stale_call_sweep",
+                settings.stale_call_sweep_interval_seconds,
+                stale_call_sweeper.run,
+            ),
+        ]
     )
 
     try:

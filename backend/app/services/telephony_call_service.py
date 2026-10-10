@@ -29,9 +29,12 @@ _TERMINAL_STATUSES = frozenset(
 # to finish its buffered and in-flight audio before completing anyway.
 STREAM_DRAIN_TIMEOUT_SECONDS = 30.0
 
-# How long a stream stays marked open in the shared store if its instance
-# dies without cleaning up. Longer than any real call.
-STREAM_STATE_TTL_SECONDS = 6 * 60 * 60
+# How long a stream stays marked open in the shared store after its last
+# sign of life, so one whose instance died without cleaning up is not
+# taken for open for long. An open stream renews the mark every
+# STREAM_HEARTBEAT_SECONDS (see telephony_ws.py).
+STREAM_STATE_TTL_SECONDS = 120.0
+STREAM_HEARTBEAT_SECONDS = 30.0
 # How often a status webhook on another instance re-checks the stream.
 _SHARED_DRAIN_POLL_SECONDS = 0.25
 
@@ -66,6 +69,17 @@ class TelephonyCallService:
         self._clock = clock
 
     def start_call_from_provider(self, provider: str, event: InboundCallEvent) -> str:
+        # The provider can send its answer webhook again for the same
+        # phone call (a retry after a slow response): that is the call we
+        # already have, not a second one.
+        existing = self.resolve_call_id(event.provider_call_id)
+        if existing is not None:
+            logger.info(
+                "Answer webhook repeated for provider call %r; keeping call %r",
+                event.provider_call_id,
+                existing,
+            )
+            return existing
         call_id = f"{provider}-{uuid4()}"
         self._call_service.start_call(call_id, self._clock())
         self._mapping_repository.save(
@@ -95,6 +109,8 @@ class TelephonyCallService:
     # --- Media stream coordination ---
 
     def stream_opened(self, call_id: str) -> None:
+        """The call's media stream is open. Called again while it stays
+        open, to keep it marked open for the other instances."""
         with self._streams_guard:
             self._open_streams.setdefault(call_id, threading.Event())
         try:
@@ -123,6 +139,13 @@ class TelephonyCallService:
             logger.exception("Could not read the stream state of call %r", call_id)
             return False
 
+    def stream_is_open(self, call_id: str) -> bool:
+        """Whether the call's media stream is open, on any instance."""
+        with self._streams_guard:
+            if call_id in self._open_streams:
+                return True
+        return self._stream_open_elsewhere(call_id)
+
     def call_awaiting_stream_drain(self, event: CallStatusEvent) -> str | None:
         """The call_id a terminal event should wait on before completing: set
         only while that call is active and its media stream is still open."""
@@ -131,9 +154,7 @@ class TelephonyCallService:
         call_id = self.resolve_call_id(event.provider_call_id)
         if call_id is None:
             return None
-        with self._streams_guard:
-            open_here = call_id in self._open_streams
-        if not open_here and not self._stream_open_elsewhere(call_id):
+        if not self.stream_is_open(call_id):
             return None
         if self._call_service.get_call(call_id).status == ConversationStatus.COMPLETED:
             return None
@@ -183,6 +204,12 @@ class TelephonyCallService:
         duplicate or late callbacks never trigger post-call processing twice."""
         call_id = self.resolve_call_id(event.provider_call_id)
         if call_id is None:
+            if event.status in _TERMINAL_STATUSES:
+                logger.warning(
+                    "Status %r for provider call %r, which matches no call here; ignored",
+                    event.status.value,
+                    event.provider_call_id,
+                )
             return False
 
         if event.status not in _TERMINAL_STATUSES:

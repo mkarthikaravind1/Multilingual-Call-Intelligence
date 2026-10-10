@@ -37,7 +37,10 @@ from app.services.telephony_audio_buffer import (
     TelephonyAudioBuffer,
     TelephonyAudioBufferError,
 )
-from app.services.telephony_call_service import TelephonyCallService
+from app.services.telephony_call_service import (
+    STREAM_HEARTBEAT_SECONDS,
+    TelephonyCallService,
+)
 from app.core.config import get_settings
 from app.observability.metrics import (
     LIVE_CHUNK_DURATION,
@@ -188,6 +191,7 @@ async def _serve_stream(
         telephony_call_service.stream_opened(call_id)
 
     next_completion_check = 0.0
+    next_heartbeat = time.monotonic() + STREAM_HEARTBEAT_SECONDS
     try:
         while True:
             message = await websocket.receive()
@@ -278,6 +282,11 @@ async def _serve_stream(
             if stream_event.event_type == "media" and now < next_completion_check:
                 continue
             next_completion_check = now + COMPLETION_CHECK_SECONDS
+            # Still streaming: keep the stream marked open for the other
+            # instances (the mark expires if this one dies).
+            if buffers and telephony_call_service is not None and now >= next_heartbeat:
+                next_heartbeat = now + STREAM_HEARTBEAT_SECONDS
+                await run_in_threadpool(telephony_call_service.stream_opened, call_id)
             if await _call_is_completed(call_id, call_service):
                 _flush_all(buffers, worker, force=True, min_duration=_MIN_FLUSH_AUDIO_SECONDS, is_final=True)
                 buffers = {}

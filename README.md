@@ -415,7 +415,7 @@ Fill in at least `GROQ_API_KEY` and `SARVAM_API_KEY`. The backend reads
 | `AUTH_SECRET_KEY`, `AUTH_ACCESS_TOKEN_EXPIRE_MINUTES`, `BOOTSTRAP_ADMIN_*` | auth |
 | `PLIVO_*`, `TELEPHONY_STREAM_*` | telephony |
 | `CUSTOMER_SUMMARY_*`, `SMS_GATE_*` | customer SMS |
-| `EMERGING_COMPLAINT_*`, `POST_CALL_REPAIR_*` | background work |
+| `EMERGING_COMPLAINT_*`, `POST_CALL_REPAIR_*`, `STALE_CALL_*` | background work |
 
 Never commit `.env`; only `.env.example` (placeholders) is tracked.
 

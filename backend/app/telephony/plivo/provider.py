@@ -80,7 +80,7 @@ class PlivoTelephonyProvider(TelephonyProvider):
     ) -> bool:
         if not self._validate_signatures:
             return True
-        return _validate_plivo_signature(self._auth_token, headers, url)
+        return _validate_plivo_signature(self._auth_token, headers, url, params)
 
     def parse_inbound_call(self, params: Mapping[str, str]) -> InboundCallEvent:
         call_uuid = params.get("CallUUID", "")

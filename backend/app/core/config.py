@@ -224,6 +224,11 @@ class Settings(BaseSettings):
     post_call_repair_min_age_seconds: float = 120.0
     post_call_repair_max_attempts: int = 5
     post_call_repair_scan_limit: int = 500
+    # Stale calls: a phone call whose hangup was never reported is
+    # completed once its stream is closed and nothing was said for
+    # STALE_CALL_IDLE_SECONDS. Interval 0 disables the sweep.
+    stale_call_sweep_interval_seconds: float = 120.0
+    stale_call_idle_seconds: float = 600.0
     # Creates this admin at startup when no user exists yet.
     bootstrap_admin_email: str = ""
     bootstrap_admin_password: str = ""

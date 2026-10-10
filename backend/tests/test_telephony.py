@@ -82,11 +82,18 @@ def _plivo_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
 
 
-def _signed_headers(auth_token: str, url: str, nonce: str = "nonce-1") -> dict[str, str]:
+def _signed_headers(
+    auth_token: str, url: str, nonce: str = "nonce-1", params: dict[str, str] | None = None
+) -> dict[str, str]:
     return {
-        SIGNATURE_HEADER: compute_signature(auth_token, url, nonce),
+        SIGNATURE_HEADER: compute_signature(auth_token, url, nonce, params),
         NONCE_HEADER: nonce,
     }
+
+
+def _signed_form(url: str, data: dict[str, str]) -> dict:
+    """A webhook's form fields and the headers Plivo would sign them with."""
+    return {"data": data, "headers": _signed_headers("test-auth-token", url, params=data)}
 
 
 def _call_service() -> CallService:
@@ -527,8 +534,7 @@ def _extract_call_id(xml_body: str) -> str:
 def _answer_call(client: TestClient, call_uuid: str) -> str:
     response = client.post(
         ANSWER_PATH,
-        data={"CallUUID": call_uuid, "From": "+91123", "To": "+91456"},
-        headers=_signed_headers("test-auth-token", ANSWER_URL),
+        **_signed_form(ANSWER_URL, {"CallUUID": call_uuid, "From": "+91123", "To": "+91456"}),
     )
     return _extract_call_id(response.text)
 
@@ -549,8 +555,7 @@ def test_answer_webhook_creates_call_and_returns_stream_xml():
 
     response = client.post(
         ANSWER_PATH,
-        data={"CallUUID": "uuid-1", "From": "+91123", "To": "+91456"},
-        headers=headers,
+        **_signed_form(ANSWER_URL, {"CallUUID": "uuid-1", "From": "+91123", "To": "+91456"}),
     )
 
     assert response.status_code == 200
@@ -568,8 +573,7 @@ def test_answer_webhook_does_not_leak_credentials_on_misconfiguration():
 
     response = client.post(
         ANSWER_PATH,
-        data={"CallUUID": "uuid-1", "From": "+91123", "To": "+91456"},
-        headers=_signed_headers("test-auth-token", ANSWER_URL),
+        **_signed_form(ANSWER_URL, {"CallUUID": "uuid-1", "From": "+91123", "To": "+91456"}),
     )
 
     assert response.status_code == 503
@@ -581,17 +585,14 @@ def test_answer_webhook_does_not_leak_credentials_on_misconfiguration():
 def test_status_webhook_ends_call_idempotently():
     client, _ = _build_client()
     call_id = _answer_call(client, "uuid-2")
-    status_headers = _signed_headers("test-auth-token", STATUS_URL)
 
     first = client.post(
         STATUS_PATH,
-        data={"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "42"},
-        headers=status_headers,
+        **_signed_form(STATUS_URL, {"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "42"}),
     )
     second = client.post(
         STATUS_PATH,
-        data={"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "999"},
-        headers=status_headers,
+        **_signed_form(STATUS_URL, {"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "999"}),
     )
 
     assert first.status_code == 200
@@ -603,10 +604,9 @@ def test_status_webhook_ends_call_idempotently():
 
 def test_status_webhook_for_unknown_call_still_returns_200():
     client, _ = _build_client()
-    headers = _signed_headers("test-auth-token", STATUS_URL)
 
     response = client.post(
-        STATUS_PATH, data={"CallUUID": "never-answered", "CallStatus": "completed"}, headers=headers
+        STATUS_PATH, **_signed_form(STATUS_URL, {"CallUUID": "never-answered", "CallStatus": "completed"})
     )
 
     assert response.status_code == 200
@@ -932,13 +932,11 @@ def test_status_webhook_schedules_post_call_processing_once(monkeypatch):
     monkeypatch.setattr(
         services.workflow_service, "process_completed_call", processed.append
     )
-    headers = _signed_headers("test-auth-token", STATUS_URL)
 
     for status in ("in-progress", "completed", "completed", "timeout"):
         response = client.post(
             STATUS_PATH,
-            data={"CallUUID": "uuid-3", "CallStatus": status, "Duration": "12"},
-            headers=headers,
+            **_signed_form(STATUS_URL, {"CallUUID": "uuid-3", "CallStatus": status, "Duration": "12"}),
         )
         assert response.status_code == 200
 
@@ -963,8 +961,7 @@ def test_status_webhook_runs_post_call_processing_in_background():
 
     response = client.post(
         STATUS_PATH,
-        data={"CallUUID": "uuid-4", "CallStatus": "completed", "Duration": "30"},
-        headers=_signed_headers("test-auth-token", STATUS_URL),
+        **_signed_form(STATUS_URL, {"CallUUID": "uuid-4", "CallStatus": "completed", "Duration": "30"}),
     )
 
     assert response.status_code == 200
@@ -1027,10 +1024,7 @@ def _post_status_in_background(client: TestClient, call_uuid: str, status: str =
     thread = threading.Thread(
         target=webhook_client.post,
         args=(STATUS_PATH,),
-        kwargs={
-            "data": {"CallUUID": call_uuid, "CallStatus": status, "Duration": "30"},
-            "headers": _signed_headers("test-auth-token", STATUS_URL),
-        },
+        kwargs=_signed_form(STATUS_URL, {"CallUUID": call_uuid, "CallStatus": status, "Duration": "30"}),
     )
     thread.start()
     return thread
@@ -1247,8 +1241,7 @@ def test_stop_before_terminal_status_completes_immediately_with_final_audio(monk
 
     response = client.post(
         STATUS_PATH,
-        data={"CallUUID": "uuid-final-2", "CallStatus": "completed", "Duration": "30"},
-        headers=_signed_headers("test-auth-token", STATUS_URL),
+        **_signed_form(STATUS_URL, {"CallUUID": "uuid-final-2", "CallStatus": "completed", "Duration": "30"}),
     )
 
     assert response.status_code == 200

@@ -56,11 +56,18 @@ def _plivo_settings(**overrides) -> Settings:
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
 
 
-def _signed_headers(auth_token: str, url: str, nonce: str = "nonce-1") -> dict[str, str]:
+def _signed_headers(
+    auth_token: str, url: str, nonce: str = "nonce-1", params: dict[str, str] | None = None
+) -> dict[str, str]:
     return {
-        SIGNATURE_HEADER: compute_signature(auth_token, url, nonce),
+        SIGNATURE_HEADER: compute_signature(auth_token, url, nonce, params),
         NONCE_HEADER: nonce,
     }
+
+
+def _signed_form(url: str, data: dict[str, str]) -> dict:
+    """A webhook's form fields and the headers Plivo would sign them with."""
+    return {"data": data, "headers": _signed_headers("test-auth-token", url, params=data)}
 
 
 def _call_service() -> CallService:
@@ -350,8 +357,7 @@ def test_answer_webhook_creates_call_and_returns_stream_xml():
 
     response = client.post(
         ANSWER_PATH,
-        data={"CallUUID": "uuid-1", "From": "+91123", "To": "+91456"},
-        headers=headers,
+        **_signed_form(ANSWER_URL, {"CallUUID": "uuid-1", "From": "+91123", "To": "+91456"}),
     )
 
     assert response.status_code == 200
@@ -365,21 +371,17 @@ def test_status_webhook_ends_call_idempotently():
     client, services = _build_client()
     answer = client.post(
         ANSWER_PATH,
-        data={"CallUUID": "uuid-2", "From": "+91123", "To": "+91456"},
-        headers=_signed_headers("test-auth-token", ANSWER_URL),
+        **_signed_form(ANSWER_URL, {"CallUUID": "uuid-2", "From": "+91123", "To": "+91456"}),
     )
     call_id = _extract_call_id(answer.text)
-    status_headers = _signed_headers("test-auth-token", STATUS_URL)
 
     first = client.post(
         STATUS_PATH,
-        data={"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "42"},
-        headers=status_headers,
+        **_signed_form(STATUS_URL, {"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "42"}),
     )
     second = client.post(
         STATUS_PATH,
-        data={"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "999"},
-        headers=status_headers,
+        **_signed_form(STATUS_URL, {"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "999"}),
     )
 
     assert first.status_code == 200
@@ -392,10 +394,9 @@ def test_status_webhook_ends_call_idempotently():
 
 def test_status_webhook_for_unknown_call_still_returns_200():
     client = _build_client()
-    headers = _signed_headers("test-auth-token", STATUS_URL)
 
     response = client.post(
-        STATUS_PATH, data={"CallUUID": "never-answered", "CallStatus": "completed"}, headers=headers
+        STATUS_PATH, **_signed_form(STATUS_URL, {"CallUUID": "never-answered", "CallStatus": "completed"})
     )
 
     assert response.status_code == 200
@@ -427,8 +428,7 @@ def test_telephony_stream_accepts_known_call_and_handles_frames():
     client = _build_client()
     answer = client.post(
         ANSWER_PATH,
-        data={"CallUUID": "uuid-3", "From": "+91123", "To": "+91456"},
-        headers=_signed_headers("test-auth-token", ANSWER_URL),
+        **_signed_form(ANSWER_URL, {"CallUUID": "uuid-3", "From": "+91123", "To": "+91456"}),
     )
     call_id = _extract_call_id(answer.text)
 

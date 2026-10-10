@@ -63,7 +63,8 @@ In the Plivo application, set:
 - Hangup/status URL: `https://<host>/api/v1/telephony/plivo/status` (POST)
 
 `PLIVO_PUBLIC_BASE_URL=https://<host>` must match exactly, because webhook
-signatures are computed over that URL. `PLIVO_STREAM_BASE_URL=wss://<host>`.
+signatures (Plivo's V3 scheme) are computed over that URL and the form
+fields. `PLIVO_STREAM_BASE_URL=wss://<host>`.
 
 Set `PLIVO_ICR_DIAL_TARGETS` to the ICR's phone number (E.164) or SIP
 endpoint (`sip:icr@...`). Several, comma-separated, ring together. The answer
@@ -146,6 +147,19 @@ doesn't finish (a crash, a provider outage), the repair sweep retries it:
 A Redis lock ensures that only one instance sweeps at a time. Supervisors
 and admins can see waiting calls and retry them under **Administration →
 Post-call processing**, or from a call's post-call analysis page.
+
+## Stale calls
+
+A phone call is completed by Plivo's hangup webhook. If that webhook is
+missed (the backend was restarting, or the hangup URL is not set in Plivo),
+a sweep completes the call instead, so it still gets its summary:
+
+- every `STALE_CALL_SWEEP_INTERVAL_SECONDS` (default 120; `0` disables it),
+- once the call's media stream is closed and nothing has been said for
+  `STALE_CALL_IDLE_SECONDS` (default 600).
+
+Only calls started by Plivo are swept, never manual ones. Each completion is
+logged as a warning, as is a hangup webhook that matches no call.
 
 ## Monitoring
 

@@ -24,7 +24,9 @@ def _webhook_url(request: Request) -> str:
     base = get_settings().plivo_public_base_url.strip()
     if not base:
         return str(request.url)
-    return f"{base.rstrip('/')}{request.url.path}"
+    # As Plivo called it: the signature covers the query string too.
+    query = f"?{request.url.query}" if request.url.query else ""
+    return f"{base.rstrip('/')}{request.url.path}{query}"
 
 
 def _require_provider(provider: TelephonyProvider | None) -> TelephonyProvider:
