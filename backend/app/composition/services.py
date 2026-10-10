@@ -1,9 +1,10 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from uuid import uuid4
 
 from app.ai.asr.provider import ASRProvider
 from app.ai.complaint.provider import ComplaintDetectionProvider
 from app.ai.language.provider import LanguageIdentificationProvider
+from app.ai.live_analysis.llm_provider import LLMLiveAnalysisProvider
 from app.ai.llm.client import LLMClient
 from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.sentiment.provider import SentimentAnalysisProvider
@@ -25,7 +26,14 @@ from app.services.audio_processing_pipeline import (
     AudioProcessingPipeline,
     UtteranceProcessor,
 )
+from app.domain.conversation import Conversation
+from app.domain.utterance import Utterance
 from app.services.call_service import CallService
+from app.services.complaint_lifecycle_service import ComplaintLifecycleService
+from app.services.emerging_complaint_service import EmergingComplaintService
+from app.services.escalation_service import EscalationService
+from app.services.live_analysis_store import DEFAULT_LIVE_ANALYSIS_TTL_SECONDS
+from app.services.live_state_store import LiveStateStore
 from app.services.language_lock import LanguageLock
 from app.services.complaint_analysis_service import ComplaintAnalysisService
 from app.services.conversation_analysis_service import ConversationAnalysisService
@@ -196,11 +204,13 @@ def build_next_question_service(
     provider: QuestionSuggestionProvider,
     runtime_improvement_service: RuntimeImprovementService | None = None,
     improvement_usage_recorder: ImprovementEffectivenessService | None = None,
+    category_descriptions: Callable[[], Mapping[str, str | None]] | None = None,
 ) -> NextQuestionService:
     return NextQuestionService(
         provider=provider,
         runtime_improvement_service=runtime_improvement_service,
         improvement_usage_recorder=improvement_usage_recorder,
+        category_descriptions=category_descriptions,
     )
 
 def build_conversation_analysis_service(
@@ -208,6 +218,7 @@ def build_conversation_analysis_service(
     sentiment_provider: SentimentAnalysisProvider,
     runtime_improvement_service: RuntimeImprovementService | None = None,
     improvement_usage_recorder: ImprovementEffectivenessService | None = None,
+    live_analyzer: LLMLiveAnalysisProvider | None = None,
 ) -> ConversationAnalysisService:
     def learning_for(component: LearningComponent) -> ComponentLearning | None:
         if runtime_improvement_service is None:
@@ -223,6 +234,7 @@ def build_conversation_analysis_service(
         sentiment_service=SentimentAnalysisService(
             sentiment_provider, learning_for(LearningComponent.SENTIMENT_ANALYSIS)
         ),
+        live_analyzer=live_analyzer,
     )
 
 
@@ -239,23 +251,67 @@ def build_call_workflow_service(
     post_call_summary_repository: PostCallSummaryRepository | None = None,
     runtime_improvement_service: RuntimeImprovementService | None = None,
     improvement_usage_recorder: ImprovementEffectivenessService | None = None,
+    *,
+    complaint_provider: ComplaintDetectionProvider | None = None,
+    sentiment_provider: SentimentAnalysisProvider | None = None,
+    question_provider: QuestionSuggestionProvider | None = None,
+    live_analyzer: LLMLiveAnalysisProvider | None = None,
+    category_descriptions: Callable[[], Mapping[str, str | None]] | None = None,
+    escalation_service: EscalationService | None = None,
+    complaint_lifecycle_service: ComplaintLifecycleService | None = None,
+    customer_id_resolver: Callable[[str], str | None] | None = None,
+    emerging_complaint_service: EmergingComplaintService | None = None,
+    emerging_complaint_auto_discovery: bool = False,
+    live_state_store: LiveStateStore | None = None,
+    live_analysis_ttl_seconds: float = DEFAULT_LIVE_ANALYSIS_TTL_SECONDS,
+    transcript_reviser: Callable[[Conversation], tuple[Utterance, ...] | None] | None = None,
+    vehicle_model_resolver: Callable[[str], str | None] | None = None,
 ) -> CallWorkflowService:
-    if llm_client is None:
+    """The one place the call workflow is put together.
+
+    The application (app.api.wiring) passes its AI providers and every
+    collaborator. A caller that passes less gets a smaller system: AI
+    providers made from llm_client (or the configured LLM), in-memory
+    stores, and none of the optional parts (escalation, complaint
+    tracking, customer lookups, re-transcription). That is what the
+    audio-file runner in scripts/ uses."""
+    needs_llm = (
+        complaint_provider is None
+        or sentiment_provider is None
+        or question_provider is None
+        or estimation_service is None
+        or post_call_summary_service is None
+    )
+    if llm_client is None and needs_llm:
         llm_client = create_llm_client(settings)
 
     return CallWorkflowService(
         call_service=call_service or build_call_service(),
         coverage_repository=coverage_repository or build_coverage_repository(settings),
         analysis_service=build_conversation_analysis_service(
-            complaint_provider=create_complaint_provider(llm_client),
-            sentiment_provider=create_sentiment_provider(llm_client),
+            complaint_provider=(
+                create_complaint_provider(llm_client)
+                if complaint_provider is None
+                else complaint_provider
+            ),
+            sentiment_provider=(
+                create_sentiment_provider(llm_client)
+                if sentiment_provider is None
+                else sentiment_provider
+            ),
             runtime_improvement_service=runtime_improvement_service,
             improvement_usage_recorder=improvement_usage_recorder,
+            live_analyzer=live_analyzer,
         ),
         next_question_service=build_next_question_service(
-            provider=create_question_provider(llm_client),
+            provider=(
+                create_question_provider(llm_client)
+                if question_provider is None
+                else question_provider
+            ),
             runtime_improvement_service=runtime_improvement_service,
             improvement_usage_recorder=improvement_usage_recorder,
+            category_descriptions=category_descriptions,
         ),
         estimation_service=estimation_service
         or build_estimation_service(settings=settings, llm_client=llm_client),
@@ -266,6 +322,15 @@ def build_call_workflow_service(
         learning_recorder=learning_recorder,
         post_call_summary_repository=post_call_summary_repository,
         customer_summary_enabled=(settings or Settings()).customer_summary_enabled,
+        escalation_service=escalation_service,
+        complaint_lifecycle_service=complaint_lifecycle_service,
+        customer_id_resolver=customer_id_resolver,
+        emerging_complaint_service=emerging_complaint_service,
+        emerging_complaint_auto_discovery=emerging_complaint_auto_discovery,
+        live_state_store=live_state_store,
+        live_analysis_ttl_seconds=live_analysis_ttl_seconds,
+        transcript_reviser=transcript_reviser,
+        vehicle_model_resolver=vehicle_model_resolver,
     )
 
 def build_audio_processing_pipeline(
