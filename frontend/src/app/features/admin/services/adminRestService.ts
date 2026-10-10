@@ -1,13 +1,16 @@
 import { apiClient } from '../../../api/client'
 
 import type {
+  CreateCategoryDto,
   CreateLocationDto,
   CreateUserDto,
   LocationDto,
+  ManagedCategoryDto,
   ManagedUserDto,
   PostCallRepairStatusDto,
   RepairRunDto,
   RetryPostCallDto,
+  UpdateCategoryDto,
   UpdateLocationDto,
   UpdateUserDto,
 } from '../types/dto'
@@ -47,6 +50,21 @@ export const adminRestService = {
   updateLocation(locationId: string, payload: UpdateLocationDto): Promise<LocationDto> {
     return apiClient.request<LocationDto>(
       `${basePath}/locations/${encodeURIComponent(locationId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+    )
+  },
+
+  listCategories(): Promise<ManagedCategoryDto[]> {
+    return apiClient.get<ManagedCategoryDto[]>(`${basePath}/complaint-categories`)
+  },
+
+  createCategory(payload: CreateCategoryDto): Promise<ManagedCategoryDto> {
+    return apiClient.post<ManagedCategoryDto>(`${basePath}/complaint-categories`, payload)
+  },
+
+  updateCategory(key: string, payload: UpdateCategoryDto): Promise<ManagedCategoryDto> {
+    return apiClient.request<ManagedCategoryDto>(
+      `${basePath}/complaint-categories/${encodeURIComponent(key)}`,
       { method: 'PATCH', body: JSON.stringify(payload) },
     )
   },

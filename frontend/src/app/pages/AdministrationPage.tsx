@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../api/errors'
 import { useAuth } from '../auth/useAuth'
 import { decodeJwtClaims } from '../auth/session'
+import { ComplaintCategoriesPanel } from '../features/admin/components/ComplaintCategoriesPanel'
 import { LocationsPanel } from '../features/admin/components/LocationsPanel'
 import { PostCallRepairPanel } from '../features/admin/components/PostCallRepairPanel'
 import { UserManagementPanel } from '../features/admin/components/UserManagementPanel'
@@ -24,7 +25,7 @@ const ROLE_CAPABILITIES = [
   {
     role: 'ADMIN',
     description:
-      'Everything a Supervisor can do except managing the price list, plus managing users, roles and locations.',
+      'Everything a Supervisor can do except managing the price list, plus managing users, roles, locations and complaint categories.',
   },
 ]
 
@@ -83,6 +84,8 @@ export function AdministrationPage() {
         locations={locations}
         onUsersChanged={setUsers}
       />
+
+      <ComplaintCategoriesPanel />
 
       <PostCallRepairPanel />
 

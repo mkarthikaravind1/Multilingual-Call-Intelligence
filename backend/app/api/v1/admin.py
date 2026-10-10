@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.api.dependencies import (
+    get_category_admin,
     get_location_service,
     get_post_call_repair_service,
     get_user_management_service,
@@ -9,6 +10,12 @@ from app.api.dependencies import (
 from app.api.security_dependencies import require_roles
 from app.domain.user import User, UserRole
 from app.services.auth_service import EmailAlreadyRegisteredError
+from app.domain.complaint_category import MAX_CUSTOM_CATEGORY_NAME_LENGTH
+from app.services.complaint_category_admin import (
+    MAX_CATEGORY_DESCRIPTION_LENGTH,
+    ComplaintCategoryAdminService,
+)
+from app.services.complaint_category_catalog import CatalogEntry
 from app.services.location_service import LocationService
 from app.services.post_call_repair_service import PostCallRepairService
 from app.services.user_management_service import UNCHANGED, UserManagementService
@@ -182,6 +189,102 @@ def update_location(
             is_active=payload.is_active,
         )
     )
+
+
+# --- Complaint categories ----------------------------------------------------
+
+
+class ManagedCategoryResponse(BaseModel):
+    # builtin:<name>, theme:<candidate id> or admin:<id>.
+    key: str
+    name: str
+    # What counts as it, told to the detector; null for built-ins.
+    description: str | None
+    # built_in, theme (an accepted emerging theme) or admin (added here).
+    source: str
+    # Names it had before: complaints stored under them count under `name`.
+    former_names: list[str]
+    # When it was retired (detection no longer reports it); null: in use.
+    retired_at: float | None
+    # Built-in categories keep their names.
+    can_rename: bool
+    # "Other" stays: a complaint that fits nothing else needs somewhere to go.
+    can_retire: bool
+
+
+class CreateCategoryRequest(_Request):
+    name: str = Field(min_length=1, max_length=MAX_CUSTOM_CATEGORY_NAME_LENGTH)
+    description: str | None = Field(default=None, max_length=MAX_CATEGORY_DESCRIPTION_LENGTH)
+
+
+class UpdateCategoryRequest(_Request):
+    # Each left out: unchanged.
+    name: str | None = Field(default=None, min_length=1, max_length=MAX_CUSTOM_CATEGORY_NAME_LENGTH)
+    description: str | None = Field(default=None, max_length=MAX_CATEGORY_DESCRIPTION_LENGTH)
+    # true: retire it; false: bring it back.
+    retired: bool | None = None
+
+
+def _category_response(entry: CatalogEntry) -> ManagedCategoryResponse:
+    built_in = entry.source == "built_in"
+    return ManagedCategoryResponse(
+        key=entry.key,
+        name=entry.category.name,
+        description=entry.category.description,
+        source=entry.source,
+        former_names=list(entry.former_names),
+        retired_at=entry.retired_at,
+        can_rename=not built_in,
+        can_retire=not (built_in and entry.category.name == "Other"),
+    )
+
+
+@router.get("/complaint-categories", response_model=list[ManagedCategoryResponse])
+def list_complaint_categories(
+    service: ComplaintCategoryAdminService = Depends(get_category_admin),
+    _: User = Depends(_ADMINS),
+) -> list[ManagedCategoryResponse]:
+    """Every complaint category, retired ones included."""
+    return [_category_response(entry) for entry in service.list_categories()]
+
+
+@router.post(
+    "/complaint-categories",
+    response_model=ManagedCategoryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_complaint_category(
+    payload: CreateCategoryRequest,
+    service: ComplaintCategoryAdminService = Depends(get_category_admin),
+    admin: User = Depends(_ADMINS),
+) -> ManagedCategoryResponse:
+    return _category_response(service.add(payload.name, payload.description, admin.user_id))
+
+
+@router.patch("/complaint-categories/{key}", response_model=ManagedCategoryResponse)
+def update_complaint_category(
+    key: str,
+    payload: UpdateCategoryRequest,
+    service: ComplaintCategoryAdminService = Depends(get_category_admin),
+    admin: User = Depends(_ADMINS),
+) -> ManagedCategoryResponse:
+    """Rename a category, change what counts as it, retire it or bring it
+    back. Complaints already stored keep their place: a renamed category's
+    are shown under its new name, a retired one's stay in reports."""
+    entry = None
+    if payload.name is not None:
+        entry = service.rename(key, payload.name, admin.user_id)
+    if "description" in payload.model_fields_set:
+        entry = service.describe(key, payload.description, admin.user_id)
+    if payload.retired is not None:
+        entry = (
+            service.retire(key, admin.user_id)
+            if payload.retired
+            else service.restore(key, admin.user_id)
+        )
+    if entry is None:
+        raise HTTPException(status_code=422, detail="Nothing to change was given.")
+    return _category_response(entry)
 
 
 # --- Post-call repair --------------------------------------------------------

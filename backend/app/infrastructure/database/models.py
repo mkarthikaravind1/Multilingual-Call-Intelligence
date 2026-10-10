@@ -437,6 +437,20 @@ class EscalationModel(Base):
     __table_args__ = (Index("ix_escalations_status", "status"),)
 
 
+class ManagedCategoryModel(Base):
+    # One row per complaint category an administrator has decided
+    # something about (see ManagedCategory).
+    __tablename__ = "managed_complaint_categories"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    former_names: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    retired_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class EmergingComplaintCandidateModel(Base):
     # One row per discovered theme; candidate ids are stable, so each
     # discovery run updates the same row.

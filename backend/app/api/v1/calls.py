@@ -11,6 +11,7 @@ from app.api.dependencies import (
     get_call_customer_service,
     get_call_listing,
     get_call_service,
+    get_category_names,
     get_live_calls,
     get_optional_call_customer_service,
     get_workflow_service,
@@ -138,6 +139,17 @@ def get_call_directory(
     )
 
 
+def _live_complaints(complaints, category_names) -> list[ComplaintCoverageResponse]:
+    """A live call's complaints under the name each category has now;
+    two that come to the same name, once."""
+    shown: dict[str, ComplaintCoverageResponse] = {}
+    for complaint in complaints:
+        response = ComplaintCoverageResponse.model_validate(complaint)
+        response.category = category_names(response.category)
+        shown.setdefault(response.category, response)
+    return list(shown.values())
+
+
 @stats_router.get("/live-calls", response_model=LiveCallsResponse)
 def list_live_calls(
     limit: int = Query(DEFAULT_LIVE_CALLS_LIMIT, ge=1, le=MAX_PAGE_LIMIT),
@@ -147,6 +159,7 @@ def list_live_calls(
     sentiment: SentimentLabel | None = Query(None, description="Only calls with this tone."),
     alerts_only: bool = Query(False, description="Only calls with a standing alert."),
     board: LiveCallsBoard = Depends(get_live_calls),
+    category_names=Depends(get_category_names),
     _: User = Depends(_SUPERVISORS),
 ) -> LiveCallsResponse:
     """The calls in progress with where each stands now, most urgent
@@ -175,10 +188,7 @@ def list_live_calls(
                 customer_name=live.call.customer_name,
                 utterance_count=live.call.utterance_count,
                 sentiment=live.sentiment,
-                complaints=[
-                    ComplaintCoverageResponse.model_validate(complaint)
-                    for complaint in live.complaints
-                ],
+                complaints=_live_complaints(live.complaints, category_names),
                 escalation_level=live.call.escalation_level,
                 escalation_status=live.call.escalation_status,
                 alerts=[CallAlertResponse.model_validate(alert) for alert in live.alerts],
@@ -235,27 +245,32 @@ def start_call(
 def get_call(
     call_id: str,
     call_service: CallService = Depends(get_call_service),
+    category_names=Depends(get_category_names),
     _: User = Depends(get_current_user),
 ) -> CallResponse:
-    return to_call_response(call_service.get_call(call_id))
+    return to_call_response(call_service.get_call(call_id), category_names)
 
 @router.post("/{call_id}/utterances", response_model=CallAnalysisResponse)
 def add_utterance(
     call_id: str,
     payload: UtteranceRequest,
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    category_names=Depends(get_category_names),
     _: User = Depends(get_current_user),
 ) -> CallAnalysisResponse:
     result = workflow_service.process_utterance(call_id, to_utterance(payload))
-    return to_analysis_response(call_id, result)
+    return to_analysis_response(call_id, result, category_names)
 
 @router.get("/{call_id}/analysis", response_model=CallAnalysisResponse)
 def get_analysis(
     call_id: str,
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
+    category_names=Depends(get_category_names),
     _: User = Depends(get_current_user),
 ) -> CallAnalysisResponse:
-    return to_analysis_response(call_id, workflow_service.analyze_call(call_id))
+    return to_analysis_response(
+        call_id, workflow_service.analyze_call(call_id), category_names
+    )
 
 @router.get("/{call_id}/customer", response_model=CallCustomerResponse)
 def get_call_customer(

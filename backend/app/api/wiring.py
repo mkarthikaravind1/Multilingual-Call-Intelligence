@@ -137,6 +137,11 @@ from app.services.price_list_repository import (
 )
 from app.services.price_list_service import PriceListService
 from app.services.login_throttle import LoginLimits, LoginThrottle
+from app.domain.managed_category import (
+    InMemoryManagedCategoryRepository,
+    ManagedCategoryRepository,
+)
+from app.services.complaint_category_admin import ComplaintCategoryAdminService
 from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.domain.location import InMemoryLocationRepository, LocationRepository
 from app.services.call_routing_service import CallRoutingService
@@ -154,6 +159,7 @@ from app.services.performance import PerformanceService
 from app.services.reporting import (
     MAX_REPORT_CALLS,
     InMemoryReportSource,
+    RenamingReportSource,
     ReportService,
     ReportSource,
 )
@@ -189,6 +195,7 @@ def build_api_services(
     emerging_complaint_repository: EmergingComplaintRepository | None = None,
     emerging_complaint_provider: EmergingComplaintDiscoveryProvider | None = None,
     complaint_category_catalog: ComplaintCategoryCatalog | None = None,
+    managed_category_repository: ManagedCategoryRepository | None = None,
     live_state_store: LiveStateStore | None = None,
     call_listing_query: CallListingQuery | None = None,
     price_list_repository: PriceListRepository | None = None,
@@ -283,13 +290,22 @@ def build_api_services(
         )
     escalation_service = EscalationService(escalation_repository, escalation_provider)
     complaint_lifecycle_service = ComplaintLifecycleService(complaint_lifecycle_repository)
-    # Built-in categories plus accepted themes. Pass the catalog the
-    # complaint provider uses (main.py does) so an accept reaches it at once.
+    # Built-in categories, accepted themes and the administrator's own.
+    # Pass the catalog the complaint provider uses, built over the same
+    # managed_category_repository (main.py does both), so a change reaches
+    # detection at once.
+    managed_category_repository = (
+        managed_category_repository or InMemoryManagedCategoryRepository()
+    )
     if complaint_category_catalog is None:
         complaint_category_catalog = ComplaintCategoryCatalog(
             emerging_complaint_repository,
             cache_seconds=settings.complaint_category_cache_seconds,
+            managed=managed_category_repository,
         )
+    category_admin = ComplaintCategoryAdminService(
+        complaint_category_catalog, managed_category_repository
+    )
     emerging_complaint_service = _build_emerging_complaint_service(
         settings,
         emerging_complaint_repository,
@@ -313,17 +329,21 @@ def build_api_services(
 
     # --- Reports (another read model over the same stores) ---
     report_service = ReportService(
-        report_source
-        or InMemoryReportSource(
-            conversation_repository,
-            coverage_repository,
-            post_call_summary_repository,
-            location_repository,
-            user_repository,
-            complaint_lifecycle_repository,
-            call_customer_repository,
-            escalation_repository,
-            question_outcome_repository,
+        # Complaints under the name their category has now.
+        RenamingReportSource(
+            report_source
+            or InMemoryReportSource(
+                conversation_repository,
+                coverage_repository,
+                post_call_summary_repository,
+                location_repository,
+                user_repository,
+                complaint_lifecycle_repository,
+                call_customer_repository,
+                escalation_repository,
+                question_outcome_repository,
+            ),
+            complaint_category_catalog.current_name,
         ),
         location_repository,
         user_repository,
@@ -522,6 +542,7 @@ def build_api_services(
         recording_archive=recording_archive,
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
+        category_admin=category_admin,
         background_jobs=background_jobs,
         warm_up=(
             (lambda: _warm_up_live_models(settings))

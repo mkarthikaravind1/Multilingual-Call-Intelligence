@@ -35,22 +35,27 @@ def is_built_in_category(name: str) -> bool:
 @dataclass(frozen=True)
 class ComplaintCategory:
     """A category complaint detection can report: one of the built-in
-    COMPLAINT_CATEGORIES, or a theme a supervisor accepted (custom)."""
+    COMPLAINT_CATEGORIES, a theme a supervisor accepted, or one an
+    administrator added (the last two: custom)."""
 
     name: str
     # What counts as this category; told to the detector. None for built-ins.
     description: str | None = None
-    # The accepted emerging-complaint candidate it came from (custom only).
+    # The accepted emerging-complaint candidate it came from (themes only).
     candidate_id: str | None = None
+    # Its key among the administrator's categories (those they added only).
+    category_key: str | None = None
 
     def __post_init__(self) -> None:
         require_category_name(self.name)
-        if self.candidate_id is None and not is_built_in_category(self.name):
-            raise ValueError(f"{self.name!r} is not a built-in category; give its candidate_id.")
+        if self.built_in and not is_built_in_category(self.name):
+            raise ValueError(
+                f"{self.name!r} is not a built-in category; give its candidate_id or category_key."
+            )
 
     @property
     def built_in(self) -> bool:
-        return self.candidate_id is None
+        return self.candidate_id is None and self.category_key is None
 
 
 BUILT_IN_CATEGORIES: tuple[ComplaintCategory, ...] = tuple(

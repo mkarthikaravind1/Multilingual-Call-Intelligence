@@ -78,6 +78,36 @@ export interface PostCallRepairStatusDto {
   background_enabled: boolean
 }
 
+// A complaint category with what an administrator has decided about it.
+export interface ManagedCategoryDto {
+  // builtin:<name>, theme:<candidate id> or admin:<id>.
+  key: string
+  name: string
+  // What counts as it, told to the AI; null for built-ins.
+  description: string | null
+  // built_in, theme (an accepted emerging theme) or admin (added here).
+  source: string
+  // Names it had before: complaints stored under them count under `name`.
+  former_names: string[]
+  // When it was retired; null: in use.
+  retired_at: number | null
+  can_rename: boolean
+  can_retire: boolean
+}
+
+export interface CreateCategoryDto {
+  name: string
+  description?: string | null
+}
+
+// Each left out: unchanged.
+export interface UpdateCategoryDto {
+  name?: string
+  description?: string | null
+  // true: retire it; false: bring it back.
+  retired?: boolean
+}
+
 export interface RetryPostCallDto {
   call_id: string
   repaired: boolean

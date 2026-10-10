@@ -15,6 +15,7 @@ from app.services.call_indicators import CallIndicators
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_recording_store import CallRecordingStore
 from app.services.call_listing import CallListingQuery
+from app.services.complaint_category_admin import ComplaintCategoryAdminService
 from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
@@ -70,6 +71,8 @@ class ApiServices:
     emerging_complaint_service: EmergingComplaintService | None = None
     # Built-in complaint categories plus accepted emerging themes.
     complaint_category_catalog: ComplaintCategoryCatalog | None = None
+    # An administrator's changes to those categories.
+    category_admin: ComplaintCategoryAdminService | None = None
     live_state_store: LiveStateStore | None = None
     # How often an open live-call WebSocket checks for new analysis to push.
     live_call_push_interval_seconds: float = 0.5
@@ -152,6 +155,19 @@ def get_complaint_lifecycle_service(connection: HTTPConnection) -> ComplaintLife
     return service
 
 
+def get_category_admin(connection: HTTPConnection) -> ComplaintCategoryAdminService:
+    service = connection.app.state.services.category_admin
+    if service is None:
+        raise HTTPException(status_code=503, detail="Category management is not configured.")
+    return service
+
+
+def get_category_names(connection: HTTPConnection) -> Callable[[str], str]:
+    """Takes the name a complaint category was stored under to the one
+    it has now."""
+    return get_complaint_category_catalog(connection).current_name
+
+
 def get_complaint_category_catalog(connection: HTTPConnection) -> ComplaintCategoryCatalog:
     catalog = connection.app.state.services.complaint_category_catalog
     if catalog is None:
@@ -210,6 +226,7 @@ def get_live_call_handler(connection: HTTPConnection) -> LiveCallHandler:
     return LiveCallHandler(
         services.call_service,
         services.workflow_service,
+        get_category_names(connection),
     )
 
 

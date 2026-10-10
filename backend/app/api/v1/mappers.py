@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from app.api.v1.schemas import (
     CallAlertResponse,
     CallAnalysisResponse,
@@ -30,8 +32,27 @@ def to_utterance(payload: UtteranceRequest) -> Utterance:
         confidence=payload.confidence,
     )
 
-def to_call_response(conversation: Conversation) -> CallResponse:
-    return CallResponse.model_validate(conversation)
+# Takes the name a complaint category was stored under to the one it has
+# now (see ComplaintCategoryCatalog.current_name).
+CategoryNames = Callable[[str], str]
+
+
+def _unique(names) -> list[str]:
+    return list(dict.fromkeys(names))
+
+
+def to_call_response(
+    conversation: Conversation, current_name: CategoryNames | None = None
+) -> CallResponse:
+    response = CallResponse.model_validate(conversation)
+    if current_name is not None:
+        for utterance in response.utterances:
+            if utterance.complaint_categories:
+                utterance.complaint_categories = _unique(
+                    current_name(category) for category in utterance.complaint_categories
+                )
+                utterance.multi_category = len(utterance.complaint_categories) > 1
+    return response
 
 def to_call_list_response(page: CallListPage, limit: int, offset: int) -> CallListResponse:
     return CallListResponse(
@@ -51,8 +72,31 @@ def to_call_stats_response(counts: dict[ConversationStatus, int]) -> CallStatsRe
     return CallStatsResponse(total=sum(counts.values()), active=active, completed=completed)
 
 def to_analysis_response(
-    call_id: str, result: CallAnalysisResult
+    call_id: str, result: CallAnalysisResult, current_name: CategoryNames | None = None
 ) -> CallAnalysisResponse:
+    response = _analysis_response(call_id, result)
+    if current_name is None:
+        return response
+    # Complaints stored under a name their category had before are shown
+    # under the one it has now; two that come to the same name, once.
+    seen: set[str] = set()
+    complaints = []
+    for complaint in response.coverage.complaints:
+        complaint.category = current_name(complaint.category)
+        if complaint.category not in seen:
+            seen.add(complaint.category)
+            complaints.append(complaint)
+    response.coverage.complaints = complaints
+    for suggestion in (response.question_suggestion, *response.question_suggestions):
+        if suggestion is not None:
+            suggestion.target_category = current_name(suggestion.target_category)
+    if response.post_call_summary is not None:
+        for complaint in response.post_call_summary.complaints:
+            complaint.category = current_name(complaint.category)
+    return response
+
+
+def _analysis_response(call_id: str, result: CallAnalysisResult) -> CallAnalysisResponse:
     suggestion = result.question_suggestion
     suggestions = result.question_suggestions or (() if suggestion is None else (suggestion,))
     estimate = result.service_estimate

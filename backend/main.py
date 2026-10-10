@@ -41,6 +41,7 @@ def build_app():
     complaint_categories = ComplaintCategoryCatalog(
         repositories.emerging_complaint,
         cache_seconds=settings.complaint_category_cache_seconds,
+        managed=repositories.managed_category,
     )
     services = build_api_services(
         complaint_provider=create_complaint_provider(llm_client, settings, complaint_categories),
@@ -63,6 +64,7 @@ def build_app():
         escalation_provider=create_escalation_provider(llm_client, settings),
         complaint_lifecycle_repository=repositories.complaint_lifecycle,
         emerging_complaint_repository=repositories.emerging_complaint,
+        managed_category_repository=repositories.managed_category,
         complaint_category_catalog=complaint_categories,
         call_listing_query=repositories.call_listing,
         price_list_repository=repositories.price_list,

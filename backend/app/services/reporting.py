@@ -11,7 +11,7 @@ line of the call that raised it.
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Literal
 
@@ -167,6 +167,33 @@ class ReportSource(ABC):
         """That one call as reports see it; None when there is none (or
         the source cannot look a single call up)."""
         return None
+
+
+class RenamingReportSource(ReportSource):
+    """Another source's calls with each complaint under the name its
+    category has now (current_name: stored name -> that name), so a
+    renamed category keeps one line in every report. Two complaints of a
+    call that come to the same name count once, as the first."""
+
+    def __init__(self, source: ReportSource, current_name: Callable[[str], str]) -> None:
+        self._source = source
+        self._current_name = current_name
+
+    def calls(self, filters: ReportFilters, limit: int) -> tuple[ReportCall, ...]:
+        return tuple(self._renamed(call) for call in self._source.calls(filters, limit))
+
+    def call(self, call_id: str) -> ReportCall | None:
+        call = self._source.call(call_id)
+        return None if call is None else self._renamed(call)
+
+    def _renamed(self, call: ReportCall) -> ReportCall:
+        names = [self._current_name(c.category) for c in call.complaints]
+        if all(name == c.category for name, c in zip(names, call.complaints)):
+            return call
+        complaints: dict[str, ReportComplaint] = {}
+        for name, complaint in zip(names, call.complaints):
+            complaints.setdefault(name, replace(complaint, category=name))
+        return replace(call, complaints=tuple(complaints.values()))
 
 
 # ---- The report ----

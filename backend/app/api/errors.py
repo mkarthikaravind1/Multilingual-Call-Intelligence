@@ -4,6 +4,7 @@ from app.domain.conversation import CallOnHoldError, ConversationAlreadyExistsEr
 from app.domain.escalation import EscalationTransitionError
 from app.services.escalation_service import EscalationNotFoundError
 from app.domain.emerging_complaint_candidate import EmergingComplaintReviewError
+from app.services.complaint_category_admin import CategoryAdminError, CategoryNotFoundError
 from app.services.complaint_lifecycle_service import (
     ComplaintActionError,
     ComplaintLifecycleNotFoundError,
@@ -38,6 +39,16 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(CallOnHoldError)
     async def handle_call_on_hold(request: Request, exc: CallOnHoldError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(CategoryAdminError)
+    async def handle_category_change(request: Request, exc: CategoryAdminError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(CategoryNotFoundError)
+    async def handle_category_not_found(
+        request: Request, exc: CategoryNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
 
     @app.exception_handler(CandidateNotFoundError)
     async def handle_candidate_not_found(

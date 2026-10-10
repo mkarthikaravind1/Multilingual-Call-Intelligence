@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 
 from pydantic import ValidationError
 
@@ -22,9 +23,12 @@ class LiveCallHandler:
         self,
         call_service: CallService,
         workflow_service: CallWorkflowService,
+        category_names: Callable[[str], str] | None = None,
     ) -> None:
         self._call_service = call_service
         self._workflow_service = workflow_service
+        # A complaint category's stored name -> the one it has now.
+        self._category_names = category_names
 
     def open(self, call_id: str) -> LiveErrorEvent | None:
         try:
@@ -52,7 +56,7 @@ class LiveCallHandler:
                 "Could not refresh the analysis.",
             )
         latest = conversation.latest_utterance
-        analysis = to_analysis_response(call_id, result)
+        analysis = to_analysis_response(call_id, result, self._category_names)
         return LiveAnalysisEvent(
             utterance_id="" if latest is None else latest.utterance_id,
             **analysis.model_dump(),
@@ -87,7 +91,7 @@ class LiveCallHandler:
                 "Analysis failed. Please try again.",
             )
 
-        analysis = to_analysis_response(call_id, result)
+        analysis = to_analysis_response(call_id, result, self._category_names)
         return LiveAnalysisEvent(
             utterance_id=message.utterance_id, **analysis.model_dump()
         )

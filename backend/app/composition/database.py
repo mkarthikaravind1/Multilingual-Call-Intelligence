@@ -91,6 +91,10 @@ from app.services.recording_archive import RecordingArchive, RecordingRepository
 from app.infrastructure.database.repositories.recording_repository import (
     PostgresRecordingRepository,
 )
+from app.domain.managed_category import ManagedCategoryRepository
+from app.infrastructure.database.repositories.managed_category_repository import (
+    PostgresManagedCategoryRepository,
+)
 from app.infrastructure.database.repositories.location_repository import (
     PostgresLocationRepository,
 )
@@ -116,6 +120,7 @@ class PostgresRepositories:
     call_customer: CallCustomerRepository
     escalation: EscalationRepository
     emerging_complaint: EmergingComplaintRepository
+    managed_category: ManagedCategoryRepository | None = None
     price_list: PriceListRepository | None = None
     location: LocationRepository | None = None
     # Read model over calls, their complaints and their summaries.
@@ -154,6 +159,7 @@ def build_postgres_repositories(
         call_customer=PostgresCallCustomerRepository(session_factory),
         escalation=PostgresEscalationRepository(session_factory),
         emerging_complaint=PostgresEmergingComplaintRepository(session_factory),
+        managed_category=PostgresManagedCategoryRepository(session_factory),
         call_listing=PostgresCallListingQuery(session_factory),
         price_list=PostgresPriceListRepository(session_factory),
         location=PostgresLocationRepository(session_factory),

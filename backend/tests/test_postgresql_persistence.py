@@ -153,6 +153,7 @@ def test_schema_creates_all_expected_tables(engine):
         "call_alerts",
         "question_outcomes",
         "call_recordings",
+        "managed_complaint_categories",
         "recording_plays",
     }
 

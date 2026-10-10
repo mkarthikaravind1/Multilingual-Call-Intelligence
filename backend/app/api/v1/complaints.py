@@ -44,15 +44,20 @@ ComplaintStage = Literal["detected", "probed", "covered", "outcome", "follow_up"
 
 
 def _responses(
-    views, call_customer_service: CallCustomerService | None
+    views, call_customer_service: CallCustomerService | None, category_names=None
 ) -> list[ComplaintResponse]:
-    """Complaint responses carrying each call's stored customer name and vehicle."""
+    """Complaint responses carrying each call's stored customer name and
+    vehicle, under the name each complaint's category has now."""
     links = (
         call_customer_service.stored_links({view.record.call_id for view in views})
         if call_customer_service is not None
         else {}
     )
-    return [to_complaint_response(view, links.get(view.record.call_id)) for view in views]
+    responses = [to_complaint_response(view, links.get(view.record.call_id)) for view in views]
+    if category_names is not None:
+        for response in responses:
+            response.category = category_names(response.category)
+    return responses
 
 
 @router.get("", response_model=list[ComplaintResponse])
@@ -69,11 +74,14 @@ def list_complaints(
     call_customer_service: CallCustomerService | None = Depends(
         get_optional_call_customer_service
     ),
+    catalog: ComplaintCategoryCatalog = Depends(get_complaint_category_catalog),
     _: User = Depends(get_current_user),
 ) -> list[ComplaintResponse]:
     """Open complaints: follow-ups first, then the oldest first."""
-    views = service.list_queue(state, limit, categories=category, stages=stage)
-    return _responses(views, call_customer_service)
+    # A renamed category's complaints are stored under its former names too.
+    stored = [name for chosen in category for name in catalog.stored_names(chosen)]
+    views = service.list_queue(state, limit, categories=stored, stages=stage)
+    return _responses(views, call_customer_service, catalog.current_name)
 
 
 # Before /{complaint_id}, which would otherwise match "categories".
@@ -94,9 +102,12 @@ def get_complaint(
     call_customer_service: CallCustomerService | None = Depends(
         get_optional_call_customer_service
     ),
+    catalog: ComplaintCategoryCatalog = Depends(get_complaint_category_catalog),
     _: User = Depends(get_current_user),
 ) -> ComplaintResponse:
-    return _responses([service.get_view(complaint_id)], call_customer_service)[0]
+    return _responses(
+        [service.get_view(complaint_id)], call_customer_service, catalog.current_name
+    )[0]
 
 
 @router.post("/{complaint_id}/status", response_model=ComplaintResponse)
