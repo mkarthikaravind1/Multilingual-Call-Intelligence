@@ -54,6 +54,12 @@ class ComplaintAnalysisService:
             # complaint has already progressed and must be left as it is.
             if complaint.status is ComplaintCoverageStatus.NOT_RAISED:
                 complaint.detect()
+            # Once the ICR has asked about it, it stays probed.
+            if (
+                getattr(detection, "probed", False)
+                and complaint.status is ComplaintCoverageStatus.DETECTED
+            ):
+                complaint.probe()
 
         if self._learning is not None:
             self._learning.record_usage(

@@ -138,7 +138,13 @@ from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.domain.location import InMemoryLocationRepository, LocationRepository
 from app.services.call_routing_service import CallRoutingService
 from app.services.location_service import LocationService
-from app.services.reporting import InMemoryReportSource, ReportService, ReportSource
+from app.services.performance import PerformanceService
+from app.services.reporting import (
+    MAX_REPORT_CALLS,
+    InMemoryReportSource,
+    ReportService,
+    ReportSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -291,10 +297,13 @@ def build_api_services(
             location_repository,
             user_repository,
             complaint_lifecycle_repository,
+            call_customer_repository,
+            escalation_repository,
         ),
         location_repository,
         user_repository,
     )
+    performance_service = PerformanceService(report_service.source, max_calls=MAX_REPORT_CALLS)
 
     # --- Parts that are simply absent when not configured ---
     customer_summary_delivery_service = _optional(
@@ -433,6 +442,7 @@ def build_api_services(
         user_management_service=user_management_service,
         location_service=location_service,
         report_service=report_service,
+        performance_service=performance_service,
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
         background_jobs=background_jobs,

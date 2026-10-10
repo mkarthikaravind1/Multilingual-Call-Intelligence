@@ -24,12 +24,16 @@ _GUARDRAILS = (
     'Use category names exactly as listed. Use "Other" only for a real complaint '
     "that fits no other category.",
     "evidence must be one concise sentence based only on what is said in the conversation.",
+    "probed is true only when the ICR has asked the customer at least one question about "
+    "that complaint (to understand or resolve it); an apology or a promise alone is not "
+    "a question.",
 )
 
 _RESPONSE_SHAPE = (
     '[{"category": "<exact category from the list>", '
     '"confidence": <number between 0.0 and 1.0>, '
-    '"evidence": "<short evidence from the conversation>"}]'
+    '"evidence": "<short evidence from the conversation>", '
+    '"probed": <true or false>}]'
 )
 
 
@@ -182,12 +186,21 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
             category=category,
             confidence=item["confidence"],
             evidence=evidence.strip(),
+            # Extra: an answer without it (or with something else there)
+            # is still a detection, of a complaint not yet asked about.
+            probed=_is_true(item.get("probed")),
         )
 
     @staticmethod
     def _reject(reason: str) -> list[ComplaintDetectionResult]:
         logger.warning("Discarding invalid LLM complaint response: %s", reason)
         return []
+
+
+def _is_true(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes")
+    return value is True
 
 
 def _category_key(name: str) -> str:

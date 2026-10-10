@@ -3235,3 +3235,119 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Reports: the Complaints / Performance views and the management figures. */
+.report-views {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.report-views__tab {
+  margin-bottom: -1px;
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.report-views__tab--active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.report-views__tab:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.report-tile small {
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+.report-estimate {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  color: var(--color-text-muted);
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.report-tiles--stale {
+  opacity: 0.6;
+}
+
+.churn {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.churn__bar {
+  display: flex;
+  gap: 2px;
+  height: 16px;
+}
+
+.churn__part {
+  min-width: 4px;
+  border-radius: 3px;
+}
+
+.churn__part--low { background: var(--tone-neutral); }
+.churn__part--medium { background: var(--tone-negative); }
+.churn__part--high { background: var(--tone-escalating); }
+
+.churn__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.86rem;
+}
+
+.churn__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.churn__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.report-scorecard td {
+  cursor: default;
+}
+
+.report-rules {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.report-rules dt {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.report-rules dd {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+}

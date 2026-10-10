@@ -6,11 +6,12 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict
 
 from app.ai.sentiment.provider import SentimentLabel
-from app.api.dependencies import get_report_service
+from app.api.dependencies import get_performance_service, get_report_service
 from app.api.security_dependencies import require_roles
 from app.domain.conversation import CallDirection
 from app.domain.user import User, UserRole
-from app.services.report_export import export_report
+from app.services.performance import PerformanceService
+from app.services.report_export import export_report, export_scorecard
 from app.services.reporting import SECONDS_PER_DAY, Report, ReportFilters, ReportService
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -145,6 +146,74 @@ async def export_complaint_report(
 ) -> Response:
     content, media_type, filename = await run_in_threadpool(
         lambda: export_report(query.report(service), file_format)
+    )
+    return Response(
+        content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# --- Management figures (estimates; see app.services.performance) -----------
+
+
+class FiguresResponse(_Response):
+    calls: int
+    complaints: int
+    probed_complaints: int
+    # Rates are 0.0 to 1.0; null when there is nothing to work them out from.
+    coverage_score: float | None
+    fcr_calls: int
+    fcr_resolved: int
+    fcr_rate: float | None
+    known_customer_complaints: int
+    repeat_complaints: int
+    repeat_rate: float | None
+    churn_low: int
+    churn_medium: int
+    churn_high: int
+    rated_calls: int
+    negative_calls: int
+    # 1.0 to 5.0.
+    csat: float | None
+    serious_escalations: int
+
+
+class ExecutiveFiguresResponse(_Response):
+    # null: calls with no executive recorded.
+    executive_user_id: str | None
+    name: str
+    figures: FiguresResponse
+
+
+class PerformanceReportResponse(_Response):
+    filters: ReportFiltersResponse
+    overall: FiguresResponse
+    # Most calls first.
+    executives: list[ExecutiveFiguresResponse]
+
+
+@router.get("/performance", response_model=PerformanceReportResponse)
+async def performance_report(
+    query: _ReportQuery = Depends(),
+    service: PerformanceService = Depends(get_performance_service),
+    _: User = Depends(_SUPERVISORS),
+) -> PerformanceReportResponse:
+    report = await run_in_threadpool(service.report, query.filters)
+    return PerformanceReportResponse.model_validate(report)
+
+
+@router.get("/performance/export")
+async def export_performance_report(
+    file_format: Literal["csv", "xlsx"] = Query("xlsx", alias="format"),
+    query: _ReportQuery = Depends(),
+    service: PerformanceService = Depends(get_performance_service),
+    _: User = Depends(_SUPERVISORS),
+) -> Response:
+    content, media_type, filename = await run_in_threadpool(
+        lambda: export_scorecard(
+            service.report(query.filters), file_format, query.tz_offset_minutes
+        )
     )
     return Response(
         content,

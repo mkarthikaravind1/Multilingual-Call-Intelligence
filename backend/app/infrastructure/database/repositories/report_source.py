@@ -6,17 +6,27 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.sentiment.provider import SentimentLabel
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import CallDirection
+from app.domain.escalation import EscalationLevel
 from app.infrastructure.database.models import (
+    CallCustomerModel,
     ComplaintCoverageModel,
+    EscalationModel,
     ComplaintLifecycleRecordModel,
     ConversationModel,
     LocationModel,
     PostCallSummaryModel,
     UserModel,
 )
-from app.services.reporting import ReportCall, ReportComplaint, ReportFilters, ReportSource
+from app.services.reporting import (
+    ReportCall,
+    ReportComplaint,
+    ReportFilters,
+    ReportSource,
+    customer_key,
+)
 
 _NOT_RAISED = ComplaintCoverageStatus.NOT_RAISED.value
+_DETECTED = ComplaintCoverageStatus.DETECTED.value
 
 
 class PostgresReportSource(ReportSource):
@@ -30,6 +40,8 @@ class PostgresReportSource(ReportSource):
         executive = UserModel
         coverage = ComplaintCoverageModel
         tracked = ComplaintLifecycleRecordModel
+        customer = CallCustomerModel
+        escalation = EscalationModel
 
         query = (
             select(
@@ -42,7 +54,12 @@ class PostgresReportSource(ReportSource):
                 func.coalesce(executive.display_name, executive.email).label("executive_name"),
                 summary.sentiment_label,
                 summary.complaints.label("summary_complaints"),
+                customer.customer_id,
+                customer.caller_number,
+                escalation.level.label("escalation_level"),
             )
+            .outerjoin(customer, customer.call_id == conversation.call_id)
+            .outerjoin(escalation, escalation.call_id == conversation.call_id)
             .outerjoin(summary, summary.call_id == conversation.call_id)
             .outerjoin(location, location.location_id == conversation.location_id)
             .outerjoin(executive, executive.user_id == conversation.executive_user_id)
@@ -79,9 +96,11 @@ class PostgresReportSource(ReportSource):
                 ).all()
             }
 
-        by_call: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        by_call: dict[str, list[tuple[str, str, bool]]] = defaultdict(list)
         for call_id, category, status in raised:
-            by_call[call_id].append((category, current.get((call_id, category), status)))
+            by_call[call_id].append(
+                (category, current.get((call_id, category), status), status != _DETECTED)
+            )
 
         calls = []
         for row in rows:
@@ -103,8 +122,14 @@ class PostgresReportSource(ReportSource):
                         else SentimentLabel(row.sentiment_label)
                     ),
                     complaints=tuple(
-                        ReportComplaint(category, status, descriptions.get(category))
-                        for category, status in by_call.get(row.call_id, ())
+                        ReportComplaint(category, status, descriptions.get(category), probed)
+                        for category, status, probed in by_call.get(row.call_id, ())
+                    ),
+                    customer_key=customer_key(row.customer_id, row.caller_number),
+                    escalation_level=(
+                        None
+                        if row.escalation_level is None
+                        else EscalationLevel(row.escalation_level)
                     ),
                 )
             )

@@ -58,6 +58,35 @@ export interface ComplaintReportDto {
   root_causes: RootCauseDto[]
 }
 
+// Estimates worked out by fixed rules (see the Performance view). Rates
+// are 0 to 1, and null when there is nothing to work them out from.
+export interface FiguresDto {
+  calls: number
+  complaints: number
+  probed_complaints: number
+  coverage_score: number | null
+  fcr_calls: number
+  fcr_resolved: number
+  fcr_rate: number | null
+  known_customer_complaints: number
+  repeat_complaints: number
+  repeat_rate: number | null
+  churn_low: number
+  churn_medium: number
+  churn_high: number
+  rated_calls: number
+  negative_calls: number
+  // 1 to 5.
+  csat: number | null
+  serious_escalations: number
+}
+
+export interface PerformanceReportDto {
+  overall: FiguresDto
+  // Most calls first; executive_user_id null: calls with no executive recorded.
+  executives: Array<{ executive_user_id: string | null; name: string; figures: FiguresDto }>
+}
+
 function toQuery(filters: ReportFilters): URLSearchParams {
   const query = new URLSearchParams({
     started_from: String(filters.startedFrom),
@@ -84,6 +113,18 @@ const basePath = '/api/v1/reports/complaints'
 export const reportRestService = {
   getComplaintReport(filters: ReportFilters): Promise<ComplaintReportDto> {
     return apiClient.get<ComplaintReportDto>(`${basePath}?${toQuery(filters).toString()}`)
+  },
+
+  getPerformanceReport(filters: ReportFilters): Promise<PerformanceReportDto> {
+    return apiClient.get<PerformanceReportDto>(
+      `/api/v1/reports/performance?${toQuery(filters).toString()}`,
+    )
+  },
+
+  exportScorecard(filters: ReportFilters, format: 'csv' | 'xlsx'): Promise<Blob> {
+    const query = toQuery(filters)
+    query.set('format', format)
+    return apiClient.download(`/api/v1/reports/performance/export?${query.toString()}`)
   },
 
   // The same report as a file.

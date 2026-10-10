@@ -420,7 +420,7 @@ def test_a_report_that_is_too_large_or_too_long_is_refused(stores):
     assert small.complaint_report(ReportFilters(MONDAY, MONDAY + 2 * DAY)).total_calls == 2
 
     with pytest.raises(ReportError, match="at most 366 days"):
-        ReportFilters(MONDAY, MONDAY + 367 * DAY)
+        small.complaint_report(ReportFilters(MONDAY, MONDAY + 367 * DAY))
     with pytest.raises(ReportError, match="after its start"):
         ReportFilters(MONDAY, MONDAY)
 

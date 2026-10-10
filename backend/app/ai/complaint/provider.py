@@ -11,6 +11,8 @@ class ComplaintDetectionResult:
     category: str
     confidence: float
     evidence: str
+    # Whether the ICR has asked the customer about this complaint yet.
+    probed: bool = False
 
     def __post_init__(self) -> None:
         # Which categories may be reported is checked by the provider

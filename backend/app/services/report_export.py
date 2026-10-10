@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
+from app.services.performance import Figures, PerformanceReport
 from app.services.reporting import Report
 
 EXPORT_FORMATS = ("csv", "xlsx", "pdf")
@@ -44,6 +45,75 @@ def export_report(report: Report, file_format: str) -> tuple[bytes, str, str]:
     content = {"csv": _csv, "xlsx": _xlsx, "pdf": _pdf}[file_format](report)
     day = _local(report, report.filters.started_from).strftime("%Y-%m-%d")
     return content, _MEDIA_TYPES[file_format], f"complaint-report-{day}.{file_format}"
+
+
+_SCORECARD_COLUMNS = (
+    "Executive",
+    "Calls",
+    "Complaints",
+    "Complaints asked about",
+    "Coverage score % (estimate)",
+    "First Call Resolution % (estimate)",
+    "Calls FCR is judged on",
+    "Repeat complaints % (estimate)",
+    "CSAT estimate (1-5)",
+    "Calls ending negative or worse",
+    "Churn risk high",
+    "Churn risk medium",
+    "Churn risk low",
+    "High or critical escalations",
+)
+
+
+def _percent(rate: float | None) -> float | str:
+    return "" if rate is None else round(rate * 100, 1)
+
+
+def _scorecard_row(name: str, figures: Figures) -> list:
+    return [
+        name,
+        figures.calls,
+        figures.complaints,
+        figures.probed_complaints,
+        _percent(figures.coverage_score),
+        _percent(figures.fcr_rate),
+        figures.fcr_calls,
+        _percent(figures.repeat_rate),
+        "" if figures.csat is None else figures.csat,
+        figures.negative_calls,
+        figures.churn_high,
+        figures.churn_medium,
+        figures.churn_low,
+        figures.serious_escalations,
+    ]
+
+
+def export_scorecard(
+    report: PerformanceReport, file_format: str, tz_offset_minutes: int = 0
+) -> tuple[bytes, str, str]:
+    """The executives' scorecard as (content, media type, filename): a row
+    per executive and one for everyone together."""
+    if file_format not in ("csv", "xlsx"):
+        raise ValueError(f"Unsupported export format: {file_format!r}.")
+    rows = [_scorecard_row(e.name, e.figures) for e in report.executives]
+    rows.append(_scorecard_row("All executives", report.overall))
+    zone = timezone(timedelta(minutes=tz_offset_minutes))
+    day = datetime.fromtimestamp(report.filters.started_from, zone).strftime("%Y-%m-%d")
+    if file_format == "csv":
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator="\r\n")
+        writer.writerow(_SCORECARD_COLUMNS)
+        for row in rows:
+            writer.writerow([_safe(cell) for cell in row])
+        content = buffer.getvalue().encode("utf-8-sig")
+    else:
+        workbook = Workbook()
+        workbook.remove(workbook.active)
+        _sheet(workbook, "Scorecard", list(_SCORECARD_COLUMNS), rows)
+        out = io.BytesIO()
+        workbook.save(out)
+        content = out.getvalue()
+    return content, _MEDIA_TYPES[file_format], f"executive-scorecard-{day}.{file_format}"
 
 
 # ---- Shared ----

@@ -5,6 +5,7 @@ import { ApiError } from '../api/errors'
 import { StatePanel } from '../components/StatePanel'
 import { complaintRestService } from '../features/complaints/services/complaintRestService'
 import { useCallDirectory } from '../features/live-call/hooks/useCallDirectory'
+import { PerformancePanel } from '../features/reports/components/PerformancePanel'
 import { TrendChart, type TrendLine } from '../features/reports/components/TrendChart'
 import { formatBucket } from '../features/reports/format/bucket'
 import {
@@ -26,7 +27,13 @@ const PARAM = {
   sentiment: 'tone',
   direction: 'direction',
   bucket: 'by',
+  view: 'view',
 } as const
+
+const VIEWS = [
+  { id: 'complaints', name: 'Complaints' },
+  { id: 'performance', name: 'Performance' },
+] as const
 
 const DEFAULT_RANGE_DAYS = 30
 const SENTIMENTS: Array<{ id: ReportSentiment; name: string }> = [
@@ -158,6 +165,7 @@ export function ReportsPage() {
         : null
 
   const value = (name: string) => searchParams.get(name) ?? ''
+  const view = searchParams.get(PARAM.view) === 'performance' ? 'performance' : 'complaints'
   const filters: ReportFilters | null = rangeError
     ? null
     : {
@@ -294,7 +302,7 @@ export function ReportsPage() {
           )}
           {choice(PARAM.sentiment, 'Tone', SENTIMENTS)}
           {choice(PARAM.direction, 'Direction', DIRECTIONS)}
-          {choice(PARAM.bucket, 'Trend by', BUCKETS, 'Automatic')}
+          {view === 'complaints' && choice(PARAM.bucket, 'Trend by', BUCKETS, 'Automatic')}
         </div>
         <div className="call-filters__row">
           <div className="call-filters__actions">
@@ -303,23 +311,32 @@ export function ReportsPage() {
                 <span className="spinner" aria-hidden="true" /> Updating…
               </span>
             )}
-            <span className="customer-panel__muted">Download what these filters show:</span>
-            {EXPORTS.map(({ format, label }) => (
-              <button
-                key={format}
-                type="button"
-                className="button button--secondary"
-                disabled={!filters || exporting !== null}
-                onClick={() => void download(format)}
-              >
-                {exporting === format ? 'Preparing…' : label}
-              </button>
-            ))}
+            {view === 'complaints' && (
+              <>
+                <span className="customer-panel__muted">Download what these filters show:</span>
+                {EXPORTS.map(({ format, label }) => (
+                  <button
+                    key={format}
+                    type="button"
+                    className="button button--secondary"
+                    disabled={!filters || exporting !== null}
+                    onClick={() => void download(format)}
+                  >
+                    {exporting === format ? 'Preparing…' : label}
+                  </button>
+                ))}
+              </>
+            )}
             <button
               type="button"
               className="button button--secondary"
-              disabled={[...searchParams.keys()].length === 0}
-              onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
+              disabled={[...searchParams.keys()].every((name) => name === PARAM.view)}
+              onClick={() =>
+                setSearchParams(
+                  new URLSearchParams(view === 'performance' ? { [PARAM.view]: view } : {}),
+                  { replace: true },
+                )
+              }
             >
               Clear filters
             </button>
@@ -332,12 +349,33 @@ export function ReportsPage() {
         )}
       </div>
 
-      {!loaded && !rangeError && <StatePanel variant="loading" title="Loading the report…" compact />}
-      {loaded?.error && (
+      <div className="report-views" role="tablist" aria-label="Report">
+        {VIEWS.map(({ id, name }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={view === id}
+            className={`report-views__tab${view === id ? ' report-views__tab--active' : ''}`}
+            onClick={() => setParam(PARAM.view, id === 'complaints' ? '' : id)}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+
+      {view === 'performance' && (
+        <PerformancePanel filters={filters} fileLabel={`${from}-to-${to}`} />
+      )}
+
+      {view === 'complaints' && !loaded && !rangeError && (
+        <StatePanel variant="loading" title="Loading the report…" compact />
+      )}
+      {view === 'complaints' && loaded?.error && (
         <StatePanel variant="error" title="Could not load the report" description={loaded.error} />
       )}
 
-      {report && (
+      {view === 'complaints' && report && (
         <>
           <div className="report-tiles">
             <div className="report-tile">

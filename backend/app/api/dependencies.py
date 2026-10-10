@@ -21,6 +21,7 @@ from app.services.live_state_store import LiveStateStore
 from app.services.location_service import LocationService
 from app.services.post_call_repair_service import PostCallRepairService
 from app.services.price_list_service import PriceListService
+from app.services.performance import PerformanceService
 from app.services.reporting import ReportService
 from app.services.user_management_service import UserManagementService
 from app.services.call_service import CallService
@@ -66,6 +67,7 @@ class ApiServices:
     user_management_service: UserManagementService | None = None
     location_service: LocationService | None = None
     report_service: ReportService | None = None
+    performance_service: PerformanceService | None = None
     price_list_service: PriceListService | None = None
     background_jobs: BackgroundJobRunner | None = None
     # Loads slow models (e.g. diarization) in the background at startup.
@@ -97,6 +99,13 @@ def get_location_service(connection: HTTPConnection) -> LocationService:
 
 def get_report_service(connection: HTTPConnection) -> ReportService:
     service = connection.app.state.services.report_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="Reports are not configured.")
+    return service
+
+
+def get_performance_service(connection: HTTPConnection) -> PerformanceService:
+    service = connection.app.state.services.performance_service
     if service is None:
         raise HTTPException(status_code=503, detail="Reports are not configured.")
     return service

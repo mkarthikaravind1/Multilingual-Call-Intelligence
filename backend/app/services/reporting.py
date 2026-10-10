@@ -18,9 +18,12 @@ from app.ai.sentiment.provider import SentimentLabel
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.complaint_lifecycle_repository import ComplaintLifecycleRepository
 from app.domain.conversation import CallDirection
+from app.domain.escalation import EscalationLevel
 from app.domain.location import LocationRepository
 from app.domain.user_repository import UserRepository
+from app.services.call_customer_repository import CallCustomerRepository
 from app.services.conversation_coverage_repository import ConversationCoverageRepository
+from app.services.escalation_repository import EscalationRepository
 from app.services.conversation_repository import ConversationRepository
 from app.services.post_call_summary_repository import PostCallSummaryRepository
 
@@ -42,6 +45,7 @@ THEME_MIN_SHARED_WORDS = 2
 Bucket = Literal["day", "week"]
 
 _NOT_RAISED = ComplaintCoverageStatus.NOT_RAISED.value
+_DETECTED = ComplaintCoverageStatus.DETECTED.value
 _RESOLVED = ComplaintCoverageStatus.RESOLVED.value
 
 
@@ -66,6 +70,9 @@ class ReportFilters:
     def __post_init__(self) -> None:
         if self.started_to <= self.started_from:
             raise ReportError("The report's end date must be after its start date.")
+
+    def require_reportable(self) -> None:
+        """Raise when the range is longer than one report covers."""
         if self.started_to - self.started_from > MAX_RANGE_DAYS * SECONDS_PER_DAY:
             raise ReportError(f"A report covers at most {MAX_RANGE_DAYS} days.")
 
@@ -78,6 +85,8 @@ class ReportComplaint:
     status: str
     # From the post-call summary; None while the call has none.
     description: str | None = None
+    # Whether the executive asked the customer about it during the call.
+    probed: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,6 +100,17 @@ class ReportCall:
     executive_name: str | None = None
     sentiment: SentimentLabel | None = None
     complaints: tuple[ReportComplaint, ...] = ()
+    # Who the customer is, when known: the CRM's customer, else the
+    # caller's number.
+    customer_key: str | None = None
+    # None: the call never escalated.
+    escalation_level: EscalationLevel | None = None
+
+
+def customer_key(customer_id: str | None, caller_number: str | None) -> str | None:
+    if customer_id:
+        return f"customer:{customer_id}"
+    return f"number:{caller_number}" if caller_number else None
 
 
 class ReportSource(ABC):
@@ -204,6 +224,10 @@ class ReportService:
         self._users = users
         self._max_calls = max_calls
 
+    @property
+    def source(self) -> ReportSource:
+        return self._source
+
     def complaint_report(
         self,
         filters: ReportFilters,
@@ -213,6 +237,7 @@ class ReportService:
         """bucket None: by day for a short range, by week for a long one.
         tz_offset_minutes: the reader's clock ahead of UTC, so days and
         weeks start at their midnight."""
+        filters.require_reportable()
         calls = self._source.calls(filters, self._max_calls + 1)
         if len(calls) > self._max_calls:
             raise ReportError(
@@ -426,6 +451,7 @@ def call_complaints(coverage, summary, records=()) -> tuple[ReportComplaint, ...
             c.category,
             tracked.get(c.category, c.status.value),
             descriptions.get(c.category),
+            probed=c.status.value != _DETECTED,
         )
         for c in coverage.complaints
         if c.status.value != _NOT_RAISED
@@ -441,8 +467,12 @@ class InMemoryReportSource(ReportSource):
         locations: LocationRepository | None = None,
         users: UserRepository | None = None,
         complaints: ComplaintLifecycleRepository | None = None,
+        call_customers: CallCustomerRepository | None = None,
+        escalations: EscalationRepository | None = None,
     ) -> None:
         self._complaints = complaints
+        self._call_customers = call_customers
+        self._escalations = escalations
         self._conversations = conversations
         self._coverages = coverages
         self._summaries = summaries
@@ -474,8 +504,20 @@ class InMemoryReportSource(ReportSource):
                 if self._users is None or conversation.executive_user_id is None
                 else self._users.get_by_id(conversation.executive_user_id)
             )
+            link = (
+                None
+                if self._call_customers is None
+                else self._call_customers.get(conversation.call_id)
+            )
+            escalation = (
+                None if self._escalations is None else self._escalations.get(conversation.call_id)
+            )
             matching.append(
                 ReportCall(
+                    customer_key=(
+                        None if link is None else customer_key(link.customer_id, link.caller_number)
+                    ),
+                    escalation_level=None if escalation is None else escalation.level,
                     call_id=conversation.call_id,
                     start_time=conversation.start_time,
                     direction=conversation.direction,
