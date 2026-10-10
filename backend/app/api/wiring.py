@@ -230,6 +230,10 @@ def build_api_services(
         try:
             customer_directory = create_customer_directory(settings)
         except Exception as exc:
+            if settings.is_production:
+                # Not something to find out from customers getting no
+                # summary: a CRM that was asked for must load.
+                raise
             logger.error("CRM is not available; customers will not be identified: %s", exc)
             customer_directory = NoCustomerDirectory()
     call_customer_repository = call_customer_repository or InMemoryCallCustomerRepository()

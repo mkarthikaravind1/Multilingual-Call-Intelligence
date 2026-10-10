@@ -2,6 +2,8 @@
 production. With APP_ENV=production the app refuses to start on any of
 them; elsewhere they are logged as warnings."""
 
+from pathlib import Path
+
 from app.core.config import Settings
 
 _UNSET = {"", "not_configured", "change-me-in-development"}
@@ -44,6 +46,13 @@ def configuration_problems(settings: Settings) -> list[str]:
         if not settings.plivo_icr_dial_targets.strip():
             problems.append(
                 "PLIVO_ICR_DIAL_TARGETS is empty: incoming calls would not be connected to an ICR."
+            )
+
+    if settings.crm_provider.strip().lower() == "json_file":
+        crm_path = settings.crm_json_path.strip()
+        if not crm_path or not Path(crm_path).is_file():
+            problems.append(
+                "CRM_JSON_PATH must point at the customer file when CRM_PROVIDER is json_file."
             )
 
     if settings.customer_summary_enabled:

@@ -148,6 +148,22 @@ A Redis lock ensures that only one instance sweeps at a time. Supervisors
 and admins can see waiting calls and retry them under **Administration →
 Post-call processing**, or from a call's post-call analysis page.
 
+## Customer file (CRM)
+
+With `CRM_PROVIDER=json_file`, production refuses to start if
+`CRM_JSON_PATH` is missing or the file cannot be read.
+
+- An invalid customer in the file is skipped and logged as a warning; the
+  other customers still load.
+- A phone number shared by two customers matches neither automatically: the
+  ICR identifies the caller by hand.
+- The file is read again within a few seconds of being changed (for example
+  when a customer withdraws consent). If the new version cannot be read, the
+  previous one stays in use and an error is logged.
+- Setting a call's customer by hand is logged with the user, the call and the
+  customer ids (phone numbers show their last four digits only). On a
+  completed call only a supervisor or admin can change the customer.
+
 ## Customer summary texts
 
 With `CUSTOMER_SUMMARY_ENABLED=true` the app refuses to start in production

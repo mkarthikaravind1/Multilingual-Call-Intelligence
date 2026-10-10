@@ -149,18 +149,8 @@ def test_json_directory_lists_vehicles_and_history_newest_first(directory):
     [
         ("not json", "not valid JSON"),
         ("[]", "'customers' list"),
+        # Every customer in it is invalid: nothing to work with.
         (json.dumps({"customers": [{"customer_id": "C-1"}]}), "index 0"),
-        (
-            json.dumps(
-                {
-                    "customers": [
-                        {"customer_id": "A", "name": "A", "phone_number": "9845000001"},
-                        {"customer_id": "B", "name": "B", "phone_number": "+91 98450 00001"},
-                    ]
-                }
-            ),
-            "belongs to two customers",
-        ),
     ],
 )
 def test_invalid_crm_files_fail_loudly(tmp_path, content, message):
@@ -208,7 +198,7 @@ def test_match_survives_a_phone_number_change_in_the_crm(directory):
     service.get("call-1")
     assert repository.get("call-1").customer_id == "C-1"
 
-    directory._by_phone.clear()  # the customer's number changed in the CRM
+    directory._data.by_phone.clear()  # the customer's number changed in the CRM
 
     assert service.get("call-1").customer.customer_id == "C-1"
 

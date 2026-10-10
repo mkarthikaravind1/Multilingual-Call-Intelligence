@@ -34,7 +34,7 @@ from app.services.call_listing import CallListFilters, CallListingQuery
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.api.security_dependencies import get_current_user
-from app.domain.user import User
+from app.domain.user import User, UserRole
 
 
 router = APIRouter(prefix="/calls", tags=["calls"])
@@ -150,11 +150,22 @@ def identify_call_customer(
     payload: IdentifyCustomerRequest,
     call_service: CallService = Depends(get_call_service),
     call_customer_service: CallCustomerService = Depends(get_call_customer_service),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> CallCustomerResponse:
-    call_service.get_call(call_id)
+    call = call_service.get_call(call_id)
+    # During the call its ICR identifies the caller. Afterwards the
+    # summary has been sent and the complaints filed under that customer:
+    # changing who the call was with is a correction for a supervisor.
+    if call.status == ConversationStatus.COMPLETED and user.role not in (
+        UserRole.SUPERVISOR,
+        UserRole.ADMIN,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a supervisor can change the customer of a completed call.",
+        )
     return CallCustomerResponse.model_validate(
-        call_customer_service.identify(call_id, payload.phone_number)
+        call_customer_service.identify(call_id, payload.phone_number, changed_by=user.user_id)
     )
 
 

@@ -38,6 +38,7 @@ class CallCustomerService:
         directory: CustomerDirectory,
         default_country_code: str = "",
         clock: Callable[[], float] = time.time,
+        vehicle_model_cache_seconds: float = 30.0,
     ) -> None:
         self._repository = repository
         self._directory = directory
@@ -45,6 +46,12 @@ class CallCustomerService:
         self._clock = clock
         # Serialises read-modify-write of a link (single-process deployment).
         self._lock = threading.Lock()
+        # call_id -> (good until, vehicle model). The live estimate asks
+        # for the model on every new line of speech; without this each
+        # one is a full CRM read. Dropped when the call's customer or
+        # vehicle is changed here.
+        self._vehicle_model_cache_seconds = vehicle_model_cache_seconds
+        self._vehicle_models: dict[str, tuple[float, str | None]] = {}
 
     def normalize(self, phone_number: str) -> str:
         """Canonical form of a number typed by a person; raises if unusable."""
@@ -57,14 +64,32 @@ class CallCustomerService:
         """Store the number the call came from. An unusable or withheld
         number is stored as unknown rather than rejected: the call goes on."""
         number = normalize_phone_number(raw_number, self._default_country_code)
-        return self._update(call_id, caller_number=number, **_NO_CUSTOMER)
+        return self._change(call_id, caller_number=number, **_NO_CUSTOMER)
 
-    def identify(self, call_id: str, phone_number: str) -> CallCustomerView:
+    def identify(
+        self, call_id: str, phone_number: str, changed_by: str | None = None
+    ) -> CallCustomerView:
         """Set the customer's number by hand (e.g. a withheld caller ID or a
-        manual call) and look the customer up again."""
+        manual call) and look the customer up again. changed_by: the
+        user doing it, for the log."""
         number = self.normalize(phone_number)
-        self._update(call_id, caller_number=number, **_NO_CUSTOMER)
-        return self.get(call_id)
+        before = self._repository.get(call_id)
+        self._change(call_id, caller_number=number, **_NO_CUSTOMER)
+        view = self.get(call_id)
+        # Who a call is with decides whose history its complaints join
+        # and who is texted its summary: keep a trace of every change.
+        logger.info(
+            "Customer of call %r set by hand by user %r: number %s -> %s, "
+            "customer %r -> %r (%s)",
+            call_id,
+            changed_by,
+            _masked(None if before is None else before.caller_number),
+            _masked(number),
+            None if before is None else before.customer_id,
+            None if view.customer is None else view.customer.customer_id,
+            view.status.value,
+        )
+        return view
 
     def select_vehicle(self, call_id: str, vehicle_id: str | None) -> CallCustomerView:
         """Choose which of the customer's vehicles the call is about; None
@@ -80,10 +105,10 @@ class CallCustomerService:
                     f"Vehicle {vehicle_id!r} does not belong to this customer."
                 )
         if view.customer is None:
-            self._update(call_id, **_NO_CUSTOMER)
+            self._change(call_id, **_NO_CUSTOMER)
         else:
             # get() below stores the new vehicle's registration.
-            self._update(call_id, customer_id=view.customer.customer_id, vehicle_id=vehicle_id)
+            self._change(call_id, customer_id=view.customer.customer_id, vehicle_id=vehicle_id)
         return self.get(call_id)
 
     def get(self, call_id: str) -> CallCustomerView:
@@ -148,11 +173,22 @@ class CallCustomerService:
     def resolve_vehicle_model(self, call_id: str) -> str | None:
         """The model ("make model", e.g. "Maruti Swift") of the vehicle the
         call is about, if the CRM knows it. Used to price the estimate."""
+        now = self._clock()
+        cached = self._vehicle_models.get(call_id)
+        if cached is not None and now < cached[0]:
+            return cached[1]
         view = self.get(call_id)
         vehicle = next(
             (v for v in view.vehicles if v.vehicle_id == view.selected_vehicle_id), None
         )
-        return None if vehicle is None else f"{vehicle.make} {vehicle.model}"
+        model = None if vehicle is None else f"{vehicle.make} {vehicle.model}"
+        if self._vehicle_model_cache_seconds > 0:
+            if len(self._vehicle_models) >= _VEHICLE_MODEL_CACHE_SIZE:
+                self._vehicle_models = {
+                    key: entry for key, entry in self._vehicle_models.items() if now < entry[0]
+                }
+            self._vehicle_models[call_id] = (now + self._vehicle_model_cache_seconds, model)
+        return model
 
     def stored_links(self, call_ids: Iterable[str]) -> dict[str, CallCustomerLink]:
         """Who each call was with, as last stored (the customer name and
@@ -194,12 +230,26 @@ class CallCustomerService:
         snapshot = (customer.customer_id, customer.name, registration)
         if (link.customer_id, link.customer_name, link.vehicle_registration) == snapshot:
             return
-        self._update(
-            link.call_id,
-            customer_id=customer.customer_id,
-            customer_name=customer.name,
-            vehicle_registration=registration,
-        )
+        with self._lock:
+            current = self._repository.get(link.call_id) or CallCustomerLink(call_id=link.call_id)
+            if current.caller_number != link.caller_number:
+                # The number was changed while the CRM was being asked:
+                # this customer belongs to the old number. Storing them
+                # would undo the change, and they would then stick.
+                return
+            self._repository.save(
+                current.replace(
+                    customer_id=customer.customer_id,
+                    customer_name=customer.name,
+                    vehicle_registration=registration,
+                    updated_at=self._clock(),
+                )
+            )
+
+    def _change(self, call_id: str, **changes) -> CallCustomerLink:
+        """A change to who the call is with or which vehicle it is about."""
+        self._vehicle_models.pop(call_id, None)
+        return self._update(call_id, **changes)
 
     def _update(self, call_id: str, **changes) -> CallCustomerLink:
         with self._lock:
@@ -207,6 +257,14 @@ class CallCustomerService:
             updated = current.replace(**changes, updated_at=self._clock())
             self._repository.save(updated)
             return updated
+
+
+_VEHICLE_MODEL_CACHE_SIZE = 1000
+
+
+def _masked(number: str | None) -> str:
+    """A phone number for the log: its last four digits only."""
+    return "none" if number is None else f"...{number[-4:]}"
 
 
 _NO_CUSTOMER = {
