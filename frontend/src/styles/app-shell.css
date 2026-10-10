@@ -3120,6 +3120,15 @@
   font-size: 0.8rem;
 }
 
+/* A customer's own words under a root cause. */
+.report-themes__quote {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  font-style: italic;
+}
+
 @media (max-width: 720px) {
   .report-bars__row {
     grid-template-columns: 1fr;
@@ -3165,6 +3174,33 @@
   color: var(--color-text);
   font-size: 0.74rem;
   font-weight: 700;
+}
+
+/* The complaint categories a line of the transcript raises. */
+.live-call__turn-categories {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+
+.live-call__turn-category {
+  padding: 2px 8px;
+  border: 1px solid rgba(13, 41, 63, 0.14);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.live-call__turn-multi {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .tone-timeline {

@@ -8,6 +8,7 @@ from app.ai.complaint.provider import (
 from app.ai.learning_guidance import format_learning_guidance
 from app.ai.llm.client import LLMClient, LLMRequest
 from app.ai.llm.json_answer import UnusableAnswer, ask_for_json, decode_json
+from app.ai.llm.transcript import numbered_transcript
 from app.domain.complaint_category import ComplaintCategory
 from app.domain.conversation import Conversation
 from app.domain.runtime_improvement_context import RuntimeImprovementContext
@@ -27,13 +28,17 @@ _GUARDRAILS = (
     "probed is true only when the ICR has asked the customer at least one question about "
     "that complaint (to understand or resolve it); an apology or a promise alone is not "
     "a question.",
+    "lines lists the numbers (shown in square brackets) of the conversation lines in which "
+    "the customer raises or describes that complaint. A line that covers several complaints "
+    "is listed under each of them.",
 )
 
 _RESPONSE_SHAPE = (
     '[{"category": "<exact category from the list>", '
     '"confidence": <number between 0.0 and 1.0>, '
     '"evidence": "<short evidence from the conversation>", '
-    '"probed": <true or false>}]'
+    '"probed": <true or false>, '
+    '"lines": [<line number>, ...]}]'
 )
 
 
@@ -66,13 +71,6 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
         except UnusableAnswer:
             return []
 
-    @staticmethod
-    def _transcript(conversation: Conversation) -> str:
-        return "\n".join(
-            f"{u.speaker_role.value}: {u.transcript.strip()}"
-            for u in conversation.utterances
-        )
-
     def _build_request(
         self,
         conversation: Conversation,
@@ -91,7 +89,7 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
             "(customer service representative) and a customer, and identify the "
             "complaints the customer has raised.\n\n"
             f"Complaint categories:\n{categories}\n\n"
-            f"Conversation:\n{self._transcript(conversation)}\n\n"
+            f"Conversation:\n{numbered_transcript(conversation)}\n\n"
             f"Rules:\n{rules}\n\n"
             f"{format_learning_guidance(learning_context)}"
             "Respond with ONLY a JSON array and nothing else "
@@ -195,6 +193,7 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
             # Extra: an answer without it (or with something else there)
             # is still a detection, of a complaint not yet asked about.
             probed=_is_true(item.get("probed")),
+            lines=_line_numbers(item.get("lines")),
         )
 
     @staticmethod
@@ -225,4 +224,23 @@ def _merged(
         confidence=best.confidence,
         evidence=best.evidence,
         probed=first.probed or again.probed,
+        lines=tuple(dict.fromkeys(first.lines + again.lines)),
     )
+
+
+def _line_numbers(value: Any) -> tuple[int, ...]:
+    """The usable line numbers in an answer's "lines". They are extra: a
+    missing or malformed list (or entry) is left out and never spoils the
+    complaint. Whether a number is a line of the call is checked when the
+    lines are tagged (see line_categories)."""
+    if not isinstance(value, list):
+        return ()
+    numbers = []
+    for entry in value:
+        if isinstance(entry, bool):
+            continue
+        if isinstance(entry, str) and entry.strip().isdigit():
+            entry = int(entry.strip())
+        if isinstance(entry, int) and entry > 0:
+            numbers.append(entry)
+    return tuple(dict.fromkeys(numbers))

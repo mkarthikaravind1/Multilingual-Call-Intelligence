@@ -4,7 +4,8 @@ time and per location, and what the complaints in a category are about.
 Everything is counted from what calls already store (their complaint
 categories, post-call summary, location and executive). Nothing here asks
 an AI model: the "root causes" are complaint descriptions grouped by
-similar wording, by a fixed rule.
+similar wording, by a fixed rule, each with the customer's own words from a
+line of the call that raised it.
 """
 
 import re
@@ -37,6 +38,8 @@ MAX_REPORT_CALLS = 20_000
 MAX_DAILY_BUCKETS = 62
 MAX_THEMES = 5
 MAX_THEME_CALLS = 5
+# A quoted line is cut to this many characters.
+MAX_QUOTE_CHARS = 300
 # Two descriptions are about the same thing when they share at least
 # THEME_MIN_SHARED_WORDS words (filler words and word endings aside), and
 # those are this share of the shorter description's words.
@@ -88,6 +91,9 @@ class ReportComplaint:
     description: str | None = None
     # Whether the executive asked the customer about it during the call.
     probed: bool = False
+    # The customer's words: the first line of the call that raises it;
+    # None when the call's lines carry no categories.
+    quote: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +169,9 @@ class Theme:
 
     # The first of those descriptions.
     text: str
+    # The customer's own words on one of those calls (the most recent that
+    # has any); None when none of them has a line raising the category.
+    quote: str | None
     complaints: int
     # Some of the calls, most recent first.
     call_ids: tuple[str, ...]
@@ -191,6 +200,8 @@ class ComplaintRow:
     category: str
     status: str
     description: str | None
+    # The customer's words (see ReportComplaint.quote).
+    quote: str | None = None
 
 
 @dataclass(frozen=True)
@@ -292,6 +303,7 @@ class ReportService:
                         category=complaint.category,
                         status=complaint.status,
                         description=complaint.description,
+                        quote=complaint.quote,
                     )
                 )
 
@@ -398,6 +410,29 @@ def _alike(a: frozenset[str], b: frozenset[str]) -> bool:
     return shared / min(len(a), len(b)) >= THEME_SIMILARITY
 
 
+def _what_it_says(row: ComplaintRow) -> str | None:
+    """What the complaint is about: the call summary's description, or
+    (when there is none, or it says nothing) the customer's own words."""
+    description = (row.description or "").strip()
+    if description and not _PLACEHOLDER.search(description):
+        return description
+    return row.quote or None
+
+
+def first_quotes(lines: Iterable[tuple[str, Iterable[str] | None]]) -> dict[str, str]:
+    """category -> the first line that raises it, from a call's lines in
+    order, each as (words, the categories it raises)."""
+    quotes: dict[str, str] = {}
+    for words, categories in lines:
+        for category in categories or ():
+            if category not in quotes and words.strip():
+                text = words.strip()
+                quotes[category] = (
+                    text if len(text) <= MAX_QUOTE_CHARS else text[: MAX_QUOTE_CHARS - 1] + "…"
+                )
+    return quotes
+
+
 def _root_cause(
     category: str, complaints: int, resolved: int, rows: Iterable[ComplaintRow]
 ) -> RootCause:
@@ -405,12 +440,11 @@ def _root_cause(
     groups: list[tuple[frozenset[str], list[ComplaintRow]]] = []
     undescribed = 0
     for row in rows:
-        if not row.description or not row.description.strip() or _PLACEHOLDER.search(
-            row.description.strip()
-        ):
+        text = _what_it_says(row)
+        if text is None:
             undescribed += 1
             continue
-        words = _key_words(row.description)
+        words = _key_words(text)
         for group_words, members in groups:
             if _alike(words, group_words):
                 members.append(row)
@@ -426,7 +460,8 @@ def _root_cause(
         undescribed=undescribed,
         themes=tuple(
             Theme(
-                text=members[0].description.strip(),
+                text=_what_it_says(members[0]),
+                quote=next((m.quote for m in reversed(members) if m.quote), None),
                 complaints=len(members),
                 call_ids=tuple(
                     dict.fromkeys(m.call_id for m in reversed(members))
@@ -440,10 +475,12 @@ def _root_cause(
 # ---- Calls from the in-memory stores (tests and local runs) ----
 
 
-def call_complaints(coverage, summary, records=()) -> tuple[ReportComplaint, ...]:
+def call_complaints(coverage, summary, records=(), utterances=()) -> tuple[ReportComplaint, ...]:
     """A call's complaints: the categories raised on it, each described by
     the post-call summary when there is one, with the status of its
-    tracked complaint (records) when it has one."""
+    tracked complaint (records) when it has one, and the customer's words
+    from the call's lines (utterances) when they carry categories."""
+    quotes = first_quotes((u.transcript, u.complaint_categories) for u in utterances)
     descriptions = (
         {} if summary is None else {c.category: c.description for c in summary.complaints}
     )
@@ -456,6 +493,7 @@ def call_complaints(coverage, summary, records=()) -> tuple[ReportComplaint, ...
             tracked.get(c.category, c.status.value),
             descriptions.get(c.category),
             probed=c.status.value != _DETECTED,
+            quote=quotes.get(c.category),
         )
         for c in coverage.complaints
         if c.status.value != _NOT_RAISED
@@ -547,6 +585,7 @@ class InMemoryReportSource(ReportSource):
                         ()
                         if self._complaints is None
                         else self._complaints.list_for_call(conversation.call_id),
+                        conversation.utterances,
                     ),
                 )
             )

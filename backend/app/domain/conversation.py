@@ -120,19 +120,31 @@ class Conversation:
         gone, or whose words have changed since it was rated, is skipped.
         Allowed in any status: a completed call's lines are rated after it.
         Returns how many lines were rated."""
-        by_id = {rating.utterance_id: rating for rating in ratings}
-        rated = 0
+        return self.annotate_utterances(ratings=ratings)
+
+    def annotate_utterances(self, ratings=(), categories=()) -> int:
+        """Give lines what an analysis found on them: their tone
+        (UtteranceSentiment each) and the complaint categories they raise
+        (UtteranceCategories each). A line that is gone, or whose words
+        have changed since it was analysed, is skipped. Allowed in any
+        status. Returns how many lines changed."""
+        tones = {rating.utterance_id: rating for rating in ratings}
+        raised = {entry.utterance_id: entry for entry in categories}
+        changed = 0
         for index, utterance in enumerate(self._utterances):
-            rating = by_id.get(utterance.utterance_id)
-            if rating is None or rating.transcript != utterance.transcript:
-                continue
-            self._utterances[index] = replace(
-                utterance,
-                sentiment=rating.label,
-                sentiment_confidence=rating.confidence,
-            )
-            rated += 1
-        return rated
+            updated = utterance
+            tone = tones.get(utterance.utterance_id)
+            if tone is not None and tone.transcript == utterance.transcript:
+                updated = replace(
+                    updated, sentiment=tone.label, sentiment_confidence=tone.confidence
+                )
+            entry = raised.get(utterance.utterance_id)
+            if entry is not None and entry.transcript == utterance.transcript:
+                updated = replace(updated, complaint_categories=tuple(entry.categories))
+            if updated != utterance:
+                self._utterances[index] = updated
+                changed += 1
+        return changed
 
     def assign(self, executive_user_id: str, location_id: str | None = None) -> None:
         """Record who took the call, e.g. once a ringing phone call is

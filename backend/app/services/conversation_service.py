@@ -107,9 +107,15 @@ class ConversationService:
     def rate_utterances(self, call_id: str, ratings) -> Conversation:
         """Store the tone of the lines an analysis rated (see
         Conversation.rate_utterances)."""
+        return self.annotate_utterances(call_id, ratings=ratings)
+
+    def annotate_utterances(self, call_id: str, ratings=(), categories=()) -> Conversation:
+        """Store what an analysis found on the call's lines, in one save
+        (see Conversation.annotate_utterances); nothing is saved when no
+        line changed."""
         with self._lock_for(call_id):
             conversation = self.get_conversation(call_id)
-            if conversation.rate_utterances(ratings):
+            if conversation.annotate_utterances(ratings, categories):
                 self._repository.save(conversation)
             return conversation
 

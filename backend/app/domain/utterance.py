@@ -22,6 +22,9 @@ class Utterance:
     # (customer lines only); None until then.
     sentiment: SentimentLabel | None = None
     sentiment_confidence: float | None = None
+    # The complaint categories this line raises, once the analysis has
+    # found them; empty until then, and for a line that raises none.
+    complaint_categories: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.utterance_id.strip():
@@ -54,6 +57,11 @@ class Utterance:
     @property
     def duration(self) -> float:
         return self.end_time - self.start_time
+
+    @property
+    def multi_category(self) -> bool:
+        """The line covers several complaints at once."""
+        return len(self.complaint_categories) > 1
 
     @property
     def is_mixed_language(self) -> bool:

@@ -59,6 +59,8 @@ class HeatmapRowResponse(_Response):
 
 class ThemeResponse(_Response):
     text: str
+    # The customer's own words on one of the calls; null when not known.
+    quote: str | None = None
     complaints: int
     call_ids: list[str]
 

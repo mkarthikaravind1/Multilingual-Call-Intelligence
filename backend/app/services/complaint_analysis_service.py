@@ -24,6 +24,14 @@ class ComplaintAnalysisService:
     def analyze(
         self, conversation: Conversation, coverage: ConversationCoverage
     ) -> ConversationCoverage:
+        return self.analyze_with_detections(conversation, coverage)[0]
+
+    def analyze_with_detections(
+        self, conversation: Conversation, coverage: ConversationCoverage
+    ) -> tuple[ConversationCoverage, list]:
+        """analyze(), also returning what the provider detected (which
+        says more than the coverage keeps, e.g. the lines behind each
+        complaint)."""
         if conversation.call_id != coverage.call_id:
             raise ValueError(
                 f"Coverage for call {coverage.call_id!r} cannot be updated from "
@@ -38,7 +46,7 @@ class ComplaintAnalysisService:
             if contexts
             else self._provider.detect(conversation)
         )
-        return self.apply(conversation, coverage, detections, contexts)
+        return self.apply(conversation, coverage, detections, contexts), detections
 
     def guidance(self) -> tuple:
         """The approved learning guidance for complaint detection."""

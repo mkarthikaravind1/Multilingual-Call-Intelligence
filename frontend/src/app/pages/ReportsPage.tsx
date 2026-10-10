@@ -541,6 +541,9 @@ export function ReportsPage() {
                                     </Link>
                                   ))}
                                 </span>
+                                {theme.quote && theme.quote !== theme.text && (
+                                  <q className="report-themes__quote">{theme.quote}</q>
+                                )}
                               </span>
                             </li>
                           ))}

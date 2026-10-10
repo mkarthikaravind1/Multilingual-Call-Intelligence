@@ -253,11 +253,14 @@ class PostCallProcessor:
 
         analysis = self._analysis_service.analyze(conversation, coverage, live=False)
         self._coverage_repository.save(analysis.coverage)
-        lines = getattr(analysis.sentiment, "lines", ())
-        if lines:
+        # The final word on each line: its tone and what it raises.
+        tones = getattr(analysis.sentiment, "lines", ())
+        categories = getattr(analysis, "line_categories", None)
+        if tones or categories:
             best_effort(
-                "Storing line tones", conversation.call_id,
-                self._call_service.rate_utterances, conversation.call_id, lines,
+                "Storing what the lines say", conversation.call_id,
+                self._call_service.annotate_utterances,
+                conversation.call_id, tones, categories or (),
             )
         return analysis
 

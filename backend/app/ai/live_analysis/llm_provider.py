@@ -20,7 +20,8 @@ from app.ai.escalation.llm_provider import LLMEscalationProvider
 from app.ai.escalation.provider import EscalationContext
 from app.ai.llm.client import LLMClient, LLMRequest
 from app.ai.llm.json_answer import UnusableAnswer, ask_for_json, decode_json
-from app.ai.sentiment.llm_provider import LLMSentimentProvider, lines_to_rate, transcript_for
+from app.ai.llm.transcript import numbered_transcript
+from app.ai.sentiment.llm_provider import LLMSentimentProvider
 from app.ai.sentiment.provider import SentimentResult
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
@@ -97,8 +98,9 @@ class LLMLiveAnalysisProvider:
         complaint_task: str,
         sentiment_guidance: tuple[RuntimeImprovementContext, ...],
     ) -> LLMRequest:
-        # Numbered when the sentiment task rates individual lines.
-        transcript = transcript_for(conversation, lines_to_rate(conversation))
+        # Numbered: complaints name the lines that raise them, and the
+        # sentiment task the lines it rates.
+        transcript = numbered_transcript(conversation)
         keys = '"complaints", "sentiment"'
         escalation_task = ""
         if self._escalation is not None:

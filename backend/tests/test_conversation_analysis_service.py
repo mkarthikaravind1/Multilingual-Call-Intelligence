@@ -27,6 +27,9 @@ class FakeComplaintService:
         self.calls.append((conversation, coverage))
         return self.coverage
 
+    def analyze_with_detections(self, conversation, coverage):
+        return self.analyze(conversation, coverage), []
+
 
 class FakeSentimentService:
     def __init__(self, result: SentimentResult) -> None:

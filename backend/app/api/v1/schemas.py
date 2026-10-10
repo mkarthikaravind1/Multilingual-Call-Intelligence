@@ -125,6 +125,10 @@ class UtteranceResponse(_Response):
     # it (customer lines only).
     sentiment: SentimentLabel | None = None
     sentiment_confidence: float | None = None
+    # The complaint categories this line raises, once the analysis has
+    # found them; multi_category: it covers more than one.
+    complaint_categories: list[str] = []
+    multi_category: bool = False
 
 class CallResponse(_Response):
     call_id: str

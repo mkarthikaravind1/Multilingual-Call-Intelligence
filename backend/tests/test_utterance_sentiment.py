@@ -338,7 +338,7 @@ def test_lines_of_a_completed_call_can_still_be_rated():
 
 def test_results_without_line_tones_and_storage_failures_are_harmless():
     class _Broken:
-        def rate_utterances(self, call_id, lines):
+        def annotate_utterances(self, call_id, ratings, categories):
             raise RuntimeError("database is down")
 
     rate_lines(_Broken(), "call-1", SentimentResult(SentimentLabel.NEUTRAL, 0.5, "Calm."))

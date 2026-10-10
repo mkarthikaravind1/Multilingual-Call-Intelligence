@@ -107,6 +107,24 @@ export function TranscriptPanel({
               <p>
                 {turn.transcript}
               </p>
+
+              {turn.complaintCategories.length > 0 && (
+                <div className="live-call__turn-categories">
+                  {turn.complaintCategories.map((category) => (
+                    <span className="live-call__turn-category" key={category}>
+                      {category}
+                    </span>
+                  ))}
+                  {turn.multiCategory && (
+                    <span
+                      className="live-call__turn-multi"
+                      title="This line covers more than one complaint"
+                    >
+                      Several issues
+                    </span>
+                  )}
+                </div>
+              )}
             </article>
             )
           })}

@@ -12,6 +12,9 @@ export interface TranscriptTurnViewModel {
   confidence: number | null
   // The speaker's tone on this line; null until it is rated.
   sentiment: string | null
+  // The complaint categories this line raises; several: multiCategory.
+  complaintCategories: string[]
+  multiCategory: boolean
 }
 
 export interface ComplaintViewModel {

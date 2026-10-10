@@ -17,6 +17,7 @@ from app.infrastructure.database.models import (
     PostCallSummaryModel,
     QuestionOutcomeModel,
     UserModel,
+    UtteranceModel,
 )
 from app.services.reporting import (
     ReportCall,
@@ -24,6 +25,7 @@ from app.services.reporting import (
     ReportFilters,
     ReportSource,
     customer_key,
+    first_quotes,
 )
 
 _NOT_RAISED = ComplaintCoverageStatus.NOT_RAISED.value
@@ -97,6 +99,21 @@ class PostgresReportSource(ReportSource):
                 ).all()
             }
 
+            # The lines that raise a complaint, in the order spoken: the
+            # customer's own words for each category.
+            spoken: dict[str, list[tuple[str, list[str]]]] = defaultdict(list)
+            for call_id, transcript, categories in session.execute(
+                select(
+                    UtteranceModel.call_id,
+                    UtteranceModel.transcript,
+                    UtteranceModel.complaint_categories,
+                )
+                .join(page, page.c.call_id == UtteranceModel.call_id)
+                .where(UtteranceModel.complaint_categories.is_not(None))
+                .order_by(UtteranceModel.start_time, UtteranceModel.utterance_id)
+            ).all():
+                spoken[call_id].append((transcript, categories))
+
             outcomes: dict[str, dict[str, int]] = defaultdict(dict)
             for call_id, choice, count in session.execute(
                 select(
@@ -118,6 +135,7 @@ class PostgresReportSource(ReportSource):
             descriptions = {
                 c.get("category"): c.get("description") for c in row.summary_complaints or []
             }
+            quotes = first_quotes(spoken.get(row.call_id, ()))
             calls.append(
                 ReportCall(
                     call_id=row.call_id,
@@ -133,7 +151,13 @@ class PostgresReportSource(ReportSource):
                         else SentimentLabel(row.sentiment_label)
                     ),
                     complaints=tuple(
-                        ReportComplaint(category, status, descriptions.get(category), probed)
+                        ReportComplaint(
+                            category,
+                            status,
+                            descriptions.get(category),
+                            probed,
+                            quotes.get(category),
+                        )
                         for category, status, probed in by_call.get(row.call_id, ())
                     ),
                     customer_key=customer_key(row.customer_id, row.caller_number),

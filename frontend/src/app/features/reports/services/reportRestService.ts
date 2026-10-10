@@ -29,6 +29,8 @@ export interface CategoryTotalDto {
 export interface ThemeDto {
   // The first of the similar descriptions.
   text: string
+  // The customer's own words on one of the calls; null when not known.
+  quote?: string | null
   complaints: number
   call_ids: string[]
 }

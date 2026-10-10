@@ -72,6 +72,9 @@ class CallService:
     def rate_utterances(self, call_id: str, ratings) -> Conversation:
         return self._conversation_service.rate_utterances(call_id, ratings)
 
+    def annotate_utterances(self, call_id: str, ratings=(), categories=()) -> Conversation:
+        return self._conversation_service.annotate_utterances(call_id, ratings, categories)
+
     def end_call(
         self,
         call_id: str,

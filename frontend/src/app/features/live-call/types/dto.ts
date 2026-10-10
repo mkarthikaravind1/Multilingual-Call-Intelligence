@@ -19,6 +19,10 @@ export interface UtteranceDto extends UtteranceRequestDto {
   // FRUSTRATED or ESCALATING); null until the analysis has rated it.
   sentiment?: string | null
   sentiment_confidence?: number | null
+  // The complaint categories this line raises, once the analysis has
+  // found them; multi_category: it covers more than one.
+  complaint_categories?: string[]
+  multi_category?: boolean
 }
 
 export interface CallSummaryDto {

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.ai.complaint.provider import UtteranceCategories, line_categories
 from app.ai.live_analysis.llm_provider import LLMLiveAnalysisProvider
 from app.ai.sentiment.provider import SentimentResult
 from app.domain.conversation import Conversation
@@ -16,6 +17,9 @@ class ConversationAnalysisResult:
     # The LLM's escalation signals when a combined live-analysis request
     # found them; None: the escalation detector asks on its own.
     escalation_signals: tuple[EscalationSignal, ...] | None = None
+    # The complaint categories each line raises; None when the complaint
+    # detection did not say (the lines keep what they have).
+    line_categories: tuple[UtteranceCategories, ...] | None = None
 
 
 class ConversationAnalysisService:
@@ -45,7 +49,7 @@ class ConversationAnalysisService:
         if live and self._live_analyzer is not None and conversation.utterances:
             return self._analyze_together(conversation, coverage)
 
-        updated_coverage = self._complaint_service.analyze(
+        updated_coverage, detections = self._complaint_service.analyze_with_detections(
             conversation,
             coverage,
         )
@@ -55,6 +59,7 @@ class ConversationAnalysisService:
         return ConversationAnalysisResult(
             coverage=updated_coverage,
             sentiment=sentiment,
+            line_categories=line_categories(conversation, detections),
         )
 
     def _analyze_together(
@@ -66,13 +71,15 @@ class ConversationAnalysisService:
             conversation, complaint_guidance, sentiment_guidance
         )
         # A section the combined answer lacks is asked for on its own.
-        updated_coverage = (
-            self._complaint_service.analyze(conversation, coverage)
-            if together.complaints is None
-            else self._complaint_service.apply(
-                conversation, coverage, together.complaints, complaint_guidance
+        if together.complaints is None:
+            updated_coverage, detections = self._complaint_service.analyze_with_detections(
+                conversation, coverage
             )
-        )
+        else:
+            detections = together.complaints
+            updated_coverage = self._complaint_service.apply(
+                conversation, coverage, detections, complaint_guidance
+            )
         sentiment = (
             self._sentiment_service.analyze(conversation)
             if together.sentiment is None
@@ -84,4 +91,5 @@ class ConversationAnalysisService:
             coverage=updated_coverage,
             sentiment=sentiment,
             escalation_signals=together.escalation_signals,
+            line_categories=line_categories(conversation, detections),
         )

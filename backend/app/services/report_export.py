@@ -29,6 +29,7 @@ _COMPLAINT_COLUMNS = (
     "Category",
     "Status",
     "Description",
+    "Customer's words",
 )
 _DIRECTIONS = {"inbound": "Incoming", "outbound": "Outgoing"}
 # The PDF's tables keep to what fits a page width.
@@ -176,6 +177,7 @@ def _complaint_rows(report: Report) -> list[list[str]]:
             row.category,
             row.status.replace("_", " "),
             row.description or "",
+            row.quote or "",
         ]
         for row in report.rows
     ]
@@ -242,9 +244,21 @@ def _xlsx(report: Report) -> bytes:
     _sheet(
         workbook,
         "Root causes",
-        ["Category", "What the complaints say (similar wording grouped)", "Complaints", "Calls"],
         [
-            [cause.category, theme.text, theme.complaints, ", ".join(theme.call_ids)]
+            "Category",
+            "What the complaints say (similar wording grouped)",
+            "In a customer's words",
+            "Complaints",
+            "Calls",
+        ],
+        [
+            [
+                cause.category,
+                theme.text,
+                theme.quote or "",
+                theme.complaints,
+                ", ".join(theme.call_ids),
+            ]
             for cause in report.root_causes
             for theme in cause.themes
         ],

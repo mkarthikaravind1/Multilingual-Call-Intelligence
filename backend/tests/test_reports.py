@@ -453,6 +453,8 @@ def test_the_csv_lists_one_complaint_per_row(stores):
         "Cost",
         "resolved",
         "Customer was charged more than the estimate.",
+        # These calls' lines carry no categories: no customer's words.
+        "",
     ]
     # No summary, no location, no executive: empty cells.
     assert rows[5][:9] == ["c4", "2026-01-14 00:00", "", "", "Incoming", "", "Hygiene", "detected", ""]
@@ -480,7 +482,7 @@ def test_the_excel_file_has_a_sheet_per_section(stores):
         ("Hygiene", 1),
     ]
     causes = list(workbook["Root causes"].iter_rows(values_only=True))
-    assert causes[1] == ("Cost", "Customer was charged more than the estimate.", 2, "c2, c1")
+    assert causes[1] == ("Cost", "Customer was charged more than the estimate.", None, 2, "c2, c1")
     assert workbook["Complaints"].max_row == 1 + 3
 
 

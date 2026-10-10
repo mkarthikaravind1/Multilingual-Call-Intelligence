@@ -39,6 +39,8 @@ export function toTranscriptTurnViewModel(
     endTime: utterance.end_time,
     confidence: utterance.confidence ?? null,
     sentiment: utterance.sentiment ?? null,
+    complaintCategories: utterance.complaint_categories ?? [],
+    multiCategory: utterance.multi_category ?? false,
   }
 }
 

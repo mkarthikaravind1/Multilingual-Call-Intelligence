@@ -25,6 +25,7 @@ def _utterance_to_domain(model: UtteranceModel) -> Utterance:
         confidence=model.confidence,
         sentiment=None if model.sentiment is None else SentimentLabel(model.sentiment),
         sentiment_confidence=model.sentiment_confidence,
+        complaint_categories=tuple(model.complaint_categories or ()),
     )
 
 
@@ -55,6 +56,8 @@ def _write_utterance(model: UtteranceModel, utterance: Utterance) -> UtteranceMo
     model.confidence = utterance.confidence
     model.sentiment = None if utterance.sentiment is None else utterance.sentiment.value
     model.sentiment_confidence = utterance.sentiment_confidence
+    # NULL rather than an empty list: most lines raise nothing.
+    model.complaint_categories = list(utterance.complaint_categories) or None
     return model
 
 

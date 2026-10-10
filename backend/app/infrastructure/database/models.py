@@ -67,6 +67,11 @@ class UtteranceModel(Base):
     # The line's tone (a SentimentLabel); NULL until it is rated.
     sentiment: Mapped[str | None] = mapped_column(String, nullable=True)
     sentiment_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The complaint categories the line raises; NULL when none (or not
+    # analysed yet). More than one: the line covers several issues.
+    complaint_categories: Mapped[list[str] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
 
     conversation: Mapped["ConversationModel"] = relationship(back_populates="utterances")
 

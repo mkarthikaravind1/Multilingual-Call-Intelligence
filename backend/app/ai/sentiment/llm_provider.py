@@ -4,6 +4,7 @@ from typing import Any
 from app.ai.learning_guidance import format_learning_guidance
 from app.ai.llm.client import LLMClient, LLMRequest
 from app.ai.llm.json_answer import UnusableAnswer, ask_for_json, decode_json
+from app.ai.llm.transcript import numbered_transcript
 from app.ai.sentiment.provider import (
     SentimentAnalysisProvider,
     SentimentLabel,
@@ -71,10 +72,7 @@ def transcript_for(conversation: Conversation, lines: dict[int, Utterance]) -> s
         return "\n".join(
             f"{u.speaker_role.value}: {u.transcript.strip()}" for u in conversation.utterances
         )
-    return "\n".join(
-        f"[{number}] {u.speaker_role.value}: {u.transcript.strip()}"
-        for number, u in enumerate(conversation.utterances, start=1)
-    )
+    return numbered_transcript(conversation)
 
 
 def _lines_task(lines: dict[int, Utterance]) -> str:
