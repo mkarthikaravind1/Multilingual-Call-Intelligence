@@ -178,7 +178,7 @@ export function AppRoutes() {
         element={
           <ProtectedRoute>
             <SupervisorOnly>
-              <AppShell title="Live Calls" subtitle="Every call in progress, and the ones that need attention">
+              <AppShell title="Ongoing Calls" subtitle="Every call in progress, and the ones that need attention">
                 <LiveCallsPage />
               </AppShell>
             </SupervisorOnly>

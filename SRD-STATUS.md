@@ -21,7 +21,7 @@ Totals: 121 requirements: 85 met, 27 waiting, 9 not met.
 | 2 | Speaker identification | Met | Separate Plivo tracks give the speaker outright; on one mixed stream voices and wording decide. One limit: a quick reply can be joined to the other person's line (checklist, section 10). |
 | 3 | Language auto-detection | Met | Each line carries its languages. Seen wrong once in five replays (an English greeting tagged English and Telugu). |
 | 4 | Sentiment per utterance: positive, neutral, negative, frustrated, escalating | Met | Each customer line is rated with one of the five and a confidence. |
-| 5 | Sentiment shown live to supervisors and executives | Met | Coloured lines and a tone panel on the call screen; tone per call on Live Calls. |
+| 5 | Sentiment shown live to supervisors and executives | Met | Coloured lines and a tone panel on the call screen; tone per call on Ongoing Calls. |
 | 6 | Next-question suggestions to the executive, in real time, from the live transcript | Met | Up to three, written with the live analysis, then checked against what the customer already said. |
 | 7 | Suggestions make sure no category goes unexplored | Met | Questions are written for complaints not yet asked about; an alert is raised for one left unasked. |
 | 8 | Every complaint classified into one or more of the ten categories | Met | Cost, Hygiene, Hospitality, Service Quality, Turnaround Time, Communication, Parts Availability, Staff Behaviour, Documentation, Other. |
@@ -44,7 +44,7 @@ Totals: 121 requirements: 85 met, 27 waiting, 9 not met.
 | 20 | Report Generation Mode: post-call reports, sentiment summaries, trend dashboards | Met | Post-call summary per call; Reports with tone summary and trend. |
 | 21 | Analytics Mode | Met | Reports > Performance. |
 | 22 | Quality Audit Mode | Met | Audit panel on a finished call; averages on the scorecard. |
-| 23 | Supervisor Monitoring Mode | Met | Live Calls page: every call in progress with tone, complaints, escalation and alerts. |
+| 23 | Supervisor Monitoring Mode | Met | Ongoing Calls page: every call in progress with tone, complaints, escalation and alerts. |
 
 ## 3. What is captured (SRD 2.2)
 
@@ -152,7 +152,7 @@ Totals: 121 requirements: 85 met, 27 waiting, 9 not met.
 | 103 | Compliance with data protection regulations | Not met | No legal review has been done. The pieces a review will ask for exist: consent-gated recording, retention, access log. |
 | 104 | Scalable, cloud-native architecture | Waiting | Several servers can share calls through Redis. Tried on one laptop only. |
 | 105 | 500 or more concurrent calls | Waiting | With stand-in speech and AI services a laptop kept up with 100 calls and just missed at 200. 500 needs real servers and the paid keys. |
-| 106 | Dashboard response under 3 seconds | Waiting | Live Calls reads 500 calls in four database reads. Not timed under real load. |
+| 106 | Dashboard response under 3 seconds | Waiting | Ongoing Calls reads 500 calls in four database reads. Not timed under real load. |
 | 107 | Data reliability 99.99%, data loss under 0.001% | Not met | Nothing measures this. Backups, a replica and integrity checks reduce the risk; a figure needs months of real operation. |
 
 ## 8. Testing the SRD asks for (SRD 6)

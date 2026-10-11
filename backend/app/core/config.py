@@ -289,7 +289,7 @@ class Settings(BaseSettings):
     # per 10 calls in progress at the standard speed, more with "fast".
     # Bounded by the LLM provider's rate limit rather than by this machine.
     live_analysis_workers: int = 16
-    # The supervisor's Live Calls page. Its view of the calls in progress
+    # The supervisor's Ongoing Calls page. Its view of the calls in progress
     # is read at most this often and shared by everyone who has it open.
     live_calls_cache_seconds: float = 2.0
     # How often the alerts of the calls in progress are brought up to date

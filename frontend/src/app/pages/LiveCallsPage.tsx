@@ -148,7 +148,7 @@ export function LiveCallsPage() {
           // Keep showing the last list; say that it is no longer fresh.
           setLoaded((current) => ({
             calls: current?.calls ?? null,
-            error: err instanceof ApiError ? err.message : 'Unable to load the live calls.',
+            error: err instanceof ApiError ? err.message : 'Unable to load the ongoing calls.',
           }))
         })
     }
@@ -169,7 +169,7 @@ export function LiveCallsPage() {
   if (!loaded) {
     return (
       <section className="page-shell">
-        <StatePanel variant="loading" title="Loading live calls…" compact />
+        <StatePanel variant="loading" title="Loading ongoing calls…" compact />
       </section>
     )
   }
@@ -227,7 +227,7 @@ export function LiveCallsPage() {
             </div>
           </div>
 
-          <div className="panel call-filters" role="search" aria-label="Filter live calls">
+          <div className="panel call-filters" role="search" aria-label="Filter ongoing calls">
             <div className="call-filters__row">
               {choice('Location', filters.locationId, directory.locations, (locationId) =>
                 updateFilters({ locationId }),
@@ -267,7 +267,7 @@ export function LiveCallsPage() {
 
           {calls.items.length === 0 ? (
             <StatePanel
-              title={filtered ? 'No live calls match these filters' : 'No calls in progress'}
+              title={filtered ? 'No ongoing calls match these filters' : 'No calls in progress'}
               description={
                 filtered
                   ? 'Calls that come to match appear here by themselves.'

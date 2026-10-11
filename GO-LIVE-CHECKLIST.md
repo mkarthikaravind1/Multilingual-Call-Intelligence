@@ -146,7 +146,7 @@ accuracy for these languages is unknown until then.
 
 | # | Do this | Expect | Status |
 |---|---|---|---|
-| 1 | Call a location's number from a mobile. | The call appears on Live Calls; an executive's phone rings. | **Unverified**: webhook signature on a real request. |
+| 1 | Call a location's number from a mobile. | The call appears on Ongoing Calls; an executive's phone rings. | **Unverified**: webhook signature on a real request. |
 | 2 | An executive answers. | The call shows that executive and the location. | **Unverified**: the field names of Plivo's dial callback (`DialAction`, `DialBLegTo`, `DialALegUUID`). If the executive stays "Not recorded", look for `/telephony/plivo/dial` in the log and compare the fields Plivo sent. |
 | 3 | Talk for a minute, both sides. | Customer and executive lines are labelled correctly, with a tone on customer lines. | **Unverified**: two separate tracks from a real call. |
 | 4 | Hang up. | The call completes within a few seconds and gets a summary. | |
@@ -398,7 +398,7 @@ Run on the development laptop on 10 October 2026: one backend process,
 two-sided calls of 60 seconds, the stand-in speech recogniser answering in
 0.4 s and each stand-in AI request in 1 s, storage in memory.
 
-| Calls at once | Calls completed | Speech transcribed | First analysis (worst) | Live Calls page (worst) | Kept up |
+| Calls at once | Calls completed | Speech transcribed | First analysis (worst) | Ongoing Calls page (worst) | Kept up |
 |---|---|---|---|---|---|
 | 25 | 25 | all | 6 s | 0.2 s | yes |
 | 50 | 50 | all | 6 s | 0.3 s | yes |
@@ -426,7 +426,7 @@ real AI the ceiling is the provider's rate limit, not this setting.
   replace the stand-ins' 0.4 s and 1 s.
 - More than one backend process.
 
-**The Live Calls page was reworked for 500 calls after this test** (the
+**The Ongoing Calls page (then named Live Calls) was reworked for 500 calls after this test** (the
 figures in the table are the old page's; it took 2.3 s at 200 calls and
 listed at most 100). It now makes the same four reads however many calls
 are in progress, loads no transcript, writes nothing, and shows 50 calls a

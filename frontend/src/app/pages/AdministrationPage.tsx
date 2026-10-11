@@ -24,7 +24,7 @@ const ROLE_CAPABILITIES = [
   {
     role: 'SUPERVISOR',
     description:
-      'Everything an ICR can do, plus the live calls view, the escalation queue (acknowledge and resolve), reports, the price list, reviewing AI improvements and emerging complaint themes, call recordings, test audio, and retrying post-call processing.',
+      'Everything an ICR can do, plus the Ongoing Calls page, the escalation queue (acknowledge and resolve), reports, the price list, reviewing AI improvements and emerging complaint themes, call recordings, test audio, and retrying post-call processing.',
   },
   {
     role: 'ADMIN',
@@ -34,7 +34,7 @@ const ROLE_CAPABILITIES = [
   {
     role: 'MANAGEMENT',
     description:
-      'Reads the reports and performance figures, with their exports, and can open a finished call from a report (transcript, summary, audit score). Sees no live calls, changes nothing and takes no calls.',
+      'Reads the reports and performance figures, with their exports, and can open a finished call from a report (transcript, summary, audit score). Sees no ongoing calls, changes nothing and takes no calls.',
   },
 ]
 
@@ -92,7 +92,7 @@ export function AdministrationPage() {
         <p className="inline-notice" role="status">
           <strong>No active Supervisor yet.</strong> An Admin sets the system up but takes no
           calls. Create a Supervisor under Users before calls can be taken or watched: the
-          Supervisor looks after live calls, escalations, the price list and call recordings, and
+          Supervisor looks after ongoing calls, escalations, the price list and call recordings, and
           the executives (ICR) answer the calls.
         </p>
       )}
