@@ -6,6 +6,7 @@ from app.api.dependencies import (
     get_category_admin,
     get_location_service,
     get_post_call_repair_service,
+    get_report_layout_service,
     get_user_management_service,
 )
 from app.api.security_dependencies import require_roles
@@ -18,6 +19,7 @@ from app.services.complaint_category_admin import (
 )
 from app.services.complaint_category_catalog import CatalogEntry
 from app.services.location_service import LocationService
+from app.services.report_layout import COLUMNS, MAX_NAME_LENGTH, SECTIONS, ReportLayoutService
 from app.services.post_call_repair_service import PostCallRepairService
 from app.services.user_management_service import UNCHANGED, UserManagementService
 
@@ -292,6 +294,79 @@ def update_complaint_category(
     if entry is None:
         raise HTTPException(status_code=422, detail="Nothing to change was given.")
     return _category_response(entry)
+
+
+# --- Report layout -----------------------------------------------------------
+
+
+class ReportLayoutChoice(BaseModel):
+    id: str
+    name: str
+    # False for a section the PDF leaves out (it is in Excel and CSV).
+    in_pdf: bool = True
+
+
+class ReportLayoutResponse(BaseModel):
+    company_name: str
+    title: str
+    # In the order they appear.
+    sections: list[str]
+    columns: list[str]
+    # Everything that can be chosen, in the built-in order.
+    available_sections: list[ReportLayoutChoice]
+    available_columns: list[ReportLayoutChoice]
+    # None while the built-in layout is in use.
+    updated_at: float | None
+    updated_by: str | None
+
+
+class SaveReportLayoutRequest(_Request):
+    company_name: str = Field(default="", max_length=MAX_NAME_LENGTH)
+    title: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    sections: list[str] = Field(min_length=1, max_length=len(SECTIONS))
+    columns: list[str] = Field(min_length=1, max_length=len(COLUMNS))
+
+
+def _layout_response(service: ReportLayoutService) -> ReportLayoutResponse:
+    saved = service.saved()
+    layout = service.layout()
+    return ReportLayoutResponse(
+        company_name=layout.company_name,
+        title=layout.title,
+        sections=list(layout.sections),
+        columns=list(layout.columns),
+        available_sections=[
+            ReportLayoutChoice(id=key, name=name, in_pdf=in_pdf)
+            for key, (name, in_pdf) in SECTIONS.items()
+        ],
+        available_columns=[ReportLayoutChoice(id=key, name=name) for key, name in COLUMNS.items()],
+        updated_at=None if saved is None else saved.updated_at,
+        updated_by=None if saved is None else saved.updated_by,
+    )
+
+
+@router.get("/report-layout", response_model=ReportLayoutResponse)
+def read_report_layout(
+    service: ReportLayoutService = Depends(get_report_layout_service),
+    _: User = Depends(_ADMINS),
+) -> ReportLayoutResponse:
+    """How the exported complaint report is laid out."""
+    return _layout_response(service)
+
+
+@router.put("/report-layout", response_model=ReportLayoutResponse)
+def save_report_layout(
+    payload: SaveReportLayoutRequest,
+    service: ReportLayoutService = Depends(get_report_layout_service),
+    admin: User = Depends(_ADMINS),
+) -> ReportLayoutResponse:
+    """Set the company name and title printed on the report, its sections
+    in order, and the columns of its list of complaints. Exports follow it
+    from the next download."""
+    service.save(
+        payload.company_name, payload.title, payload.sections, payload.columns, admin.user_id
+    )
+    return _layout_response(service)
 
 
 # --- Post-call repair --------------------------------------------------------

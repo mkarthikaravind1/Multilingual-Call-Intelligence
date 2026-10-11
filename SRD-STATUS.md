@@ -1,6 +1,6 @@
 # Where the system stands against the SRD
 
-Checked on 11 October 2026 against `main` at 6053cc2 (rows 77 and 94 updated since), requirement by
+Checked on 11 October 2026 against `main` at 6053cc2 (rows 16, 43, 77, 84, 89 and 94 updated since), requirement by
 requirement, from "AI_Multilingual_CRM_SRD_Updated (2).docx". Each row was
 checked in the code and its tests, not from earlier notes.
 
@@ -11,7 +11,7 @@ yet (Plivo, the paid Groq key, the SMS gateway, a storage bucket, recordings
 in the other languages) or with real users and real load.
 **Not met**: missing or short of what the SRD says, with the reason.
 
-Totals: 121 requirements: 83 met, 27 waiting, 11 not met.
+Totals: 121 requirements: 84 met, 27 waiting, 10 not met.
 
 ## 1. Scope and users (SRD 1.2, 1.3)
 
@@ -130,7 +130,7 @@ Totals: 121 requirements: 83 met, 27 waiting, 11 not met.
 | 86 | Next-question evaluation and relevance review | Met | Accept and Skip counts per executive; the accuracy script scores them. |
 | 87 | Performance monitoring and database optimisation | Met | Metrics and alerts; indexes where the busy screens read. No automatic tuning. |
 | 88 | Backup verification | Met | Each backup is checked as complete in the storage. A restore drill is a manual step in `DEPLOYMENT.md`. |
-| 89 | Report template updates | Not met | Report layouts are in the code: changing one is a code change. |
+| 89 | Report template updates | Met | An admin sets the company name and title printed on the exported report, which sections it has and in what order, and the columns of its list of complaints (Administration > Report layout). The Reports page on screen always shows everything. |
 | 90 | User access reviews | Met | The user list with roles, and the audit log of who did what. |
 
 ## 7. Technical, constraints and performance (SRD 3, 4, 5)
@@ -189,4 +189,3 @@ Needs a different speech recogniser:
 Needs something outside the software:
 
 - A data-protection review (row 103). A measured reliability figure (row 107).
-- Report layouts changeable without a code change (row 89): not asked for in any detail by the SRD.

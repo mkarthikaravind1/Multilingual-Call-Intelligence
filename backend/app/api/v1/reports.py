@@ -6,12 +6,17 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict
 
 from app.ai.sentiment.provider import SentimentLabel
-from app.api.dependencies import get_performance_service, get_report_service
+from app.api.dependencies import (
+    get_performance_service,
+    get_report_layout,
+    get_report_service,
+)
 from app.api.security_dependencies import REPORT_READERS, require_roles
 from app.domain.conversation import CallDirection
 from app.domain.user import User
 from app.services.performance import PerformanceService
 from app.services.report_export import export_report, export_scorecard
+from app.services.report_layout import ReportLayout
 from app.services.reporting import SECONDS_PER_DAY, Report, ReportFilters, ReportService
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -171,10 +176,12 @@ async def export_complaint_report(
     file_format: Literal["csv", "xlsx", "pdf"] = Query("xlsx", alias="format"),
     query: _ReportQuery = Depends(),
     service: ReportService = Depends(get_report_service),
+    layout: ReportLayout = Depends(get_report_layout),
     _: User = Depends(_READERS),
 ) -> Response:
+    """The report as a file, laid out as an administrator has set."""
     content, media_type, filename = await run_in_threadpool(
-        lambda: export_report(query.report(service), file_format)
+        lambda: export_report(query.report(service), file_format, layout)
     )
     return Response(
         content,

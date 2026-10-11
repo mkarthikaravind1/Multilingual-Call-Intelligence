@@ -17,6 +17,7 @@ from app.services.emerging_complaint_service import EmergingComplaintNotFoundErr
 from app.services.post_call_repair_service import CallNotRepairableError
 from app.services.user_management_service import UserManagementError, UserNotFoundError
 from app.services.location_service import LocationError, LocationNotFoundError
+from app.services.report_layout import ReportLayoutError
 from app.services.reporting import ReportError
 from app.services.conversation_service import ConversationNotFoundError
 from app.services.improvement_application_service import ActiveImprovementNotFoundError
@@ -39,6 +40,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: ConversationAlreadyExistsError
     ) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(ReportLayoutError)
+    async def handle_report_layout(request: Request, exc: ReportLayoutError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     @app.exception_handler(UtteranceIdInUseError)
     async def handle_line_id_in_use(request: Request, exc: UtteranceIdInUseError) -> JSONResponse:

@@ -29,6 +29,7 @@ from app.services.location_service import LocationService
 from app.services.post_call_repair_service import PostCallRepairService
 from app.services.price_list_service import PriceListService
 from app.services.performance import PerformanceService
+from app.services.report_layout import DEFAULT_LAYOUT, ReportLayout, ReportLayoutService
 from app.services.reporting import ReportService
 from app.services.user_management_service import UserManagementService
 from app.services.call_service import CallService
@@ -93,6 +94,8 @@ class ApiServices:
     recording_repository: "RecordingRepository | None" = None
     # Copies off the server, the recording check and database backups.
     data_safety: "DataSafety | None" = None
+    # How exported reports are laid out, as an administrator set it.
+    report_layout: ReportLayoutService | None = None
     # Who did what, and what the AI was asked and answered.
     audit_log: AuditLog | None = None
     ai_log: AiLog | None = None
@@ -169,6 +172,19 @@ def get_category_admin(connection: HTTPConnection) -> ComplaintCategoryAdminServ
     if service is None:
         raise HTTPException(status_code=503, detail="Category management is not configured.")
     return service
+
+
+def get_report_layout_service(connection: HTTPConnection) -> ReportLayoutService:
+    service = connection.app.state.services.report_layout
+    if service is None:
+        raise HTTPException(status_code=503, detail="Report layouts are not configured.")
+    return service
+
+
+def get_report_layout(connection: HTTPConnection) -> ReportLayout:
+    """The layout exports follow now (the built-in one when none is set)."""
+    service = connection.app.state.services.report_layout
+    return DEFAULT_LAYOUT if service is None else service.layout()
 
 
 def get_audit_log(connection: HTTPConnection) -> AuditLog:

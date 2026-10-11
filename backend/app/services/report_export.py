@@ -1,5 +1,10 @@
 """A complaint report as a file: CSV (the complaints, one per row), Excel
-(the same plus a sheet per section) or PDF (the sections, to print)."""
+(the same plus a sheet per section) or PDF (the sections, to print).
+
+What it carries follows the layout an administrator has set (see
+report_layout): the company name and title, which sections and in what
+order, and which columns the list of complaints has.
+"""
 
 import csv
 import io
@@ -12,6 +17,7 @@ from openpyxl.utils import get_column_letter
 
 from app.services.performance import Figures, PerformanceReport
 from app.services.pdf_text import LEFT_OUT_NOTE, PdfText
+from app.services.report_layout import COLUMNS, DEFAULT_LAYOUT, ReportLayout
 from app.services.reporting import Report
 
 EXPORT_FORMATS = ("csv", "xlsx", "pdf")
@@ -20,18 +26,6 @@ _MEDIA_TYPES = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pdf": "application/pdf",
 }
-_COMPLAINT_COLUMNS = (
-    "Call ID",
-    "Call date",
-    "Location",
-    "Executive",
-    "Direction",
-    "Tone",
-    "Category",
-    "Status",
-    "Description",
-    "Customer's words",
-)
 _DIRECTIONS = {"inbound": "Incoming", "outbound": "Outgoing"}
 # The PDF's tables keep to what fits a page width.
 _PDF_MAX_TREND_COLUMNS = 16
@@ -40,11 +34,13 @@ _PDF_MAX_LOCATION_COLUMNS = 10
 _FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
 
 
-def export_report(report: Report, file_format: str) -> tuple[bytes, str, str]:
+def export_report(
+    report: Report, file_format: str, layout: ReportLayout = DEFAULT_LAYOUT
+) -> tuple[bytes, str, str]:
     """(content, media type, filename)."""
     if file_format not in EXPORT_FORMATS:
         raise ValueError(f"Unsupported export format: {file_format!r}.")
-    content = {"csv": _csv, "xlsx": _xlsx, "pdf": _pdf}[file_format](report)
+    content = {"csv": _csv, "xlsx": _xlsx, "pdf": _pdf}[file_format](report, layout)
     day = _local(report, report.filters.started_from).strftime("%Y-%m-%d")
     return content, _MEDIA_TYPES[file_format], f"complaint-report-{day}.{file_format}"
 
@@ -194,21 +190,51 @@ def _total_lines(report: Report) -> list[tuple[str, int]]:
     ]
 
 
-def _complaint_rows(report: Report) -> list[list[str]]:
+def _complaint_header(layout: ReportLayout) -> list[str]:
+    return [COLUMNS[column] for column in layout.columns]
+
+
+def _complaint_rows(report: Report, layout: ReportLayout) -> list[list[str]]:
+    """The list of complaints, with the layout's columns in its order."""
+    rows = []
+    for row in report.rows:
+        cells = {
+            "call_id": row.call_id,
+            "call_date": f"{_local(report, row.start_time):%Y-%m-%d %H:%M}",
+            "location": row.location_name or "",
+            "executive": row.executive_name or "",
+            "direction": "" if row.direction is None else _DIRECTIONS[row.direction.value],
+            "tone": "" if row.sentiment is None else row.sentiment.value.capitalize(),
+            "category": row.category,
+            "status": row.status.replace("_", " "),
+            "description": row.description or "",
+            "customer_words": row.quote or "",
+        }
+        rows.append([cells[column] for column in layout.columns])
+    return rows
+
+
+def _tone_rows(report: Report) -> list[list]:
+    tone = report.tone
     return [
+        *([count.label.value.capitalize(), count.calls] for count in tone.by_tone),
+        ["Calls with a tone", tone.rated_calls],
+        ["Ending negative or worse", tone.negative_calls],
+        ["Calls whose lines carry tones", tone.tracked_calls],
+        ["Customer ended milder than they began", tone.improved_calls],
+        ["Customer ended harsher than they began", tone.worsened_calls],
+    ]
+
+
+def _tone_trend_rows(report: Report) -> list[list]:
+    trend = report.tone.trend
+    return [
+        ["Calls with a tone", *(point.rated for point in trend)],
+        ["Ending negative or worse", *(point.negative for point in trend)],
         [
-            row.call_id,
-            f"{_local(report, row.start_time):%Y-%m-%d %H:%M}",
-            row.location_name or "",
-            row.executive_name or "",
-            "" if row.direction is None else _DIRECTIONS[row.direction.value],
-            "" if row.sentiment is None else row.sentiment.value.capitalize(),
-            row.category,
-            row.status.replace("_", " "),
-            row.description or "",
-            row.quote or "",
-        ]
-        for row in report.rows
+            "% negative or worse",
+            *(_percent(_rate(point.negative, point.rated)) for point in trend),
+        ],
     ]
 
 
@@ -222,11 +248,12 @@ def _safe(value):
 # ---- CSV ----
 
 
-def _csv(report: Report) -> bytes:
+def _csv(report: Report, layout: ReportLayout = DEFAULT_LAYOUT) -> bytes:
+    """The list of complaints and nothing else: a file for other programs."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\r\n")
-    writer.writerow(_COMPLAINT_COLUMNS)
-    for row in _complaint_rows(report):
+    writer.writerow(_complaint_header(layout))
+    for row in _complaint_rows(report, layout):
         writer.writerow([_safe(cell) for cell in row])
     # With a byte-order mark, so Excel reads it as UTF-8.
     return buffer.getvalue().encode("utf-8-sig")
@@ -248,78 +275,81 @@ def _sheet(workbook: Workbook, title: str, header: list[str], rows: list[list]) 
         sheet.column_dimensions[get_column_letter(index)].width = min(60, max(10, longest + 2))
 
 
-def _xlsx(report: Report) -> bytes:
+def _xlsx(report: Report, layout: ReportLayout = DEFAULT_LAYOUT) -> bytes:
     workbook = Workbook()
     workbook.remove(workbook.active)
 
+    # Always there: what the report is of. The sections follow as sheets,
+    # in the layout's order.
     summary = [[name, value] for name, value in _filter_lines(report)]
     summary += [["", ""]] + [[name, value] for name, value in _total_lines(report)]
-    summary += [["", ""], ["Category", "Complaints", "Resolved"]]
-    summary += [[c.category, c.complaints, c.resolved] for c in report.categories]
-    _sheet(workbook, "Summary", ["Complaint report", ""], summary)
+    if layout.has("categories"):
+        summary += [["", ""], ["Category", "Complaints", "Resolved"]]
+        summary += [[c.category, c.complaints, c.resolved] for c in report.categories]
+    _sheet(workbook, "Summary", [layout.title, layout.company_name], summary)
 
-    _sheet(
-        workbook,
-        "Trend",
-        ["Category"] + _bucket_labels(report),
-        [[series.category, *series.counts] for series in report.trend],
-    )
-    _sheet(
-        workbook,
-        "By location",
-        ["Category"] + [location.name for location in report.locations],
-        [[row.category, *row.counts] for row in report.heatmap],
-    )
-    _sheet(
-        workbook,
-        "Root causes",
-        [
-            "Category",
-            "What the complaints say (similar wording grouped)",
-            "In a customer's words",
-            "Complaints",
-            "Calls",
-        ],
-        [
+    def trend() -> None:
+        _sheet(
+            workbook,
+            "Trend",
+            ["Category"] + _bucket_labels(report),
+            [[series.category, *series.counts] for series in report.trend],
+        )
+
+    def locations() -> None:
+        _sheet(
+            workbook,
+            "By location",
+            ["Category"] + [location.name for location in report.locations],
+            [[row.category, *row.counts] for row in report.heatmap],
+        )
+
+    def root_causes() -> None:
+        _sheet(
+            workbook,
+            "Root causes",
             [
-                cause.category,
-                theme.text,
-                theme.quote or "",
-                theme.complaints,
-                ", ".join(theme.call_ids),
-            ]
-            for cause in report.root_causes
-            for theme in cause.themes
-        ],
-    )
-    tone = report.tone
-    _sheet(
-        workbook,
-        "Tone",
-        ["How calls ended", "Calls"],
-        [
-            *([count.label.value.capitalize(), count.calls] for count in tone.by_tone),
-            ["Calls with a tone", tone.rated_calls],
-            ["Ending negative or worse", tone.negative_calls],
-            ["Calls whose lines carry tones", tone.tracked_calls],
-            ["Customer ended milder than they began", tone.improved_calls],
-            ["Customer ended harsher than they began", tone.worsened_calls],
-        ],
-    )
-    _sheet(
-        workbook,
-        "Tone trend",
-        ["", *_bucket_labels(report)],
-        [
-            ["Calls with a tone", *(point.rated for point in tone.trend)],
-            ["Ending negative or worse", *(point.negative for point in tone.trend)],
-            [
-                "% negative or worse",
-                *(_percent(_rate(point.negative, point.rated)) for point in tone.trend),
+                "Category",
+                "What the complaints say (similar wording grouped)",
+                "In a customer's words",
+                "Complaints",
+                "Calls",
             ],
-        ],
-    )
-    _sheet(workbook, "Complaints", list(_COMPLAINT_COLUMNS), _complaint_rows(report))
+            [
+                [
+                    cause.category,
+                    theme.text,
+                    theme.quote or "",
+                    theme.complaints,
+                    ", ".join(theme.call_ids),
+                ]
+                for cause in report.root_causes
+                for theme in cause.themes
+            ],
+        )
+
+    def tone() -> None:
+        _sheet(workbook, "Tone", ["How calls ended", "Calls"], _tone_rows(report))
+
+    def tone_trend() -> None:
+        _sheet(workbook, "Tone trend", ["", *_bucket_labels(report)], _tone_trend_rows(report))
+
+    def complaints() -> None:
+        _sheet(
+            workbook, "Complaints", _complaint_header(layout), _complaint_rows(report, layout)
+        )
+
+    sheets = {
+        "trend": trend,
+        "locations": locations,
+        "root_causes": root_causes,
+        "tone": tone,
+        "tone_trend": tone_trend,
+        "complaints": complaints,
+    }
+    for name in layout.sections:
+        if name in sheets:
+            sheets[name]()
 
     buffer = io.BytesIO()
     workbook.save(buffer)
@@ -329,7 +359,7 @@ def _xlsx(report: Report) -> bytes:
 # ---- PDF ----
 
 
-def _pdf(report: Report) -> bytes:
+def _pdf(report: Report, layout: ReportLayout = DEFAULT_LAYOUT) -> bytes:
     # Imported here: only this export needs the PDF library.
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -360,7 +390,11 @@ def _pdf(report: Report) -> bytes:
         )
         return made
 
-    story: list = [Paragraph("Complaint report", styles["Title"])]
+    story: list = []
+    if layout.company_name:
+        story.append(text(layout.company_name, styles["Heading3"]))
+    title_at = len(story)
+    story.append(text(layout.title, styles["Title"]))
     story.append(
         text(
             " · ".join(f"{name}: {value}" for name, value in _filter_lines(report)),
@@ -375,11 +409,18 @@ def _pdf(report: Report) -> bytes:
         story.append(Spacer(1, 5 * mm))
         story.append(Paragraph(escape(title), styles["Heading2"]))
 
-    if not report.categories:
-        story.append(Spacer(1, 5 * mm))
-        story.append(text("No complaints match these filters.", body))
+    def periods(labels: list[str]) -> tuple[slice, str]:
+        """The most recent periods, when there are more than fit the page,
+        and what to say about that."""
+        shown = slice(max(0, len(labels) - _PDF_MAX_TREND_COLUMNS), len(labels))
+        note = (
+            f" (last {_PDF_MAX_TREND_COLUMNS} of {len(labels)}; all are in the Excel export)"
+            if len(labels) > _PDF_MAX_TREND_COLUMNS
+            else ""
+        )
+        return shown, note
 
-    if report.categories:
+    def categories() -> None:
         section("Complaints by category")
         story.append(
             table(
@@ -389,18 +430,10 @@ def _pdf(report: Report) -> bytes:
             )
         )
 
-        # The most recent periods, when there are more than fit the page.
+    def trend() -> None:
         labels = _bucket_labels(report)
-        shown = slice(max(0, len(labels) - _PDF_MAX_TREND_COLUMNS), len(labels))
-        section(
-            "Trend by "
-            + report.bucket
-            + (
-                f" (last {_PDF_MAX_TREND_COLUMNS} of {len(labels)}; all are in the Excel export)"
-                if len(labels) > _PDF_MAX_TREND_COLUMNS
-                else ""
-            )
-        )
+        shown, note = periods(labels)
+        section("Trend by " + report.bucket + note)
         story.append(
             table(
                 [["Category"] + [label.replace("Week of ", "") for label in labels[shown]]]
@@ -408,22 +441,24 @@ def _pdf(report: Report) -> bytes:
             )
         )
 
-        locations = report.locations[:_PDF_MAX_LOCATION_COLUMNS]
+    def locations() -> None:
+        places = report.locations[:_PDF_MAX_LOCATION_COLUMNS]
         section(
             "Category by location"
             + (
-                f" (first {len(locations)} of {len(report.locations)} locations)"
-                if len(report.locations) > len(locations)
+                f" (first {len(places)} of {len(report.locations)} locations)"
+                if len(report.locations) > len(places)
                 else ""
             )
         )
         story.append(
             table(
-                [["Category"] + [location.name for location in locations]]
-                + [[row.category, *row.counts[: len(locations)]] for row in report.heatmap]
+                [["Category"] + [location.name for location in places]]
+                + [[row.category, *row.counts[: len(places)]] for row in report.heatmap]
             )
         )
 
+    def root_causes() -> None:
         section("Root causes (complaints in similar words, grouped by a fixed rule)")
         for cause in report.root_causes:
             story.append(
@@ -444,9 +479,43 @@ def _pdf(report: Report) -> bytes:
                 )
             story.append(Spacer(1, 2 * mm))
 
+    def tone() -> None:
+        section("Tone: how calls ended")
+        story.append(
+            table([["How calls ended", "Calls"]] + _tone_rows(report), [110 * mm, 35 * mm])
+        )
+
+    def tone_trend() -> None:
+        labels = _bucket_labels(report)
+        shown, note = periods(labels)
+        section("Tone trend by " + report.bucket + note)
+        story.append(
+            table(
+                [[""] + [label.replace("Week of ", "") for label in labels[shown]]]
+                + [[row[0], *row[1:][shown]] for row in _tone_trend_rows(report)]
+            )
+        )
+
+    sections = {
+        "categories": categories,
+        "trend": trend,
+        "locations": locations,
+        "root_causes": root_causes,
+        "tone": tone,
+        "tone_trend": tone_trend,
+    }
+    if not report.categories:
+        story.append(Spacer(1, 5 * mm))
+        story.append(text("No complaints match these filters.", body))
+    else:
+        # The list of complaints is too wide to print: Excel and CSV have it.
+        for name in layout.sections:
+            if name in sections:
+                sections[name]()
+
     if writer.left_out:
         # Under the title, where it is read before the tables.
-        story.insert(1, Paragraph(escape(LEFT_OUT_NOTE), body))
+        story.insert(title_at + 1, Paragraph(escape(LEFT_OUT_NOTE), body))
 
     buffer = io.BytesIO()
     SimpleDocTemplate(
@@ -456,6 +525,6 @@ def _pdf(report: Report) -> bytes:
         rightMargin=15 * mm,
         topMargin=15 * mm,
         bottomMargin=15 * mm,
-        title="Complaint report",
+        title=layout.title,
     ).build(story)
     return buffer.getvalue()

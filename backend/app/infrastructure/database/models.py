@@ -411,6 +411,17 @@ class DatabaseBackupModel(Base):
     removed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class ReportLayoutModel(Base):
+    # How the complaint report is laid out when exported, as an
+    # administrator set it. One row (key "complaint_report").
+    __tablename__ = "report_layouts"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    layout: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class RecordingPlayModel(Base):
     # Append-only: each time someone listened to a recording.
     __tablename__ = "recording_plays"

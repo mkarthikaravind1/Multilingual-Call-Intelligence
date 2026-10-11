@@ -152,6 +152,11 @@ from app.services.recording_archive import (
     RecordingRepository,
 )
 from app.composition.data_safety import DataSafety, build_data_safety
+from app.services.report_layout import (
+    InMemoryReportLayoutRepository,
+    ReportLayoutRepository,
+    ReportLayoutService,
+)
 from app.services.model_warm_up import ModelWarmUp
 from app.services.database_backup import BackupRepository, InMemoryBackupRepository
 from app.services.offsite_archive import (
@@ -223,6 +228,7 @@ def build_api_services(
     ai_log: AiLog | None = None,
     transcript_archive_repository: TranscriptArchiveRepository | None = None,
     backup_repository: BackupRepository | None = None,
+    report_layout_repository: ReportLayoutRepository | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -601,6 +607,9 @@ def build_api_services(
         recording_archive=recording_archive,
         recording_repository=recording_repository,
         data_safety=data_safety,
+        report_layout=ReportLayoutService(
+            report_layout_repository or InMemoryReportLayoutRepository()
+        ),
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
         category_admin=category_admin,

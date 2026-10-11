@@ -275,6 +275,16 @@ steps; these are the settings.
 5. With the replica: the query under "Replication" in `DEPLOYMENT.md`
    should show one row with `streaming`.
 
+### Report layout
+
+Administration > Report layout sets what the complaint report carries when
+it is downloaded: your company name and a title, which sections it has and
+in what order, and the columns of its list of complaints. Set the company
+name before the first report goes to anyone outside. The PDF now also has
+the Tone sections, which only Excel had before. The Reports page itself
+always shows everything, and the executives' scorecard export is not
+covered by the layout.
+
 ### Audit log and AI log
 
 Both are on without any setting, and administrators read them under

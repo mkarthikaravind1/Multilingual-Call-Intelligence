@@ -8,6 +8,7 @@ import { ComplaintCategoriesPanel } from '../features/admin/components/Complaint
 import { DataSafetyPanel } from '../features/admin/components/DataSafetyPanel'
 import { LocationsPanel } from '../features/admin/components/LocationsPanel'
 import { PostCallRepairPanel } from '../features/admin/components/PostCallRepairPanel'
+import { ReportLayoutPanel } from '../features/admin/components/ReportLayoutPanel'
 import { UserManagementPanel } from '../features/admin/components/UserManagementPanel'
 import { adminRestService } from '../features/admin/services/adminRestService'
 import type { LocationDto, ManagedUserDto } from '../features/admin/types/dto'
@@ -95,6 +96,8 @@ export function AdministrationPage() {
       <ComplaintCategoriesPanel />
 
       <PostCallRepairPanel />
+
+      <ReportLayoutPanel />
 
       <DataSafetyPanel />
 
