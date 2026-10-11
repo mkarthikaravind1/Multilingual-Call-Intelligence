@@ -368,7 +368,10 @@ class CallWorkflowService:
                     llm_signals=llm_escalation_signals,
                 ),
             )
-        result = replace(result, alerts=self._refresh_alerts(conversation, result.coverage))
+        result = replace(
+            result,
+            alerts=self._refresh_alerts(conversation, result.coverage, result.sentiment),
+        )
         self._live_analysis.save(
             call_id,
             LiveAnalysisSnapshot(
@@ -380,14 +383,17 @@ class CallWorkflowService:
         return result
 
     def _refresh_alerts(
-        self, conversation: Conversation, coverage: ConversationCoverage | None
+        self,
+        conversation: Conversation,
+        coverage: ConversationCoverage | None,
+        sentiment: SentimentResult | None = None,
     ) -> tuple[CallAlert, ...]:
         if self._alert_service is None:
             return ()
         return (
             best_effort(
                 "Refreshing the alerts", conversation.call_id,
-                self._alert_service.refresh, conversation, coverage,
+                self._alert_service.refresh, conversation, coverage, sentiment,
             )
             or ()
         )

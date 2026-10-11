@@ -52,6 +52,7 @@ UNCOVERED = CallAlertType.UNCOVERED_CATEGORY
 SEVERE = CallAlertType.HIGH_SEVERITY_CATEGORY
 UNSURE = CallAlertType.LOW_CONFIDENCE
 AUDIO = CallAlertType.POOR_AUDIO
+TONE = CallAlertType.NEGATIVE_SENTIMENT
 
 
 class _Clock:
@@ -204,6 +205,72 @@ def test_low_transcription_confidence_is_poor_audio_when_the_recogniser_gives_on
 
     assert _standing(alerts) == {(AUDIO, LOW_TRANSCRIPTION_CONFIDENCE)}
     assert "low confidence (50%)" in alerts[0].message
+
+
+def _tone(label: SentimentLabel, confidence: float = 0.9) -> SentimentResult:
+    return SentimentResult(label, confidence, "What the customer said.")
+
+
+@pytest.mark.parametrize(
+    ("label", "message"),
+    [
+        (SentimentLabel.NEGATIVE, "The customer's tone is negative."),
+        (SentimentLabel.FRUSTRATED, "The customer sounds frustrated."),
+        (SentimentLabel.ESCALATING, "The customer's tone is escalating."),
+    ],
+)
+def test_a_negative_tone_alerts(label, message):
+    service = _service()
+
+    (alert,) = service.refresh(_call(), None, _tone(label))
+
+    assert (alert.alert_type, alert.subject, alert.message) == (TONE, "", message)
+    assert alert.is_open
+
+
+@pytest.mark.parametrize("label", [SentimentLabel.POSITIVE, SentimentLabel.NEUTRAL])
+def test_a_calm_tone_does_not_alert(label):
+    assert _service().refresh(_call(), None, _tone(label)) == ()
+
+
+def test_a_tone_the_analysis_is_unsure_of_does_not_alert():
+    service = _service(negative_sentiment_min_confidence=0.6)
+
+    assert service.refresh(_call(), None, _tone(SentimentLabel.FRUSTRATED, 0.59)) == ()
+    assert len(service.refresh(_call(), None, _tone(SentimentLabel.FRUSTRATED, 0.6))) == 1
+
+
+def test_the_tone_alert_follows_the_tone_and_clears_when_the_customer_calms_down():
+    clock = _Clock()
+    service = _service(clock)
+    service.refresh(_call(), None, _tone(SentimentLabel.NEGATIVE))
+
+    clock.now += 30
+    (worse,) = service.refresh(_call(), None, _tone(SentimentLabel.ESCALATING))
+    assert (worse.message, worse.raised_at, worse.is_open) == (
+        "The customer's tone is escalating.", 1_000.0, True,  # the same alert, reworded
+    )
+
+    clock.now += 30
+    (calm,) = service.refresh(_call(), None, _tone(SentimentLabel.NEUTRAL))
+    assert (calm.is_open, calm.cleared_at) == (False, 1_060.0)
+
+    clock.now += 30
+    (again,) = service.refresh(_call(), None, _tone(SentimentLabel.FRUSTRATED))
+    assert (again.is_open, again.raised_at) == (True, 1_090.0)
+
+
+def test_a_tone_alert_stays_when_the_tone_is_not_known():
+    """A refresh without an analysis (and the background sweep) cannot
+    judge the tone: the alert is neither raised nor cleared by them."""
+    service = _service()
+    service.refresh(_call(), None, _tone(SentimentLabel.FRUSTRATED))
+
+    (alert,) = service.refresh(_call(), None)
+    assert alert.is_open
+    assert service.sweep(["call-1"], {}) == set()
+    assert service.list_for_call("call-1")[0].is_open
+    assert service.refresh(Conversation(call_id="call-2"), None) == ()
 
 
 def test_one_calls_audio_and_alerts_do_not_touch_anothers():
@@ -399,6 +466,8 @@ def test_the_analysis_carries_the_confidence_and_the_alerts():
     assert {(a["alert_type"], a["subject"], a["cleared_at"]) for a in said["alerts"]} == {
         ("high_severity_category", "Hygiene", None),
         ("low_confidence", "Hygiene", None),
+        # The customer in this test is frustrated throughout.
+        ("negative_sentiment", "", None),
     }
     # Reading the call again shows the same alerts, and does not raise them twice.
     read = client.get("/api/v1/calls/c1/analysis", headers=icr).json()
@@ -408,7 +477,7 @@ def test_the_analysis_carries_the_confidence_and_the_alerts():
     complaints.results = [ComplaintDetectionResult("Hygiene", 0.9, "Dirty washroom.", probed=True)]
     later = _say(client, icr, "c1", 1)
     standing = {a["alert_type"] for a in later["alerts"] if a["cleared_at"] is None}
-    assert standing == {"high_severity_category"}
+    assert standing == {"high_severity_category", "negative_sentiment"}
     assert later["coverage"]["complaints"][0]["status"] == "probed"
 
     # Alerts stay with the call after it ends.
@@ -447,7 +516,10 @@ def test_the_live_view_lists_active_calls_for_supervisors_and_admins():
     assert live["complaints"] == [
         {"category": "Hygiene", "status": "detected", "confidence": 0.9}
     ]
-    assert [a["alert_type"] for a in live["alerts"]] == ["high_severity_category"]
+    assert sorted(a["alert_type"] for a in live["alerts"]) == [
+        "high_severity_category",
+        "negative_sentiment",
+    ]
     assert live["escalation_level"] == "watch"
     quiet = calls["quiet"]
     assert (quiet["sentiment"], quiet["complaints"], quiet["alerts"]) == (None, [], [])

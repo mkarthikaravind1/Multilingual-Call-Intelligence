@@ -1,5 +1,6 @@
 """Alerts on live calls, beyond escalation: a complaint not asked about, a
-severe category, a detection the model was unsure of, and poor audio.
+severe category, a detection the model was unsure of, poor audio, and a
+customer whose tone has turned negative.
 
 Each is a fixed rule over what the call already stores. They are shown on
 screen (the supervisor's live view and the executive's own call); nothing is
@@ -22,6 +23,7 @@ from app.domain.call_alert import (
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
+from app.domain.sentiment import SentimentLabel
 from app.services.live_state_store import InMemoryLiveStateStore, LiveStateStore
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,13 @@ _AUDIO_TTL_SECONDS = 4 * 3600.0
 # confidence (the one raised from unrecognised speech has none). Kept
 # apart because only the second can be judged without the transcript.
 LOW_TRANSCRIPTION_CONFIDENCE = "transcription confidence"
+# One per call: it follows the call's tone as the analysis last found it.
+_NEGATIVE_SENTIMENT = (CallAlertType.NEGATIVE_SENTIMENT, "")
+_TONE_MESSAGES = {
+    SentimentLabel.NEGATIVE: "The customer's tone is negative.",
+    SentimentLabel.FRUSTRATED: "The customer sounds frustrated.",
+    SentimentLabel.ESCALATING: "The customer's tone is escalating.",
+}
 
 
 @dataclass(frozen=True)
@@ -52,6 +61,8 @@ class AlertRules:
     # confidence (when the speech recogniser gives one) is below this.
     unrecognised_chunks: int = 3
     transcription_confidence_below: float = 0.6
+    # A negative tone the analysis is at least this sure of.
+    negative_sentiment_min_confidence: float = 0.6
 
     @staticmethod
     def from_settings(settings) -> "AlertRules":
@@ -65,6 +76,7 @@ class AlertRules:
             low_confidence_below=settings.alert_low_confidence_below,
             unrecognised_chunks=settings.alert_poor_audio_unrecognised_chunks,
             transcription_confidence_below=settings.alert_poor_audio_confidence_below,
+            negative_sentiment_min_confidence=settings.alert_negative_sentiment_min_confidence,
         )
 
 
@@ -145,20 +157,35 @@ class CallAlertService:
     # --- The alerts ---
 
     def refresh(
-        self, conversation: Conversation, coverage: ConversationCoverage | None
+        self,
+        conversation: Conversation,
+        coverage: ConversationCoverage | None,
+        sentiment=None,
     ) -> tuple[CallAlert, ...]:
         """Bring the call's alerts up to what is true now: raise the new
-        ones, clear the ones that no longer hold. Returns all of them."""
+        ones, clear the ones that no longer hold. Returns all of them.
+        sentiment: the call's tone as just analysed (a SentimentResult);
+        None when it is not known, which leaves a tone alert as it is."""
         now = self._clock()
         call_id = conversation.call_id
         true_now = self._complaint_conditions(coverage, now)
         true_now.update(self._poor_audio(conversation))
+        message = self._tone_message(sentiment)
+        if message is not None:
+            true_now[_NEGATIVE_SENTIMENT] = message
         stored = {
             (alert.alert_type, alert.subject): alert
             for alert in self._repository.list_for_calls([call_id]).get(call_id, ())
         }
-        self._settle(call_id, true_now, stored, now)
+        self._settle(
+            call_id, true_now, stored, now, leave=() if sentiment is not None else (_NEGATIVE_SENTIMENT,)
+        )
         return tuple(sorted(stored.values(), key=lambda a: a.raised_at))
+
+    def _tone_message(self, sentiment) -> str | None:
+        if sentiment is None or sentiment.confidence < self._rules.negative_sentiment_min_confidence:
+            return None
+        return _TONE_MESSAGES.get(sentiment.label)
 
     def sweep(
         self, call_ids: Iterable[str], coverages: Mapping[str, ConversationCoverage]
@@ -168,14 +195,15 @@ class CallAlertService:
         Some alerts become true just by time passing, or while nothing is
         being transcribed, so no analysis would raise them. The transcript
         is not read: an alert judged from it (LOW_TRANSCRIPTION_CONFIDENCE)
-        is left as it is. Returns the calls whose alerts changed."""
+        is left as it is, and so is the tone alert, which only an analysis
+        can judge. Returns the calls whose alerts changed."""
         ids = list(call_ids)
         if not ids:
             return set()
         now = self._clock()
         stored_alerts = self._repository.list_for_calls(ids)
         unrecognised = self._unrecognised_chunks_of(ids)
-        leave = {(CallAlertType.POOR_AUDIO, LOW_TRANSCRIPTION_CONFIDENCE)}
+        leave = {(CallAlertType.POOR_AUDIO, LOW_TRANSCRIPTION_CONFIDENCE), _NEGATIVE_SENTIMENT}
         changed = set()
         for call_id in ids:
             true_now = self._complaint_conditions(coverages.get(call_id), now)

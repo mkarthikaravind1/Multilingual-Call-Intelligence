@@ -110,7 +110,7 @@ export interface ComplaintDto {
 }
 
 // An on-screen alert on a call: uncovered_category, high_severity_category,
-// low_confidence or poor_audio.
+// low_confidence, poor_audio or negative_sentiment.
 export interface CallAlertDto {
   alert_type: string
   // The complaint category it is about; "" for the call itself.

@@ -3588,7 +3588,8 @@
   color: var(--color-text-muted);
 }
 
-.call-alerts__item--high_severity_category {
+.call-alerts__item--high_severity_category,
+.call-alerts__item--negative_sentiment {
   border-left-color: var(--tone-escalating);
 }
 

@@ -11,6 +11,8 @@ class CallAlertType(str, Enum):
     LOW_CONFIDENCE = "low_confidence"
     # The call's audio is hard to transcribe.
     POOR_AUDIO = "poor_audio"
+    # The customer's tone is negative, frustrated or escalating.
+    NEGATIVE_SENTIMENT = "negative_sentiment"
 
 
 @dataclass(frozen=True)

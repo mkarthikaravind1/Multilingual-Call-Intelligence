@@ -1,6 +1,6 @@
 # Where the system stands against the SRD
 
-Checked on 11 October 2026 against `main` at 6053cc2, requirement by
+Checked on 11 October 2026 against `main` at 6053cc2 (row 77 updated since), requirement by
 requirement, from "AI_Multilingual_CRM_SRD_Updated (2).docx". Each row was
 checked in the code and its tests, not from earlier notes.
 
@@ -11,7 +11,7 @@ yet (Plivo, the paid Groq key, the SMS gateway, a storage bucket, recordings
 in the other languages) or with real users and real load.
 **Not met**: missing or short of what the SRD says, with the reason.
 
-Totals: 121 requirements: 80 met, 25 waiting, 16 not met.
+Totals: 121 requirements: 81 met, 25 waiting, 15 not met.
 
 ## 1. Scope and users (SRD 1.2, 1.3)
 
@@ -113,7 +113,7 @@ Totals: 121 requirements: 80 met, 25 waiting, 16 not met.
 | 74 | Supervisor dashboard: live sentiment and category feeds across all active calls | Met | Built to hold 500 calls; proved with 500 seeded records in tests, not with 500 real calls. |
 | 75 | Call status: Incoming, Outgoing, Connected, On Hold, Ended | Met | Incoming and Outgoing ringing need a Plivo call to be seen. On Hold is what the executive marks in the web app. |
 | 76 | AI status: Listening, Transcribing, Classifying, Generating next question, Updating sentiment | Met | "Updating sentiment" is too brief to be seen, as one request does both. |
-| 77 | Alert: negative customer sentiment detected | Not met | A negative tone is shown (coloured line, tone panel, tone on Live Calls) and feeds the escalation level, but it raises no alert of its own. Small to add. |
+| 77 | Alert: negative customer sentiment detected | Met | Raised when the call's tone is negative, frustrated or escalating and the analysis is at least 60% sure (a setting); cleared when the customer calms down. |
 | 78 | Alert: escalation risk | Met | Escalation card and the Escalations queue. |
 | 79 | Alert: uncovered complaint category | Met | |
 | 80 | Alert: high-severity category | Met | Which categories count is a setting (Hygiene by default; the SRD's example also names safety, which is not one of the ten categories). |
@@ -191,7 +191,6 @@ Not what this kind of system does:
 
 Small, and could be built:
 
-- An alert of its own for negative sentiment (row 77).
 - Indian scripts in the PDF export (row 94): needs font files and a library downloaded.
 
 Needs something outside the software:

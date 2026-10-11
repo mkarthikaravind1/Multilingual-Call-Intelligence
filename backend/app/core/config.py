@@ -292,6 +292,9 @@ class Settings(BaseSettings):
     alert_high_severity_categories: str = "Hygiene"
     # A complaint detected with less confidence than this (0 to 1).
     alert_low_confidence_below: float = 0.6
+    # A negative, frustrated or escalating tone alerts when the analysis
+    # is at least this sure of it.
+    alert_negative_sentiment_min_confidence: float = 0.6
     # Poor audio: this many of the last 6 stretches of speech could not be
     # transcribed, or the last lines' average transcription confidence
     # (when the recogniser gives one) is below the second value.

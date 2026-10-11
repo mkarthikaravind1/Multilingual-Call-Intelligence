@@ -390,9 +390,7 @@ The full list, with the reason for each, closes `SRD-STATUS.md`. In short:
 - **Not what this system does:** training or retraining AI models (the
   models are Groq's and Sarvam's; the instructions given to them are what
   improves), and audio above 16 kHz.
-- **Small and not built:** an alert of its own for negative sentiment (the
-  tone is shown and feeds the escalation level), and Indian scripts in the
-  PDF export.
+- **Small and not built:** Indian scripts in the PDF export.
 - **Outside the software:** a data-protection review, and a measured
   figure for data reliability.
 
