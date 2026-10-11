@@ -34,6 +34,14 @@ export type EvidenceType =
   | 'outcome'
   | 'question_feedback'
 
+// GET /learning/corrections.
+export interface CorrectionsDto {
+  // What people corrected or rated, newest first.
+  corrections: LearningEvidenceDto[]
+  // Every record there is, the AI's own outputs included.
+  evidence_total: number
+}
+
 export interface LearningCandidateDto {
   candidate_id: string
   improvement_type: ImprovementType

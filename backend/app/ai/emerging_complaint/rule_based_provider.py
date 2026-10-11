@@ -1,6 +1,6 @@
 import hashlib
 import re
-from collections import defaultdict
+from dataclasses import dataclass, field
 
 from app.ai.emerging_complaint.provider import (
     CallComplaintRecord,
@@ -8,8 +8,9 @@ from app.ai.emerging_complaint.provider import (
     EmergingComplaintDiscoveryRequest,
 )
 from app.core.constants import COMPLAINT_CATEGORIES
+from app.domain.complaint_category import MAX_CUSTOM_CATEGORY_NAME_LENGTH
 from app.domain.emerging_complaint_candidate import EmergingComplaintCandidate
-from app.domain.utterance import SpeakerRole
+from app.domain.utterance import SpeakerRole, Utterance
 
 # A normalized phrase shorter than this many words is treated as too
 # generic/short (e.g. "ok", "thanks") to be a meaningful complaint pattern.
@@ -20,6 +21,9 @@ MIN_PHRASE_WORDS = 2
 MIN_RECURRING_CALLS = 2
 
 _NORMALIZED_CATEGORIES = frozenset(category.casefold() for category in COMPLAINT_CATEGORIES)
+# The category for a complaint that fits none of the others: a line under
+# it is exactly what a new theme is made of.
+_CATCH_ALL = "other"
 
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9\s]")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -47,14 +51,57 @@ def _stable_candidate_id(phrase: str) -> str:
 
 
 def _proposed_name(phrase: str) -> str:
-    return phrase.title()
+    """The opening words of the phrase, short enough to become a category
+    name as it stands."""
+    name = ""
+    for word in phrase.title().split():
+        longer = f"{name} {word}".strip()
+        if len(longer) > MAX_CUSTOM_CATEGORY_NAME_LENGTH - 1:
+            return f"{name}…" if name else word[: MAX_CUSTOM_CATEGORY_NAME_LENGTH]
+        name = longer
+    return name
 
 
-def _description(phrase: str, distinct_call_count: int) -> str:
-    return (
-        f"Similar customer complaint phrasing observed across "
-        f"{distinct_call_count} separate calls: \"{phrase}\"."
-    )
+def _description(distinct_call_count: int) -> str:
+    return f"Customers said this, in the same words, on {distinct_call_count} separate calls."
+
+
+@dataclass
+class _Phrase:
+    """One wording and where customers used it."""
+
+    call_ids: list[str] = field(default_factory=list)
+    # Each way it was written down, once.
+    quotes: list[str] = field(default_factory=list)
+    # The AI put a line with this wording under an existing category.
+    categorised: bool = False
+    # The AI rated a line with this wording, and found it unhappy at least once.
+    rated: bool = False
+    unhappy: bool = False
+
+    def add(self, call_id: str, utterance: Utterance) -> None:
+        self.call_ids.append(call_id)
+        if utterance.transcript not in self.quotes:
+            self.quotes.append(utterance.transcript)
+        categories = {category.casefold() for category in utterance.complaint_categories}
+        if categories - {_CATCH_ALL}:
+            self.categorised = True
+        elif categories:
+            self.unhappy = True
+        if utterance.sentiment is not None:
+            self.rated = True
+            self.unhappy = self.unhappy or utterance.sentiment.is_negative
+
+    @property
+    def is_new_complaint(self) -> bool:
+        """Not a complaint the categories already cover, and not small
+        talk: a wording the AI filed under a category on any call is
+        known, and one it rated without ever finding the customer unhappy
+        (a greeting, a registration number) is no complaint. A wording the
+        AI never rated is kept: there is nothing to judge it by."""
+        if self.categorised:
+            return False
+        return self.unhappy or not self.rated
 
 
 class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
@@ -67,35 +114,38 @@ class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProv
     grouped together; no embeddings, clustering, or LLM involved. A later
     milestone can swap in a smarter provider behind the same interface
     without this one needing to change.
+
+    What the AI already said about each line during the call (its
+    category and its tone) keeps known complaints and small talk out:
+    see _Phrase.is_new_complaint.
     """
 
     def discover(
         self, request: EmergingComplaintDiscoveryRequest
     ) -> tuple[EmergingComplaintCandidate, ...]:
-        call_ids_by_phrase: dict[str, list[str]] = defaultdict(list)
-        evidence_by_phrase: dict[str, list[str]] = defaultdict(list)
+        phrases: dict[str, _Phrase] = {}
 
         known = _NORMALIZED_CATEGORIES | {_normalize(name) for name in request.known_categories}
         for record in request.call_records:
-            self._collect_phrases(record, call_ids_by_phrase, evidence_by_phrase, known)
+            self._collect_phrases(record, phrases, known)
 
         total_calls = len(request.call_records)
         candidates = []
-        for phrase in sorted(call_ids_by_phrase):
-            call_ids = call_ids_by_phrase[phrase]
-            distinct_call_ids = sorted(set(call_ids))
-            if len(distinct_call_ids) < MIN_RECURRING_CALLS:
+        for wording in sorted(phrases):
+            phrase = phrases[wording]
+            distinct_call_ids = sorted(set(phrase.call_ids))
+            if len(distinct_call_ids) < MIN_RECURRING_CALLS or not phrase.is_new_complaint:
                 continue
 
             confidence = min(1.0, len(distinct_call_ids) / total_calls)
 
             candidates.append(
                 EmergingComplaintCandidate(
-                    candidate_id=_stable_candidate_id(phrase),
-                    proposed_name=_proposed_name(phrase),
-                    description=_description(phrase, len(distinct_call_ids)),
-                    evidence=tuple(evidence_by_phrase[phrase]),
-                    occurrence_count=len(call_ids),
+                    candidate_id=_stable_candidate_id(wording),
+                    proposed_name=_proposed_name(wording),
+                    description=_description(len(distinct_call_ids)),
+                    evidence=tuple(phrase.quotes),
+                    occurrence_count=len(phrase.call_ids),
                     confidence=confidence,
                     call_ids=tuple(distinct_call_ids),
                 )
@@ -106,8 +156,7 @@ class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProv
     def _collect_phrases(
         self,
         record: CallComplaintRecord,
-        call_ids_by_phrase: dict[str, list[str]],
-        evidence_by_phrase: dict[str, list[str]],
+        phrases: dict[str, _Phrase],
         known_categories: frozenset[str] = _NORMALIZED_CATEGORIES,
     ) -> None:
         for utterance in record.utterances:
@@ -123,5 +172,4 @@ class RuleBasedEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProv
             if len(normalized.split()) < MIN_PHRASE_WORDS:
                 continue
 
-            call_ids_by_phrase[normalized].append(record.call_id)
-            evidence_by_phrase[normalized].append(utterance.transcript)
+            phrases.setdefault(normalized, _Phrase()).add(record.call_id, utterance)

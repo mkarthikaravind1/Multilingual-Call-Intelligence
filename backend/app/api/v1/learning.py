@@ -99,6 +99,13 @@ def list_evidence(
     customer name and vehicle."""
     evidence = service.list_evidence(limit, offset)
     response.headers["X-Total-Count"] = str(service.count_evidence())
+    return _evidence_responses(evidence, call_customer_service)
+
+
+def _evidence_responses(
+    evidence, call_customer_service: CallCustomerService | None
+) -> list[LearningEvidenceResponse]:
+    """Each record with its call's stored customer name and vehicle."""
     links = (
         call_customer_service.stored_links({e.call_id for e in evidence})
         if call_customer_service is not None
@@ -116,6 +123,30 @@ def list_evidence(
             )
         )
     return responses
+
+
+class CorrectionsResponse(BaseModel):
+    # What people corrected or rated, newest first.
+    corrections: list[LearningEvidenceResponse]
+    # Every record there is, the AI's own outputs included.
+    evidence_total: int
+
+
+@router.get("/corrections", response_model=CorrectionsResponse)
+def list_corrections(
+    service: LearningManagementService = Depends(get_learning_service),
+    call_customer_service: CallCustomerService | None = Depends(
+        get_optional_call_customer_service
+    ),
+    _: User = Depends(get_current_user),
+) -> CorrectionsResponse:
+    """The part of the evidence a person reads: where someone corrected
+    the AI or rated what it suggested. The rest (one record per AI output)
+    is counted, not listed."""
+    return CorrectionsResponse(
+        corrections=_evidence_responses(service.list_corrections(), call_customer_service),
+        evidence_total=service.count_evidence(),
+    )
 
 
 # --- Human feedback on a call's AI output ---

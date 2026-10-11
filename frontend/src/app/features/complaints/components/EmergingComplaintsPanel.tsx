@@ -35,8 +35,8 @@ const STATUS_LABELS: Record<EmergingComplaintStatus, string> = {
   rejected: 'Rejected',
 }
 
-const EVIDENCE_PREVIEW = 3
-const CALL_LINK_PREVIEW = 6
+// A theme reaches a reviewer once it has come up on this many calls.
+const MIN_CALLS_TO_REVIEW = 3
 
 function describeRun(run: DiscoveryRunDto): ReactNode {
   const when = <RecordTime seconds={run.ran_at} />
@@ -62,7 +62,7 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
   const [note, setNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showAllEvidence, setShowAllEvidence] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
   // Accepting: the category the theme becomes (editable; the previous
   // name if it was accepted before, else the proposed name).
   const [categoryName, setCategoryName] = useState('')
@@ -109,9 +109,9 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
     }
   }
 
-  const evidence = showAllEvidence
-    ? candidate.evidence
-    : candidate.evidence.slice(0, EVIDENCE_PREVIEW)
+  // Each wording once: the same sentence from several calls is one quote.
+  const quotes = [...new Set(candidate.evidence)]
+  const callCount = candidate.call_ids.length || candidate.occurrence_count
   const noteId = `emerging-note-${candidate.candidate_id}`
   const nameId = `emerging-category-${candidate.candidate_id}`
   const descriptionId = `emerging-category-description-${candidate.candidate_id}`
@@ -123,12 +123,13 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
         <strong className="list-card__title">{candidate.proposed_name}</strong>
         <div className="list-card__meta">
           <span className="badge">
-            {candidate.call_ids.length || candidate.occurrence_count} calls
+            {callCount} call{callCount === 1 ? '' : 's'}
           </span>
-          <span className="badge">{Math.round(candidate.confidence * 100)}% confidence</span>
-          <span className={`badge ${STATUS_BADGES[candidate.status]}`}>
-            {STATUS_LABELS[candidate.status]}
-          </span>
+          {candidate.status !== 'pending_review' && (
+            <span className={`badge ${STATUS_BADGES[candidate.status]}`}>
+              {STATUS_LABELS[candidate.status]}
+            </span>
+          )}
           {detectedAs && (
             <span className="badge badge--approved" title="New calls are checked for this category">
               Detected as: {detectedAs}
@@ -146,50 +147,56 @@ function CandidateCard({ candidate, canReview, onReviewed }: CandidateCardProps)
       )}
 
       <ul className="escalation-card__signals">
-        {evidence.map((quote, index) => (
-          <li key={`${index}-${quote}`}>
+        {(showDetails ? quotes : quotes.slice(0, 1)).map((quote) => (
+          <li key={quote}>
             <q>{quote}</q>
           </li>
         ))}
       </ul>
-      {candidate.evidence.length > EVIDENCE_PREVIEW && (
-        <button
-          type="button"
-          className="text-link customer-panel__more"
-          onClick={() => setShowAllEvidence((current) => !current)}
-        >
-          {showAllEvidence ? 'Show fewer quotes' : `Show all ${candidate.evidence.length} quotes`}
-        </button>
-      )}
 
-      <div className="list-card__facts">
-        {candidate.related_category && <span>Related to: {candidate.related_category}</span>}
-        <span>First seen: <RecordTime seconds={candidate.first_seen_at} /></span>
-        <span>Last seen: <RecordTime seconds={candidate.last_seen_at} /></span>
-        {candidate.call_ids.length > 0 && (
-          <span>
-            Calls:{' '}
-            {candidate.call_ids.slice(0, CALL_LINK_PREVIEW).map((callId, index) => (
-              <span key={callId}>
-                {index > 0 && ', '}
+      <button
+        type="button"
+        className="text-link customer-panel__more"
+        aria-expanded={showDetails}
+        onClick={() => setShowDetails((current) => !current)}
+      >
+        {showDetails
+          ? 'Hide details'
+          : quotes.length > 1
+            ? `Show the calls and ${quotes.length - 1} more wording${quotes.length === 2 ? '' : 's'}`
+            : 'Show the calls'}
+      </button>
+
+      {showDetails && (
+        <div className="list-card__facts">
+          {candidate.related_category && <span>Related to: {candidate.related_category}</span>}
+          <span>First seen: <RecordTime seconds={candidate.first_seen_at} /></span>
+          <span>Last seen: <RecordTime seconds={candidate.last_seen_at} /></span>
+          {candidate.call_ids.length > 0 && (
+            <span className="theme-card__calls">
+              Calls:
+              {candidate.call_ids.map((callId, index) => (
                 <Link
+                  key={callId}
                   className="text-link"
                   to={`/post-call-analysis?call_id=${encodeURIComponent(callId)}`}
+                  title={`Call ${callId}`}
                 >
-                  {callId}
+                  {index + 1}
                 </Link>
-              </span>
-            ))}
-            {candidate.call_ids.length > CALL_LINK_PREVIEW &&
-              ` and ${candidate.call_ids.length - CALL_LINK_PREVIEW} more`}
-          </span>
-        )}
-        {candidate.reviewed_by && candidate.reviewed_at !== null && (
+              ))}
+            </span>
+          )}
+        </div>
+      )}
+
+      {candidate.reviewed_by && candidate.reviewed_at !== null && (
+        <div className="list-card__facts">
           <span>
             Reviewed by {candidate.reviewed_by}, <RecordTime seconds={candidate.reviewed_at} />
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {candidate.review_note && (
         <p className="summary-delivery__message">{candidate.review_note}</p>
@@ -310,10 +317,12 @@ type EmergingComplaintsPanelProps = {
 }
 
 // Complaint themes that recur across calls but match no known category.
+// Weak ones (too few calls, or no longer found) are held back by the server.
 export function EmergingComplaintsPanel({ canReview }: EmergingComplaintsPanelProps) {
   const [filter, setFilter] = useState<Filter>('pending_review')
   const [candidates, setCandidates] = useState<EmergingComplaintDto[]>([])
   const [lastRun, setLastRun] = useState<DiscoveryRunDto | null>(null)
+  const [hiddenPending, setHiddenPending] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -325,9 +334,10 @@ export function EmergingComplaintsPanel({ canReview }: EmergingComplaintsPanelPr
       )
       setCandidates(data.candidates)
       setLastRun(data.last_run)
+      setHiddenPending(data.hidden_pending ?? 0)
       setError(null)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to load emerging complaints.')
+      setError(err instanceof ApiError ? err.message : 'Unable to load the themes.')
     } finally {
       setIsLoading(false)
     }
@@ -373,10 +383,10 @@ export function EmergingComplaintsPanel({ canReview }: EmergingComplaintsPanelPr
     <section className="panel">
       <div className="section-heading">
         <div>
-          <h3 className="section-title">Emerging complaints</h3>
+          <h3 className="section-title">New complaint themes</h3>
           <p className="customer-panel__muted">
-            Complaint themes that recur across completed calls but match none of the known
-            categories.
+            Things customers keep complaining about that fit none of the complaint categories.
+            Accepting a theme makes it a category, so calls are checked for it from then on.
           </p>
         </div>
         {canReview && (
@@ -386,13 +396,13 @@ export function EmergingComplaintsPanel({ canReview }: EmergingComplaintsPanelPr
             disabled={isDiscovering}
             onClick={() => void handleDiscover()}
           >
-            {isDiscovering ? 'Looking for themes…' : 'Run discovery now'}
+            {isDiscovering ? 'Looking for themes…' : 'Look for themes now'}
           </button>
         )}
       </div>
 
       <div className="section-heading">
-        <div className="button-row" role="tablist" aria-label="Emerging complaint status">
+        <div className="button-row" role="tablist" aria-label="Theme status">
           {FILTERS.map((item) => (
             <button
               key={item.value}
@@ -414,17 +424,17 @@ export function EmergingComplaintsPanel({ canReview }: EmergingComplaintsPanelPr
         {lastRun && <span className="customer-panel__muted">{describeRun(lastRun)}</span>}
       </div>
 
-      {isLoading && <StatePanel compact variant="loading" title="Loading emerging complaints…" />}
+      {isLoading && <StatePanel compact variant="loading" title="Loading themes…" />}
 
       {!isLoading && error && (
-        <StatePanel compact variant="error" title="Could not load emerging complaints" description={error} />
+        <StatePanel compact variant="error" title="Could not load the themes" description={error} />
       )}
 
       {!isLoading && !error && candidates.length === 0 && (
         <StatePanel
           compact
           title={filter === 'pending_review' ? 'Nothing to review' : 'No themes here'}
-          description="Discovery runs after every completed call. A theme appears once customers raise the same issue on at least two calls."
+          description={`The search runs after every completed call. A theme appears once customers raise the same issue on at least ${MIN_CALLS_TO_REVIEW} calls.`}
         />
       )}
 
@@ -439,6 +449,14 @@ export function EmergingComplaintsPanel({ canReview }: EmergingComplaintsPanelPr
             />
           ))}
         </div>
+      )}
+
+      {!isLoading && !error && hiddenPending > 0 && (filter === 'pending_review' || filter === 'all') && (
+        <p className="customer-panel__muted">
+          {hiddenPending} weaker theme{hiddenPending === 1 ? ' is' : 's are'} not shown: raised on
+          fewer than {MIN_CALLS_TO_REVIEW} calls, or no longer found by the latest search. They
+          come back if they are found again on enough calls.
+        </p>
       )}
     </section>
   )

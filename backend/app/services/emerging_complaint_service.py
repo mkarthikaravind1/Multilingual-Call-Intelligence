@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 # Discovery needs the theme to recur across calls.
 MIN_CALLS_FOR_DISCOVERY = 2
+# A theme is put to a reviewer once it has come up on this many calls.
+MIN_CALLS_TO_REVIEW = 3
 # Quotes kept per candidate; the rule-based provider returns every match.
 MAX_EVIDENCE_PER_CANDIDATE = 10
 _PAGE_SIZE = 100
@@ -253,14 +255,32 @@ class EmergingComplaintService:
     def list_candidates(
         self, status: EmergingComplaintReviewStatus | None = None
     ) -> tuple[EmergingComplaintCandidate, ...]:
-        """Most widespread first, then the most recently seen."""
-        statuses = tuple(EmergingComplaintReviewStatus) if status is None else (status,)
+        """Most widespread first, then the most recently seen. A theme
+        still waiting for review is left out while it is weak (see
+        hidden_pending_count); one a person has decided on always shows."""
+        everything = self._repository.list_by_status(tuple(EmergingComplaintReviewStatus))
+        latest_find = max((c.last_seen_at for c in everything), default=0.0)
         return tuple(
             sorted(
-                self._repository.list_by_status(statuses),
+                (
+                    c
+                    for c in everything
+                    if (status is None or c.status is status)
+                    and not _is_weak(c, latest_find)
+                ),
                 key=lambda c: (-len(c.call_ids), -c.occurrence_count, -c.last_seen_at),
             )
         )
+
+    def hidden_pending_count(self) -> int:
+        """Themes waiting for review that are not shown: seen on fewer
+        than MIN_CALLS_TO_REVIEW calls, or no longer found by the search
+        (the calls they came from are too old, or the AI has since filed
+        their wording under a category). They are kept and come back if
+        the search finds them again on enough calls."""
+        everything = self._repository.list_by_status(tuple(EmergingComplaintReviewStatus))
+        latest_find = max((c.last_seen_at for c in everything), default=0.0)
+        return sum(1 for c in everything if _is_weak(c, latest_find))
 
     def review(
         self,
@@ -333,6 +353,15 @@ class EmergingComplaintService:
                 if len(records) >= self._max_calls:
                     break
         return tuple(records)
+
+
+def _is_weak(candidate: EmergingComplaintCandidate, latest_find: float) -> bool:
+    """Whether a theme is not yet (or no longer) worth a reviewer's time.
+    latest_find: when the search last found any theme at all."""
+    if candidate.status is not EmergingComplaintReviewStatus.PENDING_REVIEW:
+        return False
+    calls = len(candidate.call_ids) or candidate.occurrence_count
+    return calls < MIN_CALLS_TO_REVIEW or candidate.last_seen_at < latest_find
 
 
 def _trim_evidence(candidate: EmergingComplaintCandidate) -> EmergingComplaintCandidate:

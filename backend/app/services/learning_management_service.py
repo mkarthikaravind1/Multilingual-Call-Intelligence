@@ -198,6 +198,16 @@ class LearningManagementService:
     def count_evidence(self) -> int:
         return self._evidence_service.count()
 
+    def list_corrections(self) -> tuple[LearningEvidence, ...]:
+        """Evidence that carries a person's judgement, newest first."""
+        return tuple(
+            sorted(
+                self._evidence_service.list_judged(),
+                key=lambda e: (e.created_at, e.evidence_id),
+                reverse=True,
+            )
+        )
+
     # --- Feedback on a call's AI output ---
 
     def list_call_observations(self, call_id: str) -> tuple[CallObservation, ...]:

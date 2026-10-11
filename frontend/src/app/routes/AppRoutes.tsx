@@ -152,7 +152,7 @@ export function AppRoutes() {
         element={
           <ProtectedRoute>
             <StaffOnly>
-              <AppShell title="AI Improvement Center" subtitle="Learning evidence, patterns and improvement review">
+              <AppShell title="AI Improvement Center" subtitle="What the AI has been taught, and what is waiting for review">
                 <AiImprovementCenterPage />
               </AppShell>
             </StaffOnly>

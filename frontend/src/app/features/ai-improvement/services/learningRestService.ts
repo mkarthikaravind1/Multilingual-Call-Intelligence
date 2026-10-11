@@ -3,6 +3,7 @@ import { apiClient } from '../../../api/client'
 import type {
   ActiveImprovementDto,
   CallObservationDto,
+  CorrectionsDto,
   LearningCandidateDto,
   LearningEvidenceDto,
   LearningFeedbackDto,
@@ -55,6 +56,10 @@ export const learningRestService = {
     return apiClient.get<LearningEvidenceDto[]>(
       `${basePath}/evidence`,
     )
+  },
+
+  async listCorrections(): Promise<CorrectionsDto> {
+    return apiClient.get<CorrectionsDto>(`${basePath}/corrections`)
   },
 
   async listCallObservations(

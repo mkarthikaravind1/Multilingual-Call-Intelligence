@@ -273,9 +273,17 @@ flowchart LR
 
 Each piece of feedback records the user who gave it.
 
-The AI Improvement Center also hosts emerging-complaint review:
+The AI Improvement Center has three parts for a supervisor (Improvements,
+New complaint themes, Corrections); an executive sees a short read-only
+version of the first. Corrections lists only what people corrected or
+rated: the AI's own outputs are counted, not listed.
+
+New complaint themes is the emerging-complaint review:
 discovery finds themes recurring across calls that match no known
-category and supervisors accept or reject them. Accepting a theme makes it
+category and supervisors accept or reject them. A theme is shown once it
+has come up on three calls and while the latest search still finds it;
+the rule-based search leaves out wording the AI already filed under a
+category and lines it never found unhappy. Accepting a theme makes it
 a complaint category: the supervisor names it (up to 40 characters) and
 says what counts as it, and from then on complaint detection reports it
 on new calls, next questions follow it up, and it appears in the
@@ -566,7 +574,7 @@ With the backend running, interactive OpenAPI docs are at
 | Telephony | `POST /telephony/plivo/answer`, `POST /telephony/plivo/status`, `POST /telephony/plivo/dial`, `WS /calls/{id}/telephony-stream?token=…` |
 | Complaints | `/complaints`, `/calls/{id}/complaints`, `/emerging-complaints` (+ `/discover`, `/{id}/review`) |
 | Escalations | `GET /escalations`, `POST /escalations/{call_id}/acknowledge`, `/resolve` |
-| Learning | `/learning/candidates` (+ approve/reject), `/learning/patterns`, `/learning/evidence`, `/learning/calls/{id}/observations`, `/learning/calls/{id}/feedback`, `/learning/improvements`, `/learning/training-data` (+ `/export`: every judged AI output with its transcript as JSON Lines, for fine-tuning a model elsewhere; admins only) |
+| Learning | `/learning/candidates` (+ approve/reject), `/learning/patterns`, `/learning/evidence`, `/learning/corrections` (only what people corrected or rated, plus the count of all records), `/learning/calls/{id}/observations`, `/learning/calls/{id}/feedback`, `/learning/improvements`, `/learning/training-data` (+ `/export`: every judged AI output with its transcript as JSON Lines, for fine-tuning a model elsewhere; admins only) |
 | Admin | `/admin/users`, `/admin/locations`, `/admin/complaint-categories`, `/admin/post-call` (+ repair/retry), `/admin/report-layout` (GET/PUT: the company name and title on the exported complaint report, its sections in order, and the columns of its list of complaints) |
 | Live view and alerts | `GET /live-calls` (every active call with tone, complaints, escalation and standing alerts; supervisors only), `GET/POST /calls/{id}/question-outcomes` (a suggested question accepted or skipped). A call's analysis carries its alerts (complaint not asked about, severe category, low confidence, poor audio; thresholds are the `ALERT_*` settings) and each complaint's confidence. On screen only: nothing is sent. |
 | Reports | `GET /reports/complaints` (category totals, trend by day or week, category by location, root causes), `GET /reports/complaints/export?format=csv\|xlsx\|pdf`; filters: dates, location, executive, category, tone, direction. Supervisors, admins and management users. `GET /reports/performance` (+ `/export?format=csv\|xlsx`): estimates by fixed rules (coverage score, First Call Resolution, repeat complaints, churn risk, CSAT) overall and per executive; the rules are in `app/services/performance.py` and on the page. |

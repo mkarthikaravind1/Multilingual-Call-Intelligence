@@ -178,6 +178,7 @@ def list_emerging_complaints(
             for candidate in service.list_candidates(status)
         ],
         last_run=to_discovery_run_response(service.last_run),
+        hidden_pending=service.hidden_pending_count(),
     )
 
 

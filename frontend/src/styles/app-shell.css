@@ -2705,6 +2705,21 @@
   color: var(--evidence-tone);
 }
 
+/* A correction on one line: what the AI said, then what it became. */
+.correction-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+/* A theme's calls as numbered links. */
+.theme-card__calls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
 .evidence-filter {
   margin: 0 0 var(--space-3);
   padding: 0;
@@ -3366,6 +3381,9 @@
   display: flex;
   gap: var(--space-2);
   border-bottom: 1px solid var(--color-border);
+  /* Three tabs are wider than a phone: they scroll, the page does not. */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .report-views__tab {
@@ -3379,6 +3397,8 @@
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
+  flex: none;
+  white-space: nowrap;
 }
 
 .report-views__tab--active {

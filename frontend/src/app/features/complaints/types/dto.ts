@@ -121,4 +121,7 @@ export interface EmergingComplaintsDto {
   candidates: EmergingComplaintDto[]
   // null until discovery has run since the server started.
   last_run: DiscoveryRunDto | null
+  // Themes waiting for review that are left out: raised on too few calls,
+  // or no longer found by the search.
+  hidden_pending: number
 }

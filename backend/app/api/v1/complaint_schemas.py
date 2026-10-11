@@ -121,6 +121,9 @@ class EmergingComplaintsResponse(BaseModel):
     candidates: list[EmergingComplaintResponse]
     # None until discovery has run since the server started.
     last_run: DiscoveryRunResponse | None
+    # Themes waiting for review that are left out: seen on too few calls,
+    # or no longer found by the search.
+    hidden_pending: int = 0
 
 
 class ReviewEmergingComplaintRequest(_Request):
