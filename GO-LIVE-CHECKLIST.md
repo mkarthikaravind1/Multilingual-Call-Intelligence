@@ -365,8 +365,8 @@ migration 0020 (an index the page's query uses).
   the call screen). Plivo does not report a hold made on the handset: the
   call then stays "Connected" and hold music may be transcribed.
 
-- **Speaker roles on a single mixed stream.** In four replays on
-  11 October 2026 (two English, two Tamil-English, 47 lines) every line
+- **Speaker roles on a single mixed stream.** In five replays on
+  11 October 2026 (three English, two Tamil-English, 56 lines) every line
   got the right speaker except where a quick reply was joined to the
   other person's line: "When did you notice it? The same evening itself."
   is stored as one line with one speaker. The speech recogniser gives
