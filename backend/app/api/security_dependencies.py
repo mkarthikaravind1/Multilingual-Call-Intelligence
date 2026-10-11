@@ -4,10 +4,12 @@ import time
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.api.dependencies import get_user_repository
+from app.api.dependencies import get_call_service, get_user_repository
+from app.domain.conversation import ConversationStatus
 from app.domain.user import User, UserRole
 from app.domain.user_repository import UserRepository
 from app.security.jwt import TokenError, decode_access_token
+from app.services.call_service import CallService
 from app.security.stream_token import read_live_call_ticket
 from starlette.websockets import WebSocket
 
@@ -53,20 +55,58 @@ def get_current_session(
     return user, payload
 
 
-def get_current_user(session: tuple[User, dict] = Depends(get_current_session)) -> User:
+_FORBIDDEN = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="You do not have permission to perform this action.",
+)
+
+# The roles that work on calls. A management user is not among them: they
+# are let in only where an endpoint names their role (see require_roles
+# and get_finished_call_reader), so a new endpoint is closed to them
+# unless it says otherwise.
+STAFF_ROLES = (UserRole.ICR, UserRole.SUPERVISOR, UserRole.ADMIN)
+REPORT_READERS = (UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.MANAGEMENT)
+
+
+def get_signed_in_user(session: tuple[User, dict] = Depends(get_current_session)) -> User:
+    """Whoever is signed in, in any role."""
     return session[0]
 
 
+def get_current_user(user: User = Depends(get_signed_in_user)) -> User:
+    """The signed-in member of staff (an ICR, a supervisor or an admin)."""
+    if user.role not in STAFF_ROLES:
+        raise _FORBIDDEN
+    return user
+
+
 def require_roles(*roles: UserRole):
-    def _check(user: User = Depends(get_current_user)) -> User:
+    def _check(user: User = Depends(get_signed_in_user)) -> User:
         if user.role not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to perform this action.",
-            )
+            raise _FORBIDDEN
         return user
 
     return _check
+
+
+def get_finished_call_reader(
+    call_id: str,
+    user: User = Depends(get_signed_in_user),
+    call_service: CallService = Depends(get_call_service),
+) -> User:
+    """Who may read this call: staff, any call; a management user, a call
+    that has ended (they open it from a report, never while it is live)."""
+    if user.role in STAFF_ROLES:
+        return user
+    if user.role is not UserRole.MANAGEMENT:
+        raise _FORBIDDEN
+    # An unknown call raises as it does for everyone (404).
+    if call_service.get_call(call_id).status != ConversationStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This call can be opened once it has ended.",
+        )
+    return user
 
 def authenticate_live_call_ws(websocket: WebSocket, call_id: str) -> User | None:
     """Authenticate a live-call WebSocket by its `?ticket=` (see
@@ -89,7 +129,7 @@ def authenticate_live_call_ws(websocket: WebSocket, call_id: str) -> User | None
     if user_repository is None:
         return None
     user = user_repository.get_by_id(claims.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.role not in STAFF_ROLES:
         return None
 
     # Single use, across every instance: the first connection marks the

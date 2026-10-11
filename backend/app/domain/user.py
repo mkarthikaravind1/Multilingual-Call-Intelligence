@@ -6,6 +6,9 @@ class UserRole(str, Enum):
     ICR = "ICR"
     SUPERVISOR = "SUPERVISOR"
     ADMIN = "ADMIN"
+    # Reads reports and the finished calls behind them; takes no part in
+    # calls and changes nothing.
+    MANAGEMENT = "MANAGEMENT"
 
 
 @dataclass(frozen=True)

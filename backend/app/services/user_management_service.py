@@ -78,6 +78,9 @@ class UserManagementService:
                 raise EmailAlreadyRegisteredError(f"Email already registered: {email!r}.")
             # Checked before the user exists, so a bad value leaves no user behind.
             display_name = _display_name(display_name)
+            if role is UserRole.MANAGEMENT:
+                # Takes no calls: no service centre to answer at, no phone to ring.
+                location_id = dial_target = None
             location_id = self._location_id(location_id)
             dial_target = self._free_dial_target(dial_target, None)
             user = self._auth.register(email, password, role)
@@ -141,6 +144,9 @@ class UserManagementService:
                     else self._free_dial_target(dial_target, user.user_id)
                 ),
             )
+            if new_role is UserRole.MANAGEMENT:
+                # As in create_user: a management user is never rung.
+                updated = dataclasses.replace(updated, location_id=None, dial_target=None)
             self._repository.save(updated)
         logger.info(
             "%s updated user %s: role=%s active=%s",

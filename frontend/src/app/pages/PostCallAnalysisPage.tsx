@@ -51,6 +51,13 @@ export function PostCallAnalysisPage() {
   const { session } = useAuth()
   const canManageEscalations =
     session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
+  // A management user comes here from a report and only reads: the
+  // transcript, the summary and the audit.
+  const isManagement = session?.role === 'MANAGEMENT'
+  const canSeeAudit = canManageEscalations || isManagement
+  const home = isManagement
+    ? { to: '/reports', label: 'Back to reports', name: 'the reports' }
+    : { to: '/dashboard', label: 'Back to dashboard', name: 'the dashboard' }
 
   const [call, setCall] = useState<CallMetadataViewModel | null>(null)
   const [analysis, setAnalysis] = useState<CallAnalysisViewModel | null>(null)
@@ -224,8 +231,8 @@ export function PostCallAnalysisPage() {
     <section className="page-shell">
       {callId && (
         <div className="page-shell__header page-shell__header--actions">
-          <Link className="button button--secondary" to="/dashboard">
-            Back to dashboard
+          <Link className="button button--secondary" to={home.to}>
+            {home.label}
           </Link>
         </div>
       )}
@@ -233,10 +240,10 @@ export function PostCallAnalysisPage() {
       {!callId && (
         <StatePanel
           title="No call selected"
-          description="Choose a call on the dashboard to review its transcript, complaints, service estimate and post-call summary."
+          description={`Choose a call from ${home.name} to review its transcript, complaints, service estimate and post-call summary.`}
           action={
-            <Link className="button" to="/dashboard">
-              Go to dashboard
+            <Link className="button" to={home.to}>
+              {home.label}
             </Link>
           }
         />
@@ -278,7 +285,7 @@ export function PostCallAnalysisPage() {
                     AI log for this call
                   </Link>
                 )}
-                {isActiveCall && (
+                {isActiveCall && !isManagement && (
                   <button
                     type="button"
                     className="button"
@@ -337,7 +344,7 @@ export function PostCallAnalysisPage() {
                   setAnalysis((current) => (current ? { ...current, escalation } : current))
                 }
               />
-              <CustomerPanel callId={call.callId} />
+              {!isManagement && <CustomerPanel callId={call.callId} />}
               <section className="panel">
                 <p className="panel__label">Service estimate</p>
                 <ServiceEstimatePanel
@@ -353,28 +360,34 @@ export function PostCallAnalysisPage() {
             </aside>
           </div>
 
-          <CallComplaintsPanel
-            callId={call.callId}
-            isCallActive={isActiveCall}
-            refreshToken={call.status}
-          />
+          {!isManagement && (
+            <CallComplaintsPanel
+              callId={call.callId}
+              isCallActive={isActiveCall}
+              refreshToken={call.status}
+            />
+          )}
 
-          {canManageEscalations && (
+          {canSeeAudit && (
             <CallAuditPanel callId={call.callId} refreshToken={`${call.status}:${hasSummary}`} />
           )}
 
-          <AiReviewPanel callId={call.callId} />
+          {!isManagement && (
+            <>
+              <AiReviewPanel callId={call.callId} />
 
-          <section className="panel">
-            <p className="panel__label">Customer follow-up</p>
-            <div className="integration-grid">
-              <SummaryDeliveryPanel
-                callId={call.callId}
-                isCallActive={isActiveCall}
-                refreshToken={`${call.status}:${hasSummary}`}
-              />
-            </div>
-          </section>
+              <section className="panel">
+                <p className="panel__label">Customer follow-up</p>
+                <div className="integration-grid">
+                  <SummaryDeliveryPanel
+                    callId={call.callId}
+                    isCallActive={isActiveCall}
+                    refreshToken={`${call.status}:${hasSummary}`}
+                  />
+                </div>
+              </section>
+            </>
+          )}
         </>
       )}
     </section>

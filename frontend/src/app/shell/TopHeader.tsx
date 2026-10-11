@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   ICR: 'ICR',
   SUPERVISOR: 'Supervisor',
   ADMIN: 'Admin',
+  MANAGEMENT: 'Management',
 }
 
 function subscribeToDrawerLayout(onChange: () => void) {

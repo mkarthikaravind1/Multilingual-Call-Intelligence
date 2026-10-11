@@ -1,4 +1,5 @@
-export const AUTH_ROLES = ['ICR', 'SUPERVISOR', 'ADMIN'] as const
+// MANAGEMENT reads reports and the finished calls behind them, nothing else.
+export const AUTH_ROLES = ['ICR', 'SUPERVISOR', 'ADMIN', 'MANAGEMENT'] as const
 
 export type UserRole = (typeof AUTH_ROLES)[number]
 

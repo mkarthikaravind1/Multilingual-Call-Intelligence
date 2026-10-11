@@ -9,7 +9,11 @@ from app.api.dependencies import (
     get_emerging_complaint_service,
     get_optional_call_customer_service,
 )
-from app.api.security_dependencies import get_current_user, require_roles
+from app.api.security_dependencies import (
+    get_current_user,
+    get_signed_in_user,
+    require_roles,
+)
 from app.api.v1.complaint_schemas import (
     CallComplaintsResponse,
     ComplaintActionRequest,
@@ -88,10 +92,11 @@ def list_complaints(
 @router.get("/categories", response_model=list[ComplaintCategoryResponse])
 def list_complaint_categories(
     catalog: ComplaintCategoryCatalog = Depends(get_complaint_category_catalog),
-    _: User = Depends(get_current_user),
+    _: User = Depends(get_signed_in_user),
 ) -> list[ComplaintCategoryResponse]:
     """The categories detection reports now: built-ins, then accepted
-    emerging themes by name, then "Other"."""
+    emerging themes by name, then "Other". Reports filter by them, so
+    every role may read them."""
     return [to_complaint_category_response(c) for c in catalog.categories()]
 
 

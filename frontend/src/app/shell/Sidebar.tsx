@@ -25,6 +25,10 @@ const supervisorRoleNavItems: NavItem[] = [
   { to: '/price-list', label: 'Price List', icon: 'price-list' },
 ]
 
+const managementNavItems: NavItem[] = [
+  { to: '/reports', label: 'Reports', icon: 'reports' },
+]
+
 const adminNavItems: NavItem[] = [
   { to: '/administration', label: 'Administration', icon: 'administration' },
 ]
@@ -32,8 +36,10 @@ const adminNavItems: NavItem[] = [
 export function Sidebar() {
   const { session } = useAuth()
   const { isSidebarCollapsed, isDrawerOpen, closeDrawer } = useShellLayout()
+  // A management user has the reports and nothing else.
+  const isManagement = session?.role === 'MANAGEMENT'
   const visibleItems = [
-    ...navItems,
+    ...(isManagement ? managementNavItems : navItems),
     ...(session?.role === 'SUPERVISOR' || session?.role === 'ADMIN' ? supervisorNavItems : []),
     ...(session?.role === 'SUPERVISOR' ? supervisorRoleNavItems : []),
     ...(session?.role === 'ADMIN' ? adminNavItems : []),

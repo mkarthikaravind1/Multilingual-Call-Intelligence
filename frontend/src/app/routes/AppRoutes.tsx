@@ -55,6 +55,21 @@ function RootRedirect() {
   return <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />
 }
 
+// The pages for people who work on calls. A management user is sent to the
+// reports, the one place they have (every other guard sends a user it
+// refuses to the dashboard, which brings them here).
+function StaffOnly({ children }: { children: ReactNode }) {
+  const { session } = useAuth()
+  return session?.role === 'MANAGEMENT' ? <Navigate to="/reports" replace /> : <>{children}</>
+}
+
+function ReportReaders({ children }: { children: ReactNode }) {
+  const { session } = useAuth()
+  const allowed =
+    session?.role === 'SUPERVISOR' || session?.role === 'ADMIN' || session?.role === 'MANAGEMENT'
+  return allowed ? <>{children}</> : <Navigate to="/dashboard" replace />
+}
+
 function AdminOnly({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   return session?.role === 'ADMIN' ? <>{children}</> : <Navigate to="/dashboard" replace />
@@ -81,9 +96,11 @@ export function AppRoutes() {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <AppShell title="Dashboard" subtitle="Customer intelligence overview">
-              <DashboardPage />
-            </AppShell>
+            <StaffOnly>
+              <AppShell title="Dashboard" subtitle="Customer intelligence overview">
+                <DashboardPage />
+              </AppShell>
+            </StaffOnly>
           </ProtectedRoute>
         }
       />
@@ -91,7 +108,9 @@ export function AppRoutes() {
         path="/live-call"
         element={
           <ProtectedRoute>
-            <LiveCallShell />
+            <StaffOnly>
+              <LiveCallShell />
+            </StaffOnly>
           </ProtectedRoute>
         }
       />
@@ -99,7 +118,9 @@ export function AppRoutes() {
         path="/call-history"
         element={
           <ProtectedRoute>
-            <CallHistoryRedirect />
+            <StaffOnly>
+              <CallHistoryRedirect />
+            </StaffOnly>
           </ProtectedRoute>
         }
       />
@@ -117,9 +138,11 @@ export function AppRoutes() {
         path="/complaints"
         element={
           <ProtectedRoute>
-            <AppShell title="Complaints" subtitle="Every complaint from detection to closure, follow-ups first">
-              <ComplaintsPage />
-            </AppShell>
+            <StaffOnly>
+              <AppShell title="Complaints" subtitle="Every complaint from detection to closure, follow-ups first">
+                <ComplaintsPage />
+              </AppShell>
+            </StaffOnly>
           </ProtectedRoute>
         }
       />
@@ -127,9 +150,11 @@ export function AppRoutes() {
         path="/ai-improvement"
         element={
           <ProtectedRoute>
-            <AppShell title="AI Improvement Center" subtitle="Learning evidence, patterns and improvement review">
-              <AiImprovementCenterPage />
-            </AppShell>
+            <StaffOnly>
+              <AppShell title="AI Improvement Center" subtitle="Learning evidence, patterns and improvement review">
+                <AiImprovementCenterPage />
+              </AppShell>
+            </StaffOnly>
           </ProtectedRoute>
         }
       />
@@ -164,11 +189,11 @@ export function AppRoutes() {
         path="/reports"
         element={
           <ProtectedRoute>
-            <SupervisorOnly>
+            <ReportReaders>
               <AppShell title="Reports" subtitle="Complaint trends by category, location and executive">
                 <ReportsPage />
               </AppShell>
-            </SupervisorOnly>
+            </ReportReaders>
           </ProtectedRoute>
         }
       />

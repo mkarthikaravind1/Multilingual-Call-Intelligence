@@ -60,7 +60,13 @@ from app.services.call_listing import CallListFilters, CallListingQuery
 from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.live_calls import LiveCallFilters, LiveCallsBoard
-from app.api.security_dependencies import get_current_user, require_roles
+from app.api.security_dependencies import (
+    STAFF_ROLES,
+    get_current_user,
+    get_finished_call_reader,
+    get_signed_in_user,
+    require_roles,
+)
 from app.domain.call_alert import QuestionOutcome
 from app.services.call_alerts import QuestionOutcomeRepository
 from app.services.recording_archive import RecordingError, RecordingNotFoundError
@@ -123,8 +129,10 @@ def list_calls(
 def get_call_directory(
     locations: LocationService = Depends(get_location_service),
     users: UserRepository = Depends(get_user_repository),
-    _: User = Depends(get_current_user),
+    _: User = Depends(get_signed_in_user),
 ) -> CallDirectoryResponse:
+    """The locations and the people calls can be filtered by (reports use
+    it too, so every role may read it)."""
     return CallDirectoryResponse(
         locations=[
             CallDirectoryEntry(id=l.location_id, name=l.name, is_active=l.is_active)
@@ -134,6 +142,8 @@ def get_call_directory(
             (
                 CallDirectoryEntry(id=u.user_id, name=u.name, is_active=u.is_active)
                 for u in users.list_all()
+                # Management users take no calls.
+                if u.role in STAFF_ROLES
             ),
             key=lambda entry: entry.name.casefold(),
         ),
@@ -249,7 +259,7 @@ def get_call(
     call_id: str,
     call_service: CallService = Depends(get_call_service),
     category_names=Depends(get_category_names),
-    _: User = Depends(get_current_user),
+    _: User = Depends(get_finished_call_reader),
 ) -> CallResponse:
     return to_call_response(call_service.get_call(call_id), category_names)
 
@@ -269,7 +279,7 @@ def get_analysis(
     call_id: str,
     workflow_service: CallWorkflowService = Depends(get_workflow_service),
     category_names=Depends(get_category_names),
-    _: User = Depends(get_current_user),
+    _: User = Depends(get_finished_call_reader),
 ) -> CallAnalysisResponse:
     return to_analysis_response(
         call_id, workflow_service.analyze_call(call_id), category_names

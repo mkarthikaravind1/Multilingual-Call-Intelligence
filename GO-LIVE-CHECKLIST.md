@@ -296,6 +296,12 @@ migration 0020 (an index the page's query uses).
 
 ## 10. Known weak spots
 
+- **A management user sees what a finished call's page shows**: the
+  transcript, the summary, the complaints, tone, escalation, service
+  estimate and audit. Not the customer's name, phone or vehicle panel, not
+  the recording, and nothing of a call still in progress. The summary and
+  transcript can still contain a name the customer said aloud.
+
 - **The audit log names the user by id.** The name shown is the user's
   name today; a changed name shows as the new one on old entries.
 - **Both logs are written a moment after the event**, in the background. If

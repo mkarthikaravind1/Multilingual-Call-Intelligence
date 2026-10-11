@@ -7,16 +7,17 @@ from pydantic import BaseModel, ConfigDict
 
 from app.ai.sentiment.provider import SentimentLabel
 from app.api.dependencies import get_performance_service, get_report_service
-from app.api.security_dependencies import require_roles
+from app.api.security_dependencies import REPORT_READERS, require_roles
 from app.domain.conversation import CallDirection
-from app.domain.user import User, UserRole
+from app.domain.user import User
 from app.services.performance import PerformanceService
 from app.services.report_export import export_report, export_scorecard
 from app.services.reporting import SECONDS_PER_DAY, Report, ReportFilters, ReportService
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-_SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
+# Supervisors, admins and management users.
+_READERS = require_roles(*REPORT_READERS)
 DEFAULT_RANGE_DAYS = 30
 # UTC-12:00 to UTC+14:00.
 _MIN_TZ_OFFSET, _MAX_TZ_OFFSET = -720, 840
@@ -159,7 +160,7 @@ class _ReportQuery:
 async def complaint_report(
     query: _ReportQuery = Depends(),
     service: ReportService = Depends(get_report_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_READERS),
 ) -> ComplaintReportResponse:
     report = await run_in_threadpool(query.report, service)
     return ComplaintReportResponse.model_validate(report)
@@ -170,7 +171,7 @@ async def export_complaint_report(
     file_format: Literal["csv", "xlsx", "pdf"] = Query("xlsx", alias="format"),
     query: _ReportQuery = Depends(),
     service: ReportService = Depends(get_report_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_READERS),
 ) -> Response:
     content, media_type, filename = await run_in_threadpool(
         lambda: export_report(query.report(service), file_format)
@@ -264,7 +265,7 @@ class CallAuditResponse(_Response):
 async def performance_report(
     query: _ReportQuery = Depends(),
     service: PerformanceService = Depends(get_performance_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_READERS),
 ) -> PerformanceReportResponse:
     report = await run_in_threadpool(
         service.report, query.filters, query.bucket, query.tz_offset_minutes
@@ -276,7 +277,7 @@ async def performance_report(
 async def call_audit(
     call_id: str,
     service: PerformanceService = Depends(get_performance_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_READERS),
 ) -> CallAuditResponse:
     """How the call was handled, scored by fixed rules (an estimate), with
     a score per complaint category and the reason for each point."""
@@ -291,7 +292,7 @@ async def export_performance_report(
     file_format: Literal["csv", "xlsx"] = Query("xlsx", alias="format"),
     query: _ReportQuery = Depends(),
     service: PerformanceService = Depends(get_performance_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_READERS),
 ) -> Response:
     content, media_type, filename = await run_in_threadpool(
         lambda: export_scorecard(

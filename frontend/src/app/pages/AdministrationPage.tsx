@@ -24,6 +24,11 @@ const ROLE_CAPABILITIES = [
       'Everything an ICR can do, plus the escalation queue, reports, reviewing AI improvements and emerging complaints, retrying post-call processing, and managing the price list.',
   },
   {
+    role: 'MANAGEMENT',
+    description:
+      'Reads the reports and performance figures, with their exports, and can open a finished call from a report (transcript, summary, audit score). Sees no live calls, changes nothing and takes no calls.',
+  },
+  {
     role: 'ADMIN',
     description:
       'Everything a Supervisor can do except managing the price list, plus managing users, roles, locations and complaint categories, and reading the audit log and the AI log.',

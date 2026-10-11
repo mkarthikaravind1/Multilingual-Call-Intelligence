@@ -109,6 +109,8 @@ function UserCard({ user, locations, isCurrentUser, onUpdated }: UserCardProps) 
     })
   }
 
+  // A management user takes no calls: no location, no phone to ring.
+  const takesCalls = user.role !== 'MANAGEMENT'
   const roleId = `role-${user.user_id}`
   const passwordId = `password-${user.user_id}`
   const nameId = `name-${user.user_id}`
@@ -186,16 +188,16 @@ function UserCard({ user, locations, isCurrentUser, onUpdated }: UserCardProps) 
           id={locationFieldId}
           value={locationId}
           locations={locations}
-          disabled={isSaving}
+          disabled={isSaving || !takesCalls}
           onChange={setLocationId}
         />
         <label htmlFor={dialTargetId}>Dial target</label>
         <input
           id={dialTargetId}
           maxLength={200}
-          placeholder={DIAL_TARGET_HINT}
+          placeholder={takesCalls ? DIAL_TARGET_HINT : 'Not used: management users take no calls'}
           value={dialTarget}
-          disabled={isSaving}
+          disabled={isSaving || !takesCalls}
           onChange={(event) => setDialTarget(event.target.value)}
         />
         <button type="submit" className="button" disabled={isSaving || !detailsChanged}>
@@ -391,9 +393,9 @@ export function UserManagementPanel({
           <label htmlFor="new-user-location">Location</label>
           <LocationSelect
             id="new-user-location"
-            value={locationId}
+            value={role === 'MANAGEMENT' ? '' : locationId}
             locations={locations}
-            disabled={isCreating}
+            disabled={isCreating || role === 'MANAGEMENT'}
             onChange={setLocationId}
           />
         </div>
@@ -402,9 +404,13 @@ export function UserManagementPanel({
           <input
             id="new-user-dial-target"
             maxLength={200}
-            placeholder={`${DIAL_TARGET_HINT}, e.g. +91 98000 00001 or sip:name@phone.plivo.com`}
-            value={dialTarget}
-            disabled={isCreating}
+            placeholder={
+              role === 'MANAGEMENT'
+                ? 'Not used: management users take no calls'
+                : `${DIAL_TARGET_HINT}, e.g. +91 98000 00001 or sip:name@phone.plivo.com`
+            }
+            value={role === 'MANAGEMENT' ? '' : dialTarget}
+            disabled={isCreating || role === 'MANAGEMENT'}
             onChange={(event) => setDialTarget(event.target.value)}
           />
         </div>
