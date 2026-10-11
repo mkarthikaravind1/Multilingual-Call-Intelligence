@@ -486,6 +486,7 @@ def test_the_analysis_carries_the_confidence_and_the_alerts():
     assert {a["alert_type"] for a in after["alerts"]} == {
         "high_severity_category",
         "low_confidence",
+        "negative_sentiment",
     }
 
 
