@@ -365,11 +365,31 @@ migration 0020 (an index the page's query uses).
   the call screen). Plivo does not report a hold made on the handset: the
   call then stays "Connected" and hold music may be transcribed.
 
-- **Speaker roles on a single mixed stream** are sometimes wrong. Separate
-  Plivo tracks (section 3, test 3) should not have this.
-- **The first call right after a backend restart** can end with no
-  transcript if it is shorter than the speech models' warm-up (under a
-  minute). Wait a minute after a restart before the first test call.
+- **Speaker roles on a single mixed stream.** In four replays on
+  11 October 2026 (two English, two Tamil-English, 47 lines) every line
+  got the right speaker except where a quick reply was joined to the
+  other person's line: "When did you notice it? The same evening itself."
+  is stored as one line with one speaker. The speech recogniser gives
+  timings per phrase, not per word, so such a line cannot be split.
+  Separate Plivo tracks (section 3, test 3) do not have this. The opening
+  lines, stored before the speakers are told apart, now get their speaker
+  as soon as it is known.
+- **The first call right after a backend restart** waits for the speech
+  models (about a minute): its transcript appears late, all at once. A
+  41-second call replayed straight after a restart kept all 9 lines and
+  its summary; before, it lost them.
+- **A call recorded in parts** (its audio stream dropped and came back) has
+  its parts joined into one recording, without the silence in between. It
+  is not transcribed again after the call (POST_CALL_RETRANSCRIPTION), as
+  the parts cannot be lined up with the transcript: it keeps its live
+  transcript.
+- **The fast setting on the free Groq key.** One 41-second replay with
+  `LIVE_ANALYSIS_SPEED=fast` made 14 AI requests (17,655 tokens) against 5
+  to 9 in the standard mode, and the sixth live analysis waited 35 seconds
+  for Groq's free limit. Each analysis itself took about 1 second, and the
+  complaint and questions were on screen within about 4 seconds of the
+  customer's line being transcribed. Use the fast setting with the paid
+  key only.
 - **Audit scores** are estimates by fixed rules (listed on the call's audit
   panel and on Reports > Performance); nobody listened to the call. Like the
   coverage score, they are meaningful only for calls made after the "asked
@@ -378,10 +398,22 @@ migration 0020 (an index the page's query uses).
   calls from before 10 October 2026 do not have.
 - **Coverage scores** are meaningful only for calls made after the
   "asked about" check was added (10 October 2026); earlier calls read 0%.
-- **Root causes in reports** group complaints by shared words, so the same
-  cause in different words stays in separate groups.
-- **PDF exports** print only Latin script; use Excel or CSV when names are
-  in Tamil or another Indian script.
+- **Root causes in reports** group complaints by a list of words that mean
+  the same at a service centre (bill and invoice, late and delayed, car and
+  vehicle, and so on). It is a word list, not understanding: the same
+  cause put in quite different words still lands in separate groups, and
+  the list is English.
+- **PDF exports** print only Latin script. Text in Tamil or another Indian
+  script is shown as `[...]` with a note saying so; the Excel and CSV
+  exports carry it in full.
+- **E-mail alerts** were checked in Docker on 11 October 2026 with the
+  local mail catcher: a test alert arrived with the right subject and
+  template. The "resolved" e-mail (sent up to five minutes later) and a
+  real mail server were not checked.
+- **Phone and tablet.** Every page was opened at phone (375) and tablet
+  (768) width and none scrolls sideways; wide tables scroll inside their
+  own panel. This was a check for overflow, not a design review of each
+  page, and a call in progress was not open during it.
 - **Alerts** (not asked about, poor audio) are checked when a call is
   analysed and by a background sweep every `LIVE_ALERT_SWEEP_SECONDS`
   (default 10), so they can be up to 10 seconds late on any screen.

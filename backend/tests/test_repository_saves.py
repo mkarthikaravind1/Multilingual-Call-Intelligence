@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import event
 
 from app.domain.complaint_coverage import ComplaintCoverageStatus
-from app.domain.conversation import Conversation
+from app.domain.conversation import Conversation, UtteranceIdInUseError
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.learning_evidence import LearningComponent
 from app.domain.learning_feedback import FeedbackType, LearningFeedback
@@ -25,7 +25,6 @@ from app.infrastructure.database.repositories.learning_feedback_repository impor
 from app.infrastructure.database.repositories.learning_observation_repository import (
     PostgresLearningObservationRepository,
 )
-from sqlalchemy.exc import IntegrityError
 
 from tests.test_postgresql_persistence import engine, session_factory  # noqa: F401  (fixtures)
 
@@ -136,7 +135,7 @@ def test_an_utterance_id_used_by_another_call_is_still_refused(session_factory):
     repo.save(second)
 
     second.add_utterance(_utterance(0))  # the same utterance_id as call-1's
-    with pytest.raises(IntegrityError):
+    with pytest.raises(UtteranceIdInUseError):
         repo.save(second)
 
     # Neither taken from the first call nor added to the second.

@@ -744,3 +744,34 @@ def test_each_export_downloads_what_the_filters_show(file_format, media_type, st
         "/api/v1/reports/complaints/export", params={**RANGE, "format": "docx"}, headers=headers
     )
     assert bad.status_code == 422
+
+
+def test_the_pdf_says_so_when_it_leaves_out_text_it_cannot_print():
+    from app.services import report_export
+
+    assert report_export._UNPRINTABLE.sub("[...]", "Service தாமதம் ஆச்சு, ₹500 extra") == (
+        "Service [...] [...], [...]500 extra"
+    )
+    # Latin text, accents and ordinary punctuation are printed as they are.
+    for printable in ("Café – “on time” · 100%", "Renée's car, 2nd visit…"):
+        assert report_export._UNPRINTABLE.sub("[...]", printable) == printable
+
+
+def test_a_report_with_tamil_text_still_makes_a_pdf(stores):
+    import dataclasses
+
+    report = stores.report()
+    cause = report.root_causes[0]
+    theme = dataclasses.replace(cause.themes[0], text="வண்டி தாமதமாக கிடைத்தது (delay)")
+    report = dataclasses.replace(
+        report,
+        root_causes=(dataclasses.replace(cause, themes=(theme, *cause.themes[1:])),)
+        + report.root_causes[1:],
+    )
+
+    plain, _, _ = export_report(stores.report(), "pdf")
+    content, _, _ = export_report(report, "pdf")
+
+    assert content[:5] == b"%PDF-"
+    # The note adds to the document; nothing else differs in kind.
+    assert len(content) > len(plain)
