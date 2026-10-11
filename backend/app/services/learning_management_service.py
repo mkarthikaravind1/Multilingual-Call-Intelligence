@@ -28,6 +28,7 @@ from app.services.learning_evidence_generation_service import (
 )
 from app.services.learning_evidence_service import LearningEvidenceService
 from app.services.learning_feedback_service import LearningFeedbackService
+from app.services.training_export import ReviewedOutput
 from app.services.learning_human_review_service import LearningHumanReviewService
 from app.services.learning_observation_service import (
     LearningObservationNotFoundError,
@@ -222,6 +223,21 @@ class LearningManagementService:
                 key=lambda o: (o.created_at, o.observation_id),
             )
         )
+
+    def list_reviewed(self) -> tuple[ReviewedOutput, ...]:
+        """Every AI output a person has judged, with the judgement (the
+        first one, when an output somehow has several)."""
+        observation_service = self._require(self._observation_service, "observations")
+        feedback_service = self._require(self._feedback_service, "feedback")
+        observations = {o.observation_id: o for o in observation_service.list_all()}
+        reviewed: dict[str, ReviewedOutput] = {}
+        for feedback in sorted(feedback_service.list_all(), key=lambda f: f.created_at):
+            observation = observations.get(feedback.observation_id)
+            if observation is not None:
+                reviewed.setdefault(
+                    feedback.observation_id, ReviewedOutput(observation, feedback)
+                )
+        return tuple(reviewed.values())
 
     def submit_feedback(
         self,

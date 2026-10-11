@@ -7,6 +7,7 @@ import { StatePanel } from '../components/StatePanel'
 import { humanizeLabel } from '../format/text'
 
 import { learningRestService } from '../features/ai-improvement/services/learningRestService'
+import { TrainingDataPanel } from '../features/ai-improvement/components/TrainingDataPanel'
 import { EmergingComplaintsPanel } from '../features/complaints/components/EmergingComplaintsPanel'
 
 import { LEARNING_COMPONENTS } from '../features/ai-improvement/types/dto'
@@ -523,6 +524,8 @@ export function AiImprovementCenterPage() {
           </section>
 
           <EmergingComplaintsPanel canReview={canReviewCandidates} />
+
+          {session?.role === 'ADMIN' && <TrainingDataPanel />}
         </>
       )}
     </section>

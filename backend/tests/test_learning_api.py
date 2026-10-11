@@ -312,7 +312,8 @@ def test_responses_use_api_schemas_not_domain_objects():
     assert all(
         route.response_model is not None
         for route in router_module.router.routes
-        if isinstance(route, APIRoute)
+        # A file download answers with the file, not with a schema.
+        if isinstance(route, APIRoute) and not route.path.endswith("/export")
     )
 
 def test_routes_use_injected_services():

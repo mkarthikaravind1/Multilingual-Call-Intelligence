@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel
 
 from app.api.dependencies import (
     get_call_service,
@@ -19,6 +21,8 @@ from app.domain.improvement_effectiveness import ImprovementEffect, ImprovementE
 from app.domain.learning_feedback import FeedbackSource
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
+from app.services.conversation_service import ConversationNotFoundError
+from app.services.training_export import TrainingExport, export_training_data
 from app.services.learning_management_service import (
     CallObservation,
     ImprovementOverview,
@@ -28,6 +32,8 @@ from app.api.security_dependencies import get_current_user, require_roles
 from app.domain.user import User, UserRole
 
 router = APIRouter(prefix="/learning", tags=["learning"])
+
+_ADMINS = require_roles(UserRole.ADMIN)
 
 # The evidence list grows by several records per call.
 EVIDENCE_PAGE_SIZE = 500
@@ -155,6 +161,59 @@ def submit_feedback(
 
 
 # --- Active improvements ---
+
+class TrainingDataResponse(BaseModel):
+    # AI outputs a person has judged.
+    examples: int
+    # Of those, with a correct answer and a transcript: usable to fine-tune.
+    with_messages: int
+    by_task: dict[str, int]
+
+
+def _training_export(
+    service: LearningManagementService, call_service: CallService
+) -> TrainingExport:
+    def get_call(call_id: str):
+        try:
+            return call_service.get_call(call_id)
+        except ConversationNotFoundError:
+            return None
+
+    return export_training_data(service.list_reviewed(), get_call)
+
+
+@router.get("/training-data", response_model=TrainingDataResponse)
+async def training_data(
+    service: LearningManagementService = Depends(get_learning_service),
+    call_service: CallService = Depends(get_call_service),
+    _: User = Depends(_ADMINS),
+) -> TrainingDataResponse:
+    """How much reviewed AI output there is to train a model on."""
+    export = await run_in_threadpool(_training_export, service, call_service)
+    return TrainingDataResponse(
+        examples=export.examples, with_messages=export.with_messages, by_task=export.by_task
+    )
+
+
+@router.get("/training-data/export")
+async def export_training_file(
+    service: LearningManagementService = Depends(get_learning_service),
+    call_service: CallService = Depends(get_call_service),
+    _: User = Depends(_ADMINS),
+) -> Response:
+    """Every reviewed AI output with its transcript, as JSON Lines (see
+    app.services.training_export). It holds what customers said: admins
+    only, and each download is in the audit log."""
+    export = await run_in_threadpool(_training_export, service, call_service)
+    return Response(
+        export.content,
+        media_type="application/x-ndjson",
+        headers={
+            "Content-Disposition": 'attachment; filename="training-data.jsonl"',
+            "Cache-Control": "no-store",
+        },
+    )
+
 
 @router.get("/improvements", response_model=list[ActiveImprovementResponse])
 def list_improvements(

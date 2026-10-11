@@ -44,6 +44,7 @@ RECORDED_READS = frozenset(
         "/reports/complaints/export",
         "/reports/performance/export",
         "/price-list/export",
+        "/learning/training-data/export",
         "/admin/audit-log",
         "/admin/ai-log",
         "/admin/ai-log/{entry_id}",

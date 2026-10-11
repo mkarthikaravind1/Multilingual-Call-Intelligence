@@ -74,6 +74,33 @@ complaints than were clearly raised, look for "Unusable LLM" in the backend
 log: it shows how the answer began. The metric `llm_unusable_answers_total`
 counts answers recovered by the second request and answers dropped.
 
+### Changing the model, or fine-tuning one
+
+Nothing in this system trains a model: the language model is Groq's and
+the speech model is Sarvam's. Two things are in your hands.
+
+**Switching to another model** (a newer one, or one you have fine-tuned):
+
+1. Label a set of calls once (section 7) and run the accuracy script with
+   the current model. Keep the report.
+2. Change `GROQ_MODEL` (and `QUESTION_CHECK_MODEL` if you want) and restart
+   the backend.
+3. Run the same script on the same calls. Compare the two reports: keep
+   the new model only if it is no worse on categories, tone and questions.
+4. Watch `llm_unusable_answers_total` for a day: a model that often answers
+   in the wrong shape shows up there first.
+
+**Fine-tuning a model of your own.** The AI Improvement Center has a
+"Training data" section (admins only) that downloads every AI output a
+person has corrected or judged, with the call's transcript, as a JSON
+Lines file. Lines with a known right answer carry a `messages` list in the
+shape chat-model fine-tuning takes. Groq does not offer fine-tuning on its
+hosted models today, so this needs a provider or a server of your own that
+does; the model it produces must then be reachable the way Groq's are, or
+a new connection written for it. A few hundred judged outputs per task is
+the least worth trying. The file holds what customers said: treat it like
+the recordings.
+
 ## 2. Sarvam (speech to text)
 
 | Setting | What to put | Notes |
@@ -387,9 +414,10 @@ The full list, with the reason for each, closes `SRD-STATUS.md`. In short:
   testing.
 - **Needs a streaming speech recogniser:** a transcript within 2 seconds
   and a question within 1.5 seconds of the end of an utterance.
-- **Not what this system does:** training or retraining AI models (the
-  models are Groq's and Sarvam's; the instructions given to them are what
-  improves), and audio above 16 kHz.
+- **Not done by this system:** training or retraining AI models. The
+  models are Groq's and Sarvam's; what improves here is the instructions
+  given to them. The reviewed corrections can be downloaded as a training
+  file for the day you fine-tune a model of your own (section 1).
 - **Outside the software:** a data-protection review, and a measured
   figure for data reliability.
 

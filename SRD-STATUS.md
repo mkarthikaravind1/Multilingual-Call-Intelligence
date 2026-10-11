@@ -11,7 +11,7 @@ yet (Plivo, the paid Groq key, the SMS gateway, a storage bucket, recordings
 in the other languages) or with real users and real load.
 **Not met**: missing or short of what the SRD says, with the reason.
 
-Totals: 121 requirements: 83 met, 25 waiting, 13 not met.
+Totals: 121 requirements: 83 met, 27 waiting, 11 not met.
 
 ## 1. Scope and users (SRD 1.2, 1.3)
 
@@ -32,7 +32,7 @@ Totals: 121 requirements: 83 met, 25 waiting, 13 not met.
 | 13 | QA and leadership: evaluate executive performance | Met | Scorecard per executive on Reports > Performance. |
 | 14 | Admins: user management, access, system settings | Met | Administration: users, roles, locations, categories. Other settings are in `.env`. |
 | 15 | Admins: monitor health, AI monitoring | Met | `/health`, `/metrics`, Prometheus alerts, Grafana dashboard, the AI log. |
-| 16 | Admins: model training, evaluate model performance, deploy updates | Not met | No model is trained here: the models are Groq's and Sarvam's. What exists: the model is chosen in `.env`, the AI Improvement Center turns reviewed corrections into better instructions, and `scripts/measure_accuracy.py` scores a set of labelled calls. |
+| 16 | Admins: model training, evaluate model performance, deploy updates | Waiting | No model is trained inside this system: the models are Groq's and Sarvam's. Built: the model is changed by a setting; the accuracy script compares one model with another on the same calls; reviewed corrections download as a training file for fine-tuning. Fine-tuning itself needs a provider or server that allows it, which you do not have yet. |
 
 ## 2. Functions and modes (SRD 2.1)
 
@@ -125,7 +125,7 @@ Totals: 121 requirements: 83 met, 25 waiting, 13 not met.
 
 | # | Requirement | State | Notes |
 |---|---|---|---|
-| 84 | AI model retraining on new complaint patterns | Not met | No retraining (see row 16). New patterns are found as "emerging themes" and reviewed corrections improve the instructions. |
+| 84 | AI model retraining on new complaint patterns | Waiting | As row 16. New complaint patterns are found as emerging themes; reviewed corrections improve the instructions now and are kept as training examples for later. |
 | 85 | Category taxonomy updates | Met | An admin adds, renames and retires categories; accepted themes become categories. |
 | 86 | Next-question evaluation and relevance review | Met | Accept and Skip counts per executive; the accuracy script scores them. |
 | 87 | Performance monitoring and database optimisation | Met | Metrics and alerts; indexes where the busy screens read. No automatic tuning. |
@@ -185,9 +185,6 @@ Needs a different speech recogniser:
 
 - Transcript under 2 seconds and next question under 1.5 seconds (rows 44, 46).
 
-Not what this kind of system does:
-
-- Training or retraining models (rows 16, 84). Audio above 16 kHz (row 43).
 
 Needs something outside the software:
 
