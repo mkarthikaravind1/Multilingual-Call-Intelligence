@@ -57,6 +57,7 @@ from app.services.in_memory_conversation_coverage_repository import (
 from app.services.in_memory_conversation_repository import InMemoryConversationRepository
 from app.services.post_call_summary_repository import InMemoryPostCallSummaryRepository
 from app.services.report_export import export_report
+from app.services import reporting
 from app.services.reporting import (
     InMemoryReportSource,
     ReportError,
@@ -386,6 +387,66 @@ def test_complaints_in_similar_words_are_grouped(stores):
     # c4 has no summary yet, so nothing describes its complaint.
     assert (hygiene.complaints, hygiene.undescribed) == (2, 1)
     assert [t.text for t in hygiene.themes] == ["The car was returned dirty."]
+
+
+def _row(call_id: str, text: str):
+    return reporting.ComplaintRow(
+        call_id=call_id, start_time=0.0, location_name=None, executive_name=None,
+        direction=None, sentiment=None, category="X", status="detected", description=text,
+    )
+
+
+def _themes(*descriptions: str) -> list[tuple[str, int]]:
+    rows = [_row(f"c{index}", text) for index, text in enumerate(descriptions)]
+    cause = reporting._root_cause("X", len(rows), 0, rows)
+    return [(theme.text, theme.complaints) for theme in cause.themes]
+
+
+def test_different_words_for_the_same_thing_are_one_root_cause():
+    assert _themes(
+        "The car was not ready on the promised date.",
+        "Vehicle delivery was delayed by two days.",
+        "Customer waited three days for the bike to be returned.",
+    ) == [("Vehicle delivery was delayed by two days.", 3)]
+    assert _themes(
+        "The bill was higher than the estimate.",
+        "Customer was overcharged compared with the quotation.",
+        "Invoice amount exceeded what was quoted.",
+    )[0][1] == 3
+    assert _themes(
+        "Nobody called the customer back.",
+        "No callback was received after the service.",
+        "The advisor never phoned with an update.",
+    )[0][1] == 3
+    assert _themes(
+        "Brakes still squeal after the service.",
+        "Brake noise was not fixed.",
+    )[0][1] == 2
+
+
+def test_different_causes_stay_apart_even_with_a_word_in_common():
+    themes = _themes(
+        "The car was returned dirty.",
+        "The car was not ready on time.",
+        "The car's brakes squeal.",
+        "Staff were rude at the counter.",
+    )
+
+    assert [count for _, count in themes] == [1, 1, 1, 1]
+
+
+def test_a_group_is_known_by_what_its_members_share_not_by_its_first():
+    themes = _themes(
+        # The first is long-winded; the later ones match what it has in
+        # common with the second.
+        "Customer says the invoice for the last general service at the Chennai centre "
+        "was higher than the estimate given on the phone.",
+        "The bill was higher than the estimate.",
+        "Billed more than the estimate.",
+        "Charged above the quoted estimate.",
+    )
+
+    assert themes == [("The bill was higher than the estimate.", 4)]
 
 
 def test_only_the_largest_themes_and_a_few_calls_each_are_listed(stores):

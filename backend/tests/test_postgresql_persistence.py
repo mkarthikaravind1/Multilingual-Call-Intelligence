@@ -1145,3 +1145,33 @@ def test_users_keep_when_their_password_was_reset(session_factory):
 
     repo.save(User("u-1", "a@dealer.com", "hash2", UserRole.ICR, True, 1.0, password_changed_at=5.5))
     assert repo.get_by_id("u-1").password_changed_at == 5.5
+
+
+def test_a_line_id_used_by_another_call_is_refused_and_nothing_is_overwritten(session_factory):
+    from app.domain.conversation import UtteranceIdInUseError
+
+    repo = PostgresConversationRepository(session_factory)
+    first = Conversation(call_id="call-a", start_time=0.0)
+    first.add_utterance(Utterance("u1", "the first call's line", SpeakerRole.CUSTOMER, ("en",), 0.0, 1.0))
+    repo.add(first)
+    second = Conversation(call_id="call-b", start_time=0.0)
+    repo.add(second)
+    second.add_utterance(Utterance("u1", "another call, same id", SpeakerRole.CUSTOMER, ("en",), 0.0, 1.0))
+
+    with pytest.raises(UtteranceIdInUseError, match="'u1'"):
+        repo.save(second)
+
+    assert [u.transcript for u in repo.get("call-a").utterances] == ["the first call's line"]
+    assert repo.get("call-b").utterances == ()
+
+
+def test_a_line_id_cannot_be_used_twice_in_one_call():
+    from app.domain.conversation import UtteranceIdInUseError
+
+    call = Conversation(call_id="call-a", start_time=0.0)
+    call.add_utterance(Utterance("u1", "once", SpeakerRole.CUSTOMER, ("en",), 0.0, 1.0))
+
+    with pytest.raises(UtteranceIdInUseError):
+        call.add_utterance(Utterance("u1", "twice", SpeakerRole.CUSTOMER, ("en",), 1.0, 2.0))
+
+    assert [u.transcript for u in call.utterances] == ["once"]

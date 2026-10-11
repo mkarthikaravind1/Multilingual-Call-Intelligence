@@ -40,9 +40,11 @@ MAX_THEMES = 5
 MAX_THEME_CALLS = 5
 # A quoted line is cut to this many characters.
 MAX_QUOTE_CHARS = 300
-# Two descriptions are about the same thing when they share at least
-# THEME_MIN_SHARED_WORDS words (filler words and word endings aside), and
-# those are this share of the shorter description's words.
+# A description belongs to a group when it shares at least
+# THEME_MIN_SHARED_WORDS words with what the group's descriptions have in
+# common (filler words and word endings aside, and words for the same
+# thing counted as one: see _SAME_THING), and those are this share of the
+# shorter of the two.
 THEME_SIMILARITY = 0.6
 THEME_MIN_SHARED_WORDS = 2
 
@@ -516,11 +518,15 @@ def _bucket_start(index: int, bucket: Bucket, offset_seconds: int) -> float:
 
 _FILLER_WORDS = frozenset(
     """a an and the of to in on at for from by with about into over after before is are was
-    were be been being has have had do does did not no it its this that these those their
+    were be been being has have had do does did it its this that these those their
     his her they he she them customer customers caller complained complains complaint
-    complaints said says stated reported mentioned also very still which who when while
-    as but or if so than then there because due""".split()
+    complaints said says stated reported mentioned also very still which who what when
+    while as but or if so than then there because due
+    one two three four five six seven eight nine ten
+    car cars vehicle vehicles bike bikes scooter scooters
+    service services serviced servicing centre center""".split()
 )
+# Left out above on purpose: "not ready" and "ready" are different complaints.
 _WORD = re.compile(r"[a-z0-9]+")
 # What the rule-based summary writes in place of a description (see
 # app.ai.summary.rule_based_provider): it says nothing about the complaint.
@@ -528,19 +534,57 @@ _PLACEHOLDER = re.compile(r"complaint identified during the call \(status: \w+\)
 _SUFFIXES = ("ing", "ed", "es", "s")
 
 
+def _stem(word: str) -> str:
+    if word.endswith("ies") and len(word) > 5:
+        return word[:-3] + "y"
+    for suffix in _SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            word = word[: -len(suffix)]
+            break
+    # "estimate" and "estimated" are then the same word.
+    if word.endswith("e") and len(word) > 4:
+        word = word[:-1]
+    return word
+
+
+# Words customers and summaries use for the same thing at a service centre,
+# counted as one word when descriptions are compared. Kept to what is plain
+# from the complaint categories: this is a word list, not understanding, so
+# two causes in quite different words still end up in separate groups.
+_SAME_THING = {
+    "no": "no not never nobody noone none without didn doesn wasn weren isn",
+    "cost": "cost costs costly bill bills billed billing invoice invoiced charge charges "
+    "charged overcharged price prices priced amount fee fees expensive money payment paid",
+    "estimate": "estimate estimates estimated quote quoted quotation",
+    "delay": "delay delays delayed late overdue wait waited waiting pending slow postponed",
+    "time": "time date dates day days week weeks hour hours promised deadline",
+    "ready": "ready delivered delivery",
+    "contact": "call calls called callback phone phoned contact contacted inform informed "
+    "update updates updated reply replied respond responded response message messaged",
+    "clean": "clean cleaned cleaning unclean dirty dirt stain stains stained wash washed "
+    "washing muddy dusty",
+    "rude": "rude rudely impolite arrogant shouted shouting misbehaved disrespectful",
+    "staff": "staff advisor adviser executive employee mechanic technician manager person",
+    "fault": "fault faults faulty problem problems issue issues defect defects defective "
+    "trouble failure failed broken",
+    "repair": "repair repairs repaired fix fixed fixing rectify rectified resolve resolved",
+    "noise": "noise noises noisy sound sounds squeal squeals squealing squeak squeaking "
+    "rattle rattling",
+    "part": "part parts spare spares component components",
+    "again": "again repeat repeated repeatedly recurring twice thrice",
+}
+_CANONICAL = {
+    _stem(word): canonical for canonical, words in _SAME_THING.items() for word in words.split()
+}
+
+
 def _key_words(description: str) -> frozenset[str]:
     words = set()
     for word in _WORD.findall(description.casefold()):
         if word in _FILLER_WORDS:
             continue
-        for suffix in _SUFFIXES:
-            if word.endswith(suffix) and len(word) - len(suffix) >= 4:
-                word = word[: -len(suffix)]
-                break
-        # "estimate" and "estimated" are then the same word.
-        if word.endswith("e") and len(word) > 4:
-            word = word[:-1]
-        words.add(word)
+        word = _stem(word)
+        words.add(_CANONICAL.get(word, word))
     return frozenset(words)
 
 
@@ -549,6 +593,38 @@ def _alike(a: frozenset[str], b: frozenset[str]) -> bool:
     if shared < THEME_MIN_SHARED_WORDS:
         return False
     return shared / min(len(a), len(b)) >= THEME_SIMILARITY
+
+
+class _Group:
+    """Complaints about the same thing, and the words they have in common."""
+
+    def __init__(self, words: frozenset[str], row: "ComplaintRow") -> None:
+        self.members = [(words, row)]
+        self._counts = Counter(words)
+
+    def add(self, words: frozenset[str], row: "ComplaintRow") -> None:
+        self.members.append((words, row))
+        self._counts.update(words)
+
+    @property
+    def common(self) -> frozenset[str]:
+        """The words in at least half of the group's descriptions: what
+        the group is about, however its first member put it."""
+        needed = len(self.members) / 2
+        return frozenset(word for word, count in self._counts.items() if count >= needed)
+
+    @property
+    def rows(self) -> list["ComplaintRow"]:
+        return [row for _, row in self.members]
+
+    def typical(self) -> "ComplaintRow":
+        """The member that says most of what most of the group says, in
+        the fewest words; the earliest of equals."""
+        most = len(self.members) / 2
+        core = frozenset(word for word, count in self._counts.items() if count > most)
+        return max(
+            self.members, key=lambda member: (len(member[0] & core), -len(member[0]))
+        )[1]
 
 
 def _what_it_says(row: ComplaintRow) -> str | None:
@@ -577,8 +653,7 @@ def first_quotes(lines: Iterable[tuple[str, Iterable[str] | None]]) -> dict[str,
 def _root_cause(
     category: str, complaints: int, resolved: int, rows: Iterable[ComplaintRow]
 ) -> RootCause:
-    # Each group is known by the words of its first description.
-    groups: list[tuple[frozenset[str], list[ComplaintRow]]] = []
+    groups: list[_Group] = []
     undescribed = 0
     for row in rows:
         text = _what_it_says(row)
@@ -586,14 +661,14 @@ def _root_cause(
             undescribed += 1
             continue
         words = _key_words(text)
-        for group_words, members in groups:
-            if _alike(words, group_words):
-                members.append(row)
+        for group in groups:
+            if _alike(words, group.common):
+                group.add(words, row)
                 break
         else:
-            groups.append((words, [row]))
+            groups.append(_Group(words, row))
     # Largest first; equal ones stay in the order they first came up.
-    groups.sort(key=lambda group: -len(group[1]))
+    groups.sort(key=lambda group: -len(group.members))
     return RootCause(
         category=category,
         complaints=complaints,
@@ -601,14 +676,14 @@ def _root_cause(
         undescribed=undescribed,
         themes=tuple(
             Theme(
-                text=_what_it_says(members[0]),
-                quote=next((m.quote for m in reversed(members) if m.quote), None),
-                complaints=len(members),
+                text=_what_it_says(group.typical()),
+                quote=next((m.quote for m in reversed(group.rows) if m.quote), None),
+                complaints=len(group.members),
                 call_ids=tuple(
-                    dict.fromkeys(m.call_id for m in reversed(members))
+                    dict.fromkeys(m.call_id for m in reversed(group.rows))
                 )[:MAX_THEME_CALLS],
             )
-            for _, members in groups[:MAX_THEMES]
+            for group in groups[:MAX_THEMES]
         ),
     )
 

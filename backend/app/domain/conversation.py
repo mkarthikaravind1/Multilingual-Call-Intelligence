@@ -86,6 +86,15 @@ class ConversationAlreadyExistsError(Exception):
         super().__init__(f"A call already exists with id: {call_id!r}")
 
 
+class UtteranceIdInUseError(ValueError):
+    """Raised when a line is added with an id another line already has, in
+    this call or any other: a line is never overwritten by a new one."""
+
+    def __init__(self, utterance_id: str) -> None:
+        self.utterance_id = utterance_id
+        super().__init__(f"A transcript line already exists with id: {utterance_id!r}")
+
+
 class UtteranceNotLatestError(ValueError):
     """Raised when an utterance to be updated is no longer the call's
     latest one (another utterance was added after it)."""
@@ -120,6 +129,8 @@ class Conversation:
     def add_utterance(self, utterance: Utterance) -> None:
         if self.status == ConversationStatus.COMPLETED:
             raise ConversationAlreadyCompletedError(self.call_id)
+        if any(u.utterance_id == utterance.utterance_id for u in self._utterances):
+            raise UtteranceIdInUseError(utterance.utterance_id)
         if self._utterances and utterance.start_time < self._utterances[-1].start_time:
             raise ValueError(
                 f"Utterances must be chronological: new utterance starts at "

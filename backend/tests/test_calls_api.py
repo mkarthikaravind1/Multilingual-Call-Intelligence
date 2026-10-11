@@ -593,3 +593,15 @@ def test_concurrent_duplicate_starts_create_exactly_one_call():
     assert outcomes.count("created") == 1
     assert outcomes.count("rejected") == 7
     assert client.get(f"{BASE}/call-race").json()["status"] == "active"
+
+
+def test_a_line_sent_twice_is_refused_instead_of_failing_or_overwriting():
+    client = _client([_TURNAROUND])
+    _start_call(client)
+    assert client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance(0)).status_code == 200
+
+    again = client.post(f"{BASE}/{CALL_ID}/utterances", json=_utterance(0))
+
+    assert again.status_code == 409
+    assert "already exists" in again.json()["detail"]
+    assert client.get(f"{BASE}/{CALL_ID}").json()["utterance_count"] == 1

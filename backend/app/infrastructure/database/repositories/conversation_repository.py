@@ -9,6 +9,7 @@ from app.domain.conversation import (
     ConversationAlreadyExistsError,
     ConversationStatus,
     HoldPeriod,
+    UtteranceIdInUseError,
 )
 from app.domain.utterance import SpeakerRole, Utterance
 from app.infrastructure.database.models import ConversationModel, UtteranceModel
@@ -112,6 +113,28 @@ class PostgresConversationRepository(ConversationRepository):
             raise ConversationAlreadyExistsError(conversation.call_id) from exc
 
     def save(self, conversation: Conversation) -> None:
+        try:
+            self._save(conversation)
+        except IntegrityError as exc:
+            # Line ids are unique across all calls: a new line carries the
+            # id of a line of another call.
+            taken = self._ids_of_other_calls(conversation)
+            if taken:
+                raise UtteranceIdInUseError(taken[0]) from exc
+            raise
+
+    def _ids_of_other_calls(self, conversation: Conversation) -> list[str]:
+        ids = [u.utterance_id for u in conversation.utterances]
+        with self._session_factory() as session:
+            return list(
+                session.scalars(
+                    select(UtteranceModel.utterance_id)
+                    .where(UtteranceModel.utterance_id.in_(ids))
+                    .where(UtteranceModel.call_id != conversation.call_id)
+                ).all()
+            )
+
+    def _save(self, conversation: Conversation) -> None:
         with self._session_factory() as session, session.begin():
             existing = session.get(ConversationModel, conversation.call_id)
             if existing is None:
