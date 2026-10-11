@@ -1663,7 +1663,8 @@
 }
 
 .review-form select,
-.review-form input {
+.review-form input,
+.review-form textarea {
   flex: 1 1 220px;
   min-width: 0;
   border: 1px solid var(--color-border);
@@ -1676,8 +1677,13 @@
   outline: none;
 }
 
+.review-form textarea {
+  resize: vertical;
+}
+
 .review-form select:focus,
-.review-form input:focus {
+.review-form input:focus,
+.review-form textarea:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px rgba(42, 122, 226, 0.12);
 }
