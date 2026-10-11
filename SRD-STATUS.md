@@ -11,7 +11,7 @@ yet (Plivo, the paid Groq key, the SMS gateway, a storage bucket, recordings
 in the other languages) or with real users and real load.
 **Not met**: missing or short of what the SRD says, with the reason.
 
-Totals: 121 requirements: 82 met, 25 waiting, 14 not met.
+Totals: 121 requirements: 83 met, 25 waiting, 13 not met.
 
 ## 1. Scope and users (SRD 1.2, 1.3)
 
@@ -69,7 +69,7 @@ Totals: 121 requirements: 82 met, 25 waiting, 14 not met.
 | 40 | Repeat complaint probability | Met | Reported as the repeat rate among known customers: a measured rate, not a prediction per customer. |
 | 41 | Customer churn risk score | Met | Low, medium or high, by fixed rules. |
 | 42 | Sentiment trend per call and per executive | Met | |
-| 43 | Audio sampling 16 to 48 kHz | Not met | The system asks Plivo for 16 kHz and also takes 8 kHz. Nothing above 16 kHz is handled: a phone line does not carry more. |
+| 43 | Audio sampling 16 to 48 kHz | Met | Audio from 8 to 48 kHz is accepted. Anything above 16 kHz is converted to 16 kHz as it arrives, because the speech recogniser takes no more; the recording is kept at 16 kHz too. Phone calls arrive at 8 or 16 kHz. |
 | 44 | Live transcription under 2 seconds | Not met | Speech is transcribed when the speaker pauses. In replays a line appeared about 1 to 3 seconds after the speaker stopped (measured to the nearest 2 seconds), so longer lines are later than 2 seconds after they began. Meeting this needs a streaming speech recogniser, which is a different integration. |
 | 45 | Complaint classification under 3 seconds per utterance | Waiting | With `LIVE_ANALYSIS_SPEED=fast` each analysis took about 1 second after the line was transcribed. The free Groq key cannot sustain it (it waited 35 seconds once). Standard mode analyses every 30 seconds by your earlier decision. |
 | 46 | Next question under 1.5 seconds after the utterance ends | Not met | In fast mode the questions follow the line by about 1 to 2 seconds, on top of the 1 to 3 seconds the line itself takes. From the end of the utterance that is roughly 2.5 to 5 seconds. The same streaming recogniser would be needed. |

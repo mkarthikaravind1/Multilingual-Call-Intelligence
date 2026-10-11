@@ -34,7 +34,9 @@ from app.services.live_chunk_processing_service import (
     LiveChunkProcessingService,
 )
 from app.services.telephony_audio_buffer import (
+    MAX_PROCESSING_SAMPLE_RATE,
     BufferedAudioChunk,
+    Downsampler,
     TelephonyAudioBuffer,
     TelephonyAudioBufferError,
 )
@@ -217,6 +219,7 @@ class _StreamSession:
         )
         # The stream's audio encoding, from its "start" event.
         self._encoding: str | None = None
+        self._downsampler = Downsampler(MAX_PROCESSING_SAMPLE_RATE)
         # The call's audio, transcribed again in full after the call (see
         # PostCallRetranscriptionService); None when not kept.
         self._recording: CallRecording | None = None
@@ -303,6 +306,16 @@ class _StreamSession:
         self._worker.stream_started()
         settings = get_settings()
         self._encoding = stream_event.encoding
+        # Audio finer than the recogniser can use is brought down to 16 kHz
+        # as it arrives; the chunks and the recording are made from that.
+        self._downsampler = Downsampler(stream_event.sample_rate or 8000)
+        if self._downsampler.converts:
+            logger.info(
+                "Call %r streams at %d Hz; converting to %d Hz",
+                self._call_id,
+                self._downsampler.source_rate,
+                self._downsampler.rate,
+            )
         # A call streamed as two tracks (Plivo dials the other party, see
         # PlivoTelephonyProvider.build_stream_response); who speaks on
         # which depends on who placed the call (see track_roles).
@@ -313,7 +326,7 @@ class _StreamSession:
         self._store_recording()
         self._recording = (
             CallRecording(
-                sample_rate=stream_event.sample_rate or 8000,
+                sample_rate=self._downsampler.rate,
                 max_seconds=self._recording_max_seconds,
             )
             if (self._recording_store is not None or self._recording_archive is not None)
@@ -321,7 +334,7 @@ class _StreamSession:
         )
         self._buffers = {
             track: TelephonyAudioBuffer(
-                sample_rate=stream_event.sample_rate or 8000,
+                sample_rate=self._downsampler.rate,
                 flush_after_seconds=self._flush_after_seconds,
                 pause_seconds=settings.plivo_stream_pause_seconds,
                 min_speech_seconds=settings.plivo_stream_min_speech_seconds,
@@ -339,10 +352,11 @@ class _StreamSession:
         buffer = self._buffers.get(track)
         if buffer is None:
             return
-        if not buffer.accept(stream_event.sequence, stream_event.audio or b""):
+        audio = self._downsampler.convert(track, stream_event.audio or b"")
+        if not buffer.accept(stream_event.sequence, audio):
             return
-        if self._recording is not None and stream_event.audio:
-            self._recording.append(track, stream_event.audio)
+        if self._recording is not None and audio:
+            self._recording.append(track, audio)
         _flush(buffer, self._worker, track, force=False, min_duration=0.0, is_final=False)
 
     async def _on_stop(self) -> None:

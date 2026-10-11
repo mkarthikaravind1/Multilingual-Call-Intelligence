@@ -166,3 +166,39 @@ class TelephonyAudioBuffer:
             target.setframerate(self._sample_rate)
             target.writeframes(pcm)
         return buffer.getvalue()
+
+
+# The speech recogniser takes 16 kHz at most; anything finer is wasted on it.
+MAX_PROCESSING_SAMPLE_RATE = 16000
+
+
+class Downsampler:
+    """Brings a stream sampled above 16 kHz (24, 32, 44.1 or 48 kHz) down
+    to 16 kHz as it arrives: 16-bit mono PCM in, 16-bit mono PCM out. A
+    stream at 16 kHz or below passes through untouched. Each track keeps
+    its own state, so frames can be converted one at a time without a
+    click where they join."""
+
+    def __init__(
+        self, source_rate: int, target_rate: int = MAX_PROCESSING_SAMPLE_RATE
+    ) -> None:
+        if source_rate <= 0:
+            raise TelephonyAudioBufferError("sample_rate must be positive.")
+        self.source_rate = source_rate
+        # The rate everything after this works at.
+        self.rate = min(source_rate, target_rate)
+        self._states: dict[str | None, object] = {}
+
+    @property
+    def converts(self) -> bool:
+        return self.rate != self.source_rate
+
+    def convert(self, track: str | None, pcm: bytes) -> bytes:
+        if not self.converts or not pcm:
+            return pcm
+        # Whole samples only: an odd byte cannot be half of one.
+        pcm = pcm[: len(pcm) - len(pcm) % 2]
+        converted, self._states[track] = audioop.ratecv(
+            pcm, 2, 1, self.source_rate, self.rate, self._states.get(track)
+        )
+        return converted
