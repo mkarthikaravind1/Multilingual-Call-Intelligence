@@ -35,7 +35,11 @@ class CallRecordingStore:
 
     One instance only: a recording is on the API instance that served the
     call's media stream. When post-call processing runs elsewhere, it finds
-    none and keeps the live transcript."""
+    none and keeps the live transcript.
+
+    A call recorded in parts (its stream reconnected) has no usable audio
+    here: each part's times start at 0 again, so the parts cannot be lined
+    up with the transcript. Such a call keeps its live transcript."""
 
     def __init__(
         self,
@@ -46,14 +50,16 @@ class CallRecordingStore:
         self._max_calls = max_calls
         self._ttl_seconds = ttl_seconds
         self._clock = clock
-        self._recordings: OrderedDict[str, tuple[float, CallRecording]] = OrderedDict()
+        # None in place of a recording: the call came in parts.
+        self._recordings: OrderedDict[str, tuple[float, CallRecording | None]] = OrderedDict()
         self._lock = threading.Lock()
 
     def put(self, call_id: str, recording: CallRecording) -> None:
         with self._lock:
             self._expire()
+            in_parts = call_id in self._recordings
             self._recordings.pop(call_id, None)
-            self._recordings[call_id] = (self._clock(), recording)
+            self._recordings[call_id] = (self._clock(), None if in_parts else recording)
             while len(self._recordings) > self._max_calls:
                 self._recordings.popitem(last=False)
 

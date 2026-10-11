@@ -168,19 +168,93 @@ def test_another_key_a_damaged_file_or_another_calls_file_cannot_be_read(tmp_pat
     assert archive.read("call-a", "sup")
 
 
-def test_an_empty_recording_is_not_kept_and_the_first_of_a_call_wins(tmp_path):
+def test_an_empty_recording_is_not_kept(tmp_path):
     archive = _archive(tmp_path)
 
     assert archive.save("call-a", _recording({})) is None
     assert archive.save("call-a", _recording({None: b""})) is None
     assert archive.get("call-a") is None
 
+
+def test_a_later_part_of_a_call_is_joined_to_the_end_of_its_recording(tmp_path):
+    clock = _Clock()
+    archive = _archive(tmp_path, clock=clock)
     first = archive.save("call-a", _recording({None: _samples(1, 2, 3, 4)}))
-    again = archive.save("call-a", _recording({None: _samples(9, 9)}))
-    assert again is None
+    clock.now += 60
+
+    joined = archive.save("call-a", _recording({None: _samples(9, 8)}))
+
     with wave.open(io.BytesIO(archive.read("call-a", "sup"))) as wav:
-        assert wav.getnframes() == 4
+        assert wav.readframes(wav.getnframes()) == _samples(1, 2, 3, 4, 9, 8)
+    assert joined.duration_seconds == pytest.approx(6 / 8000)
+    assert joined.size_bytes > first.size_bytes
+    assert joined.sha256 != first.sha256
+    # Still the same recording: made, and due to be removed, when it first was.
+    assert (joined.created_at, joined.delete_after) == (first.created_at, first.delete_after)
+    assert archive.get("call-a") == joined
+    assert len(list((tmp_path / "recordings").iterdir())) == 1
+
+
+def test_both_sides_of_a_later_part_are_joined_to_their_own_side(tmp_path):
+    archive = _archive(tmp_path)
+    archive.save("call-a", _recording({"inbound": _samples(1, 2), "outbound": _samples(5, 6)}))
+
+    archive.save("call-a", _recording({"inbound": _samples(3), "outbound": _samples(7)}))
+
+    with wave.open(io.BytesIO(archive.read("call-a", "sup"))) as wav:
+        assert wav.getnchannels() == 2
+        assert wav.readframes(wav.getnframes()) == _samples(1, 5, 2, 6, 3, 7)
+
+
+def test_a_joined_recording_is_copied_and_checked_afresh(tmp_path):
+    from dataclasses import replace
+
+    from app.services.recording_archive import RecordingIntegrity
+
+    repository = InMemoryRecordingRepository()
+    archive = _archive(tmp_path, repository=repository)
+    first = archive.save("call-a", _recording({None: _samples(1, 2)}))
+    repository.save(
+        replace(first, archive_key="recordings/x", archived_at=5.0, verified_at=6.0,
+                integrity=RecordingIntegrity.OK)
+    )
+
+    joined = archive.save("call-a", _recording({None: _samples(3)}))
+
+    assert (joined.archived_at, joined.verified_at, joined.integrity) == (None, None, None)
+    assert joined.archive_key == "recordings/x"  # the copy is replaced at the same place
+
+
+def test_a_part_that_cannot_be_joined_leaves_the_recording_as_it_was(tmp_path, caplog):
+    clock = _Clock()
+    archive = _archive(tmp_path, clock=clock)
+    first = archive.save("call-a", _recording({None: _samples(1, 2, 3, 4)}))
+
+    # Another format: two sides where there was one, or another sample rate.
+    assert archive.save("call-a", _recording({"inbound": _samples(1), "outbound": _samples(2)})) is None
+    assert archive.save("call-a", _recording({None: _samples(1)}, rate=16000)) is None
+    assert "another format" in caplog.text
     assert archive.get("call-a") == first
+
+    # Removed by retention: a late part does not bring it back.
+    clock.now += 91 * DAY
+    archive.purge_expired()
+    assert archive.save("call-a", _recording({None: _samples(9)})) is None
+    assert not (tmp_path / "recordings" / first.file_name).exists()
+
+
+def test_a_call_recorded_in_parts_is_not_transcribed_again_from_one_part():
+    from app.services.call_recording_store import CallRecordingStore
+
+    store = CallRecordingStore()
+    store.put("whole", _recording({None: _samples(1, 2)}))
+    store.put("parts", _recording({None: _samples(1, 2)}))
+    store.put("parts", _recording({None: _samples(3, 4)}))
+    store.put("parts", _recording({None: _samples(5, 6)}))
+
+    assert store.take("whole") is not None
+    # Each part's times start at 0: none of them lines up with the transcript.
+    assert store.take("parts") is None
 
 
 def test_an_odd_call_id_cannot_write_outside_the_folder(tmp_path):

@@ -307,15 +307,16 @@ class _StreamSession:
         # PlivoTelephonyProvider.build_stream_response); who speaks on
         # which depends on who placed the call (see track_roles).
         split = set(TRACKS) <= set(stream_event.tracks)
-        # A restarted stream starts its chunk times at 0 again, so
-        # the audio recorded so far no longer lines up: stop keeping it.
+        # A restarted stream starts its chunk times at 0 again: what was
+        # recorded so far is stored as one part and a new part begins (the
+        # archive joins them; see CallRecordingStore for re-transcription).
+        self._store_recording()
         self._recording = (
             CallRecording(
                 sample_rate=stream_event.sample_rate or 8000,
                 max_seconds=self._recording_max_seconds,
             )
             if (self._recording_store is not None or self._recording_archive is not None)
-            and not self._buffers
             else None
         )
         self._buffers = {

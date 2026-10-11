@@ -10,6 +10,10 @@ Files are on this instance's disk (RECORDING_DIR): with several API
 instances the folder must be shared between them. A file is removed only by
 the retention sweep, once its call's keep-until date has passed.
 
+A call whose audio stream dropped and came back is recorded in parts: each
+later part is joined to the end of the file. The silence while the stream
+was away is not in the recording.
+
 Each file's SHA-256 is noted when it is written, so that a later check can
 tell a file that was damaged or swapped (see offsite_archive, which also
 copies the files off the server).
@@ -22,6 +26,7 @@ import io
 import logging
 import os
 import re
+import threading
 import time
 import wave
 from abc import ABC, abstractmethod
@@ -281,42 +286,93 @@ class RecordingArchive:
         self._cipher = AESGCM(key)
         self._retention_seconds = retention_days * _SECONDS_PER_DAY
         self._clock = clock
+        # One part of a call is written at a time: two parts arriving
+        # together would each join the file the other is replacing.
+        self._writing = threading.Lock()
 
     def save(self, call_id: str, recording: CallRecording) -> StoredRecording | None:
-        """Encrypt the call's audio and keep it. None when there is nothing
-        to keep, or the call already has a recording (the first is kept:
-        e.g. a stream that reconnected)."""
+        """Encrypt the call's audio and keep it. A call that already has a
+        recording (its stream reconnected) gets this audio joined to its
+        end. None when there is nothing to keep, or it cannot be joined."""
         if not recording.tracks or not any(recording.tracks.values()):
             return None
-        if self._repository.get(call_id) is not None:
-            logger.info("Call %r already has a recording; keeping the first", call_id)
-            return None
-
         wav, channels = to_wav(recording)
+        with self._writing:
+            existing = self._repository.get(call_id)
+            if existing is not None:
+                return self._join(existing, recording, wav, channels)
+            now = self._clock()
+            return self._write(
+                StoredRecording(
+                    call_id=call_id,
+                    file_name=f"{_SAFE_NAME.sub('_', call_id)}.wav.enc",
+                    duration_seconds=0.0,
+                    size_bytes=0,
+                    sample_rate=recording.sample_rate,
+                    channels=channels,
+                    created_at=now,
+                    delete_after=now + self._retention_seconds,
+                ),
+                wav,
+            )
+
+    def _write(self, stored: StoredRecording, wav: bytes) -> StoredRecording:
+        """Encrypt wav into the recording's file and record what is there."""
         nonce = os.urandom(_NONCE_BYTES)
-        encrypted = nonce + self._cipher.encrypt(nonce, wav, call_id.encode())
-        file_name = f"{_SAFE_NAME.sub('_', call_id)}.wav.enc"
+        encrypted = nonce + self._cipher.encrypt(nonce, wav, stored.call_id.encode())
         self._directory.mkdir(parents=True, exist_ok=True)
-        path = self._directory / file_name
+        path = self._directory / stored.file_name
         # Written under another name first, so a crash never leaves half a file.
         partial = path.with_suffix(".part")
         partial.write_bytes(encrypted)
         os.replace(partial, path)
-
-        now = self._clock()
-        stored = StoredRecording(
-            call_id=call_id,
-            file_name=file_name,
-            duration_seconds=max(recording.duration(track) for track in recording.tracks),
+        with wave.open(io.BytesIO(wav), "rb") as audio:
+            duration = audio.getnframes() / audio.getframerate()
+        stored = replace(
+            stored,
+            duration_seconds=duration,
             size_bytes=len(encrypted),
-            sample_rate=recording.sample_rate,
-            channels=channels,
-            created_at=now,
-            delete_after=now + self._retention_seconds,
             sha256=hashlib.sha256(encrypted).hexdigest(),
+            # A changed file is copied off the server and checked afresh.
+            archived_at=None,
+            verified_at=None,
+            integrity=None,
         )
         self._repository.save(stored)
         return stored
+
+    def _join(
+        self, existing: StoredRecording, recording: CallRecording, wav: bytes, channels: int
+    ) -> StoredRecording | None:
+        """Put a later part of the call after what is already recorded."""
+        call_id = existing.call_id
+        if not existing.is_available:
+            return None  # removed by retention: nothing comes back
+        if (existing.sample_rate, existing.channels) != (recording.sample_rate, channels):
+            logger.warning(
+                "A later part of call %r is in another format; keeping what is recorded",
+                call_id,
+            )
+            return None
+        try:
+            encrypted = (self._directory / existing.file_name).read_bytes()
+            earlier = self._cipher.decrypt(
+                encrypted[:_NONCE_BYTES], encrypted[_NONCE_BYTES:], call_id.encode()
+            )
+        except (OSError, InvalidTag):
+            logger.exception(
+                "The recording of call %r cannot be read; its later part is not kept", call_id
+            )
+            return None
+        buffer = io.BytesIO()
+        with wave.open(io.BytesIO(earlier), "rb") as first, wave.open(
+            io.BytesIO(wav), "rb"
+        ) as second, wave.open(buffer, "wb") as out:
+            out.setparams(first.getparams())
+            out.writeframes(first.readframes(first.getnframes()))
+            out.writeframes(second.readframes(second.getnframes()))
+        logger.info("Joined a later part to the recording of call %r", call_id)
+        return self._write(existing, buffer.getvalue())
 
     def path_of(self, stored: StoredRecording) -> Path:
         """Where the recording's encrypted file is (or should be)."""
