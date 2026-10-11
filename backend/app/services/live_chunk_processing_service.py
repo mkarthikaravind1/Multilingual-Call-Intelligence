@@ -199,6 +199,9 @@ class LiveChunkProcessingService:
                 ends_utterance=chunk.ends_on_pause or chunk.is_final,
                 track=chunk.track,
                 speaker_role=chunk.speaker_role,
+                # Only passed when there is one: the chunk was already
+                # transcribed by the streaming recogniser.
+                **({} if chunk.transcribed is None else {"transcribed": chunk.transcribed}),
             )
         finally:
             track_state.next_sequence = chunk.sequence + 1

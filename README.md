@@ -138,6 +138,13 @@ Transcription uses Sarvam's `codemix` mode (`SARVAM_STT_MODE`), so English
 words in a Tamil sentence stay in English letters ("brake pad மாத்தணும்")
 instead of being spelled in Tamil script.
 
+Live speech is recognised in one of two ways (`LIVE_ASR_MODE`). `chunked`,
+the default, cuts the audio where the speaker pauses and sends each piece
+off. `streaming` (Sarvam only) keeps one connection open per audio stream,
+sends the audio as it arrives and gets each line back about half a second
+after it was said (`backend/app/ai/asr/sarvam_streaming.py`); a call whose
+connection fails carries on with `chunked` without losing audio.
+
 ### Speaker identification
 
 Each call has a speaker session (`ROLE_PROVIDER=session`) that holds who is

@@ -11,7 +11,7 @@ yet (Plivo, the paid Groq key, the SMS gateway, a storage bucket, recordings
 in the other languages) or with real users and real load.
 **Not met**: missing or short of what the SRD says, with the reason.
 
-Totals: 121 requirements: 84 met, 27 waiting, 10 not met.
+Totals: 121 requirements: 85 met, 27 waiting, 9 not met.
 
 ## 1. Scope and users (SRD 1.2, 1.3)
 
@@ -70,9 +70,9 @@ Totals: 121 requirements: 84 met, 27 waiting, 10 not met.
 | 41 | Customer churn risk score | Met | Low, medium or high, by fixed rules. |
 | 42 | Sentiment trend per call and per executive | Met | |
 | 43 | Audio sampling 16 to 48 kHz | Met | Audio from 8 to 48 kHz is accepted. Anything above 16 kHz is converted to 16 kHz as it arrives, because the speech recogniser takes no more; the recording is kept at 16 kHz too. Phone calls arrive at 8 or 16 kHz. |
-| 44 | Live transcription under 2 seconds | Not met | Speech is transcribed when the speaker pauses. In replays a line appeared about 1 to 3 seconds after the speaker stopped (measured to the nearest 2 seconds), so longer lines are later than 2 seconds after they began. Meeting this needs a streaming speech recogniser, which is a different integration. |
+| 44 | Live transcription under 2 seconds | Met | Met with the streaming recogniser turned on (`LIVE_ASR_MODE=streaming`, Sarvam): in a replay of a Tamil and English call each line was on screen about 1 second after the speaker stopped (0.9 to 1.3). It is off by default: the default recogniser showed a line about 2 seconds after the speaker stopped (1.4 to 2.4) and held long sentences back. Measured once, on a laptop, with both speakers in one stream. |
 | 45 | Complaint classification under 3 seconds per utterance | Waiting | With `LIVE_ANALYSIS_SPEED=fast` each analysis took about 1 second after the line was transcribed. The free Groq key cannot sustain it (it waited 35 seconds once). Standard mode analyses every 30 seconds by your earlier decision. |
-| 46 | Next question under 1.5 seconds after the utterance ends | Not met | In fast mode the questions follow the line by about 1 to 2 seconds, on top of the 1 to 3 seconds the line itself takes. From the end of the utterance that is roughly 2.5 to 5 seconds. The same streaming recogniser would be needed. |
+| 46 | Next question under 1.5 seconds after the utterance ends | Not met | With the streaming recogniser a line is on screen about 1 second after the speaker stops, and in fast mode the questions follow the line by about 1 to 2 seconds: roughly 2 to 3 seconds from the end of the utterance, against the 1.5 asked for. The rest of the time is the AI service's own answer time. |
 | 47 | Speech recognition accuracy at least 95% | Waiting | Never measured: it needs recordings with a written-down transcript, per language. The script is ready. |
 | 48 | Classification accuracy at least 92% | Waiting | On five test calls with my own labels: 15 of 17 categories. Too few to claim anything. |
 | 49 | Multi-category detection at least 88% | Waiting | 2 of 3 on the same five calls. |
@@ -181,9 +181,9 @@ By your decision:
 - CRM connection and its tests (rows 54, 92, 111).
 - Automatic failover, disaster-recovery testing, penetration testing (rows 69, 118, 119).
 
-Needs a different speech recogniser:
+Faster than the AI services answer:
 
-- Transcript under 2 seconds and next question under 1.5 seconds (rows 44, 46).
+- Next question under 1.5 seconds (row 46).
 
 
 Needs something outside the software:

@@ -3,6 +3,8 @@ import io
 import wave
 from dataclasses import dataclass
 
+from app.ai.asr.provider import ASRResult
+
 
 class TelephonyAudioBufferError(Exception):
     pass
@@ -22,6 +24,9 @@ class BufferedAudioChunk:
     # Any audio above the silence level. Always True with pause detection
     # off (nothing is measured then).
     has_speech: bool = True
+    # The chunk's text, when the streaming recogniser already heard it
+    # (times count from the start of the chunk).
+    transcribed: ASRResult | None = None
 
     @property
     def duration(self) -> float:
@@ -57,6 +62,7 @@ class TelephonyAudioBuffer:
         pause_seconds: float = 0.0,
         min_speech_seconds: float = 1.0,
         silence_rms: int = 350,
+        start_time: float = 0.0,
     ) -> None:
         if sample_rate <= 0:
             raise TelephonyAudioBufferError("sample_rate must be positive.")
@@ -71,7 +77,9 @@ class TelephonyAudioBuffer:
         self._bytes_per_second = sample_rate * sample_width_bytes * channels
         self._flush_after_bytes = int(flush_after_seconds * self._bytes_per_second)
         self._pending = bytearray()
-        self._elapsed_seconds = 0.0
+        # Where in the stream this buffer's audio begins (not 0 when it
+        # takes over part-way, see the streaming recogniser's fallback).
+        self._elapsed_seconds = start_time
         self._last_sequence: int | None = None
         self._pause_bytes = int(pause_seconds * self._bytes_per_second)
         self._min_speech_bytes = int(min_speech_seconds * self._bytes_per_second)
@@ -150,7 +158,7 @@ class TelephonyAudioBuffer:
         self._elapsed_seconds = end_time
 
         return BufferedAudioChunk(
-            audio=self._encode_wav(data),
+            audio=encode_wav(data, self._sample_rate, self._sample_width, self._channels),
             start_time=start_time,
             end_time=end_time,
             ends_on_pause=ends_on_pause,
@@ -158,14 +166,15 @@ class TelephonyAudioBuffer:
             has_speech=has_speech,
         )
 
-    def _encode_wav(self, pcm: bytes) -> bytes:
-        buffer = io.BytesIO()
-        with wave.open(buffer, "wb") as target:
-            target.setnchannels(self._channels)
-            target.setsampwidth(self._sample_width)
-            target.setframerate(self._sample_rate)
-            target.writeframes(pcm)
-        return buffer.getvalue()
+
+def encode_wav(pcm: bytes, sample_rate: int, sample_width: int = 2, channels: int = 1) -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as target:
+        target.setnchannels(channels)
+        target.setsampwidth(sample_width)
+        target.setframerate(sample_rate)
+        target.writeframes(pcm)
+    return buffer.getvalue()
 
 
 # The speech recogniser takes 16 kHz at most; anything finer is wasted on it.

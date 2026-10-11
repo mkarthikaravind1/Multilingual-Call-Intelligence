@@ -95,6 +95,7 @@ class AudioProcessingPipeline:
         ends_utterance: bool = True,
         track: str | None = None,
         speaker_role: SpeakerRole | None = None,
+        transcribed: ASRResult | None = None,
     ) -> CallAnalysisResult:
         """Transcribe one chunk of audio into the call.
 
@@ -108,10 +109,17 @@ class AudioProcessingPipeline:
         A call whose two sides arrive as separate tracks passes each chunk's
         track and the speaker_role it belongs to: no diarization is needed
         then, and each track keeps its own open utterance.
+
+        transcribed is the chunk's text when the streaming recogniser has
+        already heard it: the audio is then not sent for transcription again
+        (it is still what tells the speakers of a mixed stream apart), and
+        the language that recogniser named is taken as it is.
         """
         # Taken up front: if this chunk fails, the next one starts afresh.
         open_utterance = self._open_utterances.pop(track, None)
-        utterance = self._build_live_utterance(audio, start_offset, track, speaker_role)
+        utterance = self._build_live_utterance(
+            audio, start_offset, track, speaker_role, transcribed
+        )
 
         if continues_previous and open_utterance is not None and _can_continue(
             open_utterance, utterance
@@ -174,15 +182,19 @@ class AudioProcessingPipeline:
         start_offset: float,
         track: str | None,
         speaker_role: SpeakerRole | None,
+        transcribed: ASRResult | None = None,
     ) -> Utterance:
         self._validate_input(audio, start_offset)
-        asr_result = self._transcribe_live(audio, track)
+        asr_result = transcribed or self._transcribe_live(audio, track)
+        # The streaming recogniser names the language with the text; asking
+        # the language provider as well would hold every line back.
+        known = None if transcribed is None else (transcribed.detected_language,)
         if speaker_role is None:
             utterance = self._build_single_utterance(
-                audio, asr_result, start_offset, learn_roles=True
+                audio, asr_result, start_offset, learn_roles=True, languages=known
             )
         else:
-            languages = self._identify_languages(asr_result)
+            languages = known or self._identify_languages(asr_result)
             if track is not None:
                 # Keeps the call's speaker session in step with its tracks.
                 self._observe_speech(track, asr_result.transcript, speaker_role)
@@ -301,8 +313,9 @@ class AudioProcessingPipeline:
         diarization_segments: list[DiarizedSegment] | None = None,
         role_map: dict[str, AISpeakerRole] | None = None,
         learn_roles: bool = False,
+        languages: tuple[str, ...] | None = None,
     ) -> Utterance:
-        languages = self._identify_languages(asr_result)
+        languages = languages or self._identify_languages(asr_result)
         role, speaker_id = self._resolve_role(
             audio,
             asr_result,

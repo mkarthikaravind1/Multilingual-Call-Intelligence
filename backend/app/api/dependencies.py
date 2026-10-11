@@ -101,6 +101,9 @@ class ApiServices:
     ai_log: AiLog | None = None
     price_list_service: PriceListService | None = None
     background_jobs: BackgroundJobRunner | None = None
+    # Opens a streaming speech-recognition session for a live audio stream
+    # (LIVE_ASR_MODE=streaming); None: live audio is recognised in chunks.
+    streaming_asr: Callable[..., object] | None = None
     # Loads slow models (e.g. diarization) in the background at startup.
     warm_up: Callable[[], None] | None = None
     # name -> callable raising when that dependency is unavailable.

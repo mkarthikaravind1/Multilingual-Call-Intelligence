@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     # 0 turns it off.
     asr_language_lock_after: int = 2
     asr_language_unlock_after: int = 2
+    # How live speech is recognised. "chunked": the audio is cut where the
+    # speaker pauses and each piece is sent off (works with any ASR
+    # provider). "streaming" (Sarvam only): the audio goes to Sarvam as it
+    # arrives over one open connection and each line comes back about half
+    # a second after it was said; if that connection fails, the call
+    # carries on with "chunked".
+    live_asr_mode: str = "chunked"
+    # Streaming: Sarvam ends a line after this many silent frames (32 ms
+    # each at 16 kHz, 64 ms at 8 kHz); 8 is a quarter of a second.
+    asr_streaming_pause_frames: int = 8
+    # Streaming: a line still being spoken after this long is shown in parts.
+    asr_streaming_max_segment_seconds: float = 8.0
     # After the call, transcribe its recorded audio again in windows of up
     # to POST_CALL_RETRANSCRIPTION_WINDOW_SECONDS (Sarvam's limit is 30 s),
     # in each speaker's language, and keep that transcript instead of the

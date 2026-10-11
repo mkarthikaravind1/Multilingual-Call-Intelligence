@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Depends, WebSocket
@@ -19,7 +20,12 @@ from app.api.dependencies import (
     get_telephony_stream_flush_seconds,
     get_workflow_service,
 )
-from app.ai.asr.provider import NoSpeechDetected
+from app.ai.asr.provider import ASRResult, NoSpeechDetected
+from app.ai.asr.sarvam_streaming import (
+    SUPPORTED_SAMPLE_RATES,
+    SarvamStreamingSession,
+    StreamedSegment,
+)
 from app.api.v1.live import AUTH_FAILED_CLOSE_CODE, CALL_NOT_FOUND_CLOSE_CODE
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.conversation import ConversationAlreadyCompletedError, ConversationStatus
@@ -39,6 +45,7 @@ from app.services.telephony_audio_buffer import (
     Downsampler,
     TelephonyAudioBuffer,
     TelephonyAudioBufferError,
+    encode_wav,
 )
 from app.services.telephony_call_service import (
     STREAM_HEARTBEAT_SECONDS,
@@ -48,6 +55,7 @@ from app.core.config import get_settings
 from app.observability.metrics import (
     LIVE_CHUNK_DURATION,
     LIVE_CHUNKS,
+    PROVIDER_ERRORS,
     TELEPHONY_STREAMS_OPEN,
 )
 from app.security.stream_token import is_valid_stream_token
@@ -77,6 +85,26 @@ _MIN_FLUSH_AUDIO_SECONDS = 0.25
 # this often while audio flows: media frames arrive ~50 times a second per
 # track, and each lookup loads the whole call.
 COMPLETION_CHECK_SECONDS = 1.0
+
+# At the end of a stream, how long the streaming recogniser gets to answer
+# for what was still being said.
+STREAMING_FINISH_SECONDS = 3.0
+
+
+@dataclass
+class _StreamedTrack:
+    """One track's audio going to the streaming recogniser."""
+
+    session: SarvamStreamingSession
+    last_sequence: int | None = None
+
+    def accept(self, sequence: int | None) -> bool:
+        """False for a frame already seen (a duplicate or a replay)."""
+        if sequence is not None:
+            if self.last_sequence is not None and sequence <= self.last_sequence:
+                return False
+            self.last_sequence = sequence
+        return True
 
 
 @router.websocket("/{call_id}/telephony-stream")
@@ -207,6 +235,14 @@ class _StreamSession:
         # One buffer per track when the two sides of the call arrive
         # separately, else one (key None) for the mixed audio.
         self._buffers: dict[str | None, TelephonyAudioBuffer] = {}
+        # LIVE_ASR_MODE=streaming: what opens a streaming recogniser session,
+        # and the tracks whose audio goes to one instead of a buffer. A
+        # track whose session fails moves to a buffer for the rest of the
+        # stream (see _streaming_failed).
+        self._streaming_asr = getattr(websocket.app.state.services, "streaming_asr", None)
+        self._streams: dict[str | None, _StreamedTrack] = {}
+        # The two sides of the call arrive as separate tracks.
+        self._split = False
         # Chunks are processed in order on a worker, off the receive loop: one
         # chunk can take longer to process than the websocket keepalive allows,
         # and a socket that stops reading gets dropped mid-call.
@@ -244,7 +280,7 @@ class _StreamSession:
                     continue
 
                 if stream_event.event_type == "start":
-                    self._on_start(stream_event)
+                    await self._on_start(stream_event)
                 elif stream_event.event_type == "media":
                     self._on_media(stream_event)
                 elif stream_event.event_type == "stop":
@@ -264,6 +300,7 @@ class _StreamSession:
             # A disconnect without "stop" must not discard the call's final
             # audio. _process_chunk drops it if the call already completed.
             try:
+                await self._finish_streams()
                 self._flush_all(is_final=True)
                 await self._worker.close()
             finally:
@@ -293,9 +330,10 @@ class _StreamSession:
             logger.warning("Invalid telephony stream frame for call %r: %s", self._call_id, exc)
             return None
 
-    def _on_start(self, stream_event: MediaStreamEvent) -> None:
+    async def _on_start(self, stream_event: MediaStreamEvent) -> None:
         if self._telephony_call_service is not None:
             self._telephony_call_service.stream_opened(self._call_id)
+        await self._finish_streams()
         # A second "start" on the same connection (e.g. a
         # provider-side stream restart) without a "stop" first
         # must not silently discard whatever was already buffered.
@@ -304,7 +342,6 @@ class _StreamSession:
         # a reconnected socket's); they carry on from the call's
         # previous ones.
         self._worker.stream_started()
-        settings = get_settings()
         self._encoding = stream_event.encoding
         # Audio finer than the recogniser can use is brought down to 16 kHz
         # as it arrives; the chunks and the recording are made from that.
@@ -332,27 +369,119 @@ class _StreamSession:
             if (self._recording_store is not None or self._recording_archive is not None)
             else None
         )
-        self._buffers = {
-            track: TelephonyAudioBuffer(
-                sample_rate=self._downsampler.rate,
-                flush_after_seconds=self._flush_after_seconds,
-                pause_seconds=settings.plivo_stream_pause_seconds,
-                min_speech_seconds=settings.plivo_stream_min_speech_seconds,
-                silence_rms=settings.plivo_stream_silence_rms,
-            )
-            for track in (TRACKS if split else (None,))
-        }
+        self._split = split
+        self._buffers = {}
+        for track in TRACKS if split else (None,):
+            if not self._start_streaming(track):
+                self._buffers[track] = self._new_buffer()
         if split:
             logger.info(
                 "Call %r streams the customer and the ICR as separate tracks", self._call_id
             )
 
+    def _new_buffer(self, start_time: float = 0.0) -> TelephonyAudioBuffer:
+        settings = get_settings()
+        return TelephonyAudioBuffer(
+            sample_rate=self._downsampler.rate,
+            flush_after_seconds=self._flush_after_seconds,
+            pause_seconds=settings.plivo_stream_pause_seconds,
+            min_speech_seconds=settings.plivo_stream_min_speech_seconds,
+            silence_rms=settings.plivo_stream_silence_rms,
+            start_time=start_time,
+        )
+
+    def _start_streaming(self, track: str | None) -> bool:
+        """Send the track's audio to the streaming recogniser. False when
+        that is not in use, or cannot take this stream."""
+        if self._streaming_asr is None or self._downsampler.rate not in SUPPORTED_SAMPLE_RATES:
+            return False
+        try:
+            session = self._streaming_asr(
+                self._downsampler.rate,
+                lambda segment: self._on_segment(track, segment),
+                lambda reason: self._streaming_failed(track),
+            )
+            session.start()
+        except Exception:
+            logger.exception(
+                "Could not start streaming speech recognition for call %r", self._call_id
+            )
+            return False
+        self._streams[track] = _StreamedTrack(session)
+        return True
+
+    def _on_segment(self, track: str | None, segment: StreamedSegment) -> None:
+        """The streaming recogniser heard a stretch of speech: it goes the
+        way a chunk does, with its text already known."""
+        if not segment.audio:
+            return
+        self._worker.submit(
+            BufferedAudioChunk(
+                audio=encode_wav(segment.audio, self._downsampler.rate),
+                start_time=segment.start_time,
+                end_time=segment.end_time,
+                ends_on_pause=not segment.cut_short,
+                continues_previous=segment.continues_previous,
+                # In a language Sarvam named but this system does not take,
+                # the ordinary recogniser hears the stretch again.
+                transcribed=(
+                    ASRResult(
+                        transcript=segment.transcript,
+                        detected_language=segment.language,
+                        start_time=0.0,
+                        end_time=segment.end_time - segment.start_time,
+                    )
+                    if segment.language is not None
+                    else None
+                ),
+            ),
+            False,
+            track,
+        )
+
+    def _streaming_failed(self, track: str | None) -> None:
+        """The track's streaming session broke: the rest of the stream is
+        recognised in chunks, starting with what the session had not
+        answered for."""
+        stream = self._streams.pop(track, None)
+        if stream is None:
+            return
+        PROVIDER_ERRORS.inc("asr_streaming")
+        logger.warning(
+            "Call %r%s carries on with chunked speech recognition",
+            self._call_id,
+            f" ({track} track)" if track else "",
+        )
+        buffer = self._new_buffer(start_time=stream.session.heard_until)
+        buffer.accept(None, stream.session.unheard_audio())
+        self._buffers[track] = buffer
+
+    async def _finish_streams(self) -> None:
+        """The stream is over: have the streaming recogniser answer for
+        what was still being said. A session that fails here leaves its
+        audio in a buffer, for the flush that follows."""
+        streams = list(self._streams.values())
+        if streams:
+            await asyncio.gather(
+                *(stream.session.finish(STREAMING_FINISH_SECONDS) for stream in streams),
+                return_exceptions=True,
+            )
+        self._streams = {}
+
     def _on_media(self, stream_event: MediaStreamEvent) -> None:
-        track = stream_event.track if None not in self._buffers else None
+        track = stream_event.track if self._split else None
+        audio = self._downsampler.convert(track, stream_event.audio or b"")
+        stream = self._streams.get(track)
+        if stream is not None:
+            if not stream.accept(stream_event.sequence):
+                return
+            if self._recording is not None and audio:
+                self._recording.append(track, audio)
+            stream.session.feed(audio)
+            return
         buffer = self._buffers.get(track)
         if buffer is None:
             return
-        audio = self._downsampler.convert(track, stream_event.audio or b"")
         if not buffer.accept(stream_event.sequence, audio):
             return
         if self._recording is not None and audio:
@@ -360,6 +489,7 @@ class _StreamSession:
         _flush(buffer, self._worker, track, force=False, min_duration=0.0, is_final=False)
 
     async def _on_stop(self) -> None:
+        await self._finish_streams()
         self._flush_all(is_final=True)
         self._buffers = {}
         await self._worker.drain()
@@ -381,7 +511,7 @@ class _StreamSession:
         # Still streaming: keep the stream marked open for the other
         # instances (the mark expires if this one dies).
         if (
-            self._buffers
+            (self._buffers or self._streams)
             and self._telephony_call_service is not None
             and now >= self._next_heartbeat
         ):
@@ -389,6 +519,7 @@ class _StreamSession:
             await run_in_threadpool(self._telephony_call_service.stream_opened, self._call_id)
         if not await _call_is_completed(self._call_id, self._call_service):
             return False
+        await self._finish_streams()
         self._flush_all(is_final=True)
         self._buffers = {}
         await self._websocket.close(code=STREAM_CALL_COMPLETED_CLOSE_CODE)
@@ -639,6 +770,7 @@ async def _transcribe_chunk(
                 speaker_role=(
                     track_roles(conversation.direction).get(track) if track is not None else None
                 ),
+                transcribed=chunk.transcribed,
             ),
         )
     except ConversationNotFoundError:

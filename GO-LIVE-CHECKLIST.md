@@ -355,15 +355,22 @@ See section 8 for what it found on the development laptop.
 with the real speech recogniser and the free Groq key (times read off the
 screen's data every 2 seconds, so each is good to about 2 seconds):
 
-- A transcript line appeared about 1 to 3 seconds after the speaker
-  stopped. The SRD asks for under 2 seconds: not met for longer lines,
-  because speech is transcribed at each pause, not as it is spoken.
+- With the default recogniser (`LIVE_ASR_MODE=chunked`) a transcript line
+  appeared about 2 seconds after the speaker stopped (1.4 to 2.4), and a
+  long sentence was held back until its pause.
+- With `LIVE_ASR_MODE=streaming` the same 60 seconds of a Tamil and
+  English call gave a line about 1 second after the speaker stopped (0.9
+  to 1.3), in shorter lines, with the same words. The SRD asks for under
+  2 seconds. Measured once, on a laptop, on a call with both speakers in
+  one stream; a call with the two sides apart should be quicker still (no
+  speaker has to be told apart) and has not been measured.
 - With `LIVE_ANALYSIS_SPEED=fast`, each analysis took about 1 second after
   the line was transcribed, and the complaint and its questions were on
   screen about 4 seconds after the customer finished speaking. The SRD
   asks for 3 seconds (categories) and 1.5 seconds (questions) from the end
-  of the utterance: the category target is within reach on the paid key,
-  the question target is not without a streaming speech recogniser.
+  of the utterance: the category target is within reach on the paid key
+  with the streaming recogniser; the question target (the line's 1 second
+  plus the analysis's 1 second) is still just out of reach.
 - In the standard mode the analysis runs every 30 seconds, by decision.
 
 **Not measured by anything here:** 99.9% availability, failover and
@@ -422,8 +429,8 @@ The full list, with the reason for each, closes `SRD-STATUS.md`. In short:
 - **Set aside by decision:** a real CRM connection (customers come from a
   file), automatic failover and disaster-recovery testing, penetration
   testing.
-- **Needs a streaming speech recogniser:** a transcript within 2 seconds
-  and a question within 1.5 seconds of the end of an utterance.
+- **Speed:** a question within 1.5 seconds of the end of an utterance.
+  (A transcript within 2 seconds is met with `LIVE_ASR_MODE=streaming`.)
 - **Not done by this system:** training or retraining AI models. The
   models are Groq's and Sarvam's; what improves here is the instructions
   given to them. The reviewed corrections can be downloaded as a training

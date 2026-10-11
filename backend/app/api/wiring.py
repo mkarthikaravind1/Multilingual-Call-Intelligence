@@ -146,6 +146,7 @@ from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.domain.location import InMemoryLocationRepository, LocationRepository
 from app.services.call_routing_service import CallRoutingService
 from app.services.location_service import LocationService
+from app.ai.asr.sarvam_streaming import build_streaming_asr
 from app.services.recording_archive import (
     InMemoryRecordingRepository,
     RecordingArchive,
@@ -616,6 +617,9 @@ def build_api_services(
         audit_log=audit_log,
         ai_log=ai_log,
         background_jobs=background_jobs,
+        streaming_asr=(
+            build_streaming_asr(settings) if live_chunk_processing_service is not None else None
+        ),
         warm_up=model_warm_up.run if live_chunk_processing_service is not None else None,
         health_checks={"live_state": live_state_store.ping} if shared_live_state else {},
     )

@@ -4,6 +4,7 @@ import wave
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.ai.asr.provider import ASRResult
 from app.domain.utterance import SpeakerRole
 from app.services.audio_ingestion_service import IngestedAudio
 
@@ -27,6 +28,8 @@ class AudioChunk:
     # this chunk is from, and the speaker role that track belongs to.
     track: str | None = None
     speaker_role: SpeakerRole | None = None
+    # The chunk's text, when the streaming recogniser already heard it.
+    transcribed: ASRResult | None = None
 
     def __post_init__(self) -> None:
         if (
