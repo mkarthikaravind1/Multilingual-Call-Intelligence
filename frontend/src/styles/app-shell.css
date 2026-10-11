@@ -2519,6 +2519,8 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3) var(--space-5);
+  /* A grid item: without this it grows to its widest filter on a phone. */
+  min-width: 0;
 }
 
 .call-filters label > span,
@@ -2606,6 +2608,8 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-2);
+  /* Never wider than the filter bar: its dates wrap or narrow instead. */
+  max-width: 100%;
 }
 
 .call-filters__range legend {
@@ -2631,9 +2635,11 @@
 
 .call-filters__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   margin-left: auto;
+  max-width: 100%;
 }
 
 .call-filters__status {
@@ -3828,6 +3834,9 @@
 /* The table scrolls sideways when it is wider than the page; an opened
    request's text stays as wide as what is visible. */
 .log-table-scroll {
+  /* Positioned, so that a visually hidden label in a column scrolled out
+     of view is clipped with it instead of widening the page. */
+  position: relative;
   overflow-x: auto;
   container-type: inline-size;
 }
