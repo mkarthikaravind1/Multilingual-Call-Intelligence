@@ -12,10 +12,16 @@ from dataclasses import dataclass
 from app.domain.conversation import CallDirection
 from app.domain.location import Location, LocationRepository
 from app.domain.phone_number import normalize_dial_target
-from app.domain.user import User
+from app.domain.user import CALL_TAKING_ROLES, User
 from app.domain.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _takes_calls(user: User) -> bool:
+    """Whether a call may ring this user or be theirs. An admin's phone
+    kept from before the role stopped taking calls is passed over."""
+    return user.is_active and user.role in CALL_TAKING_ROLES
 
 
 @dataclass(frozen=True)
@@ -70,7 +76,7 @@ class CallRoutingService:
             dial_targets=tuple(
                 user.dial_target
                 for user in self._users.list_all()
-                if user.is_active and user.dial_target and user.location_id == location.location_id
+                if _takes_calls(user) and user.dial_target and user.location_id == location.location_id
             ),
         )
 
@@ -80,7 +86,7 @@ class CallRoutingService:
         if target is None:
             return None
         for user in self._users.list_all():
-            if user.is_active and user.dial_target == target:
+            if _takes_calls(user) and user.dial_target == target:
                 return user
         return None
 

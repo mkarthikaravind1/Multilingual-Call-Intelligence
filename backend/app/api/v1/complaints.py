@@ -41,7 +41,7 @@ router = APIRouter(prefix="/complaints", tags=["complaints"])
 call_complaints_router = APIRouter(tags=["complaints"])
 emerging_router = APIRouter(prefix="/emerging-complaints", tags=["emerging complaints"])
 
-_SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
+_SUPERVISORS = require_roles(UserRole.SUPERVISOR)
 
 
 ComplaintStage = Literal["detected", "probed", "covered", "outcome", "follow_up"]

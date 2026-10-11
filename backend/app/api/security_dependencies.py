@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.dependencies import get_call_service, get_user_repository
 from app.domain.conversation import ConversationStatus
-from app.domain.user import User, UserRole
+from app.domain.user import CALL_TAKING_ROLES, User, UserRole
 from app.domain.user_repository import UserRepository
 from app.security.jwt import TokenError, decode_access_token
 from app.services.call_service import CallService
@@ -60,12 +60,16 @@ _FORBIDDEN = HTTPException(
     detail="You do not have permission to perform this action.",
 )
 
-# The roles that work on calls. A management user is not among them: they
-# are let in only where an endpoint names their role (see require_roles
-# and get_finished_call_reader), so a new endpoint is closed to them
-# unless it says otherwise.
-STAFF_ROLES = (UserRole.ICR, UserRole.SUPERVISOR, UserRole.ADMIN)
+# The roles that work on calls. An admin and a management user are not
+# among them: they are let in only where an endpoint names their role (see
+# require_roles and get_finished_call_reader), so a new endpoint is closed
+# to them unless it says otherwise.
+STAFF_ROLES = CALL_TAKING_ROLES
 REPORT_READERS = (UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.MANAGEMENT)
+# The call list and its counts: staff work from them, an admin only reads.
+CALL_LIST_READERS = (*STAFF_ROLES, UserRole.ADMIN)
+# Who opens a call only once it has ended.
+FINISHED_CALL_READERS = (UserRole.ADMIN, UserRole.MANAGEMENT)
 
 
 def get_signed_in_user(session: tuple[User, dict] = Depends(get_current_session)) -> User:
@@ -74,7 +78,7 @@ def get_signed_in_user(session: tuple[User, dict] = Depends(get_current_session)
 
 
 def get_current_user(user: User = Depends(get_signed_in_user)) -> User:
-    """The signed-in member of staff (an ICR, a supervisor or an admin)."""
+    """The signed-in member of staff (an ICR or a supervisor)."""
     if user.role not in STAFF_ROLES:
         raise _FORBIDDEN
     return user
@@ -94,11 +98,11 @@ def get_finished_call_reader(
     user: User = Depends(get_signed_in_user),
     call_service: CallService = Depends(get_call_service),
 ) -> User:
-    """Who may read this call: staff, any call; a management user, a call
-    that has ended (they open it from a report, never while it is live)."""
+    """Who may read this call: staff, any call; an admin or a management
+    user, a call that has ended (never while it is live)."""
     if user.role in STAFF_ROLES:
         return user
-    if user.role is not UserRole.MANAGEMENT:
+    if user.role not in FINISHED_CALL_READERS:
         raise _FORBIDDEN
     # An unknown call raises as it does for everyone (404).
     if call_service.get_call(call_id).status != ConversationStatus.COMPLETED:

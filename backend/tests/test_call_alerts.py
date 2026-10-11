@@ -490,7 +490,7 @@ def test_the_analysis_carries_the_confidence_and_the_alerts():
     }
 
 
-def test_the_live_view_lists_active_calls_for_supervisors_and_admins():
+def test_the_live_view_lists_active_calls_for_supervisors_only():
     client, complaints, sign_in = _api()
     asha = sign_in("asha", UserRole.ICR, display_name="Asha")
     supervisor = sign_in("sup", UserRole.SUPERVISOR)
@@ -525,7 +525,7 @@ def test_the_live_view_lists_active_calls_for_supervisors_and_admins():
     quiet = calls["quiet"]
     assert (quiet["sentiment"], quiet["complaints"], quiet["alerts"]) == (None, [], [])
 
-    assert client.get("/api/v1/live-calls", headers=sign_in("adm", UserRole.ADMIN)).status_code == 200
+    assert client.get("/api/v1/live-calls", headers=sign_in("adm", UserRole.ADMIN)).status_code == 403
     assert client.get("/api/v1/live-calls", headers=asha).status_code == 403
     assert client.get("/api/v1/live-calls").status_code == 401
 

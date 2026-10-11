@@ -27,7 +27,7 @@ export function EscalationLevelBadge({ level }: { level: EscalationLevel }) {
 type EscalationCardProps = {
   escalation: EscalationViewModel | null
   isCallActive?: boolean
-  // Supervisors and admins can acknowledge and resolve.
+  // Supervisors can acknowledge and resolve.
   canManage?: boolean
   showCallLink?: boolean
   // Live view: whether the call is escalating and why, without the quoted

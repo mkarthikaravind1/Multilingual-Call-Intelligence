@@ -49,12 +49,15 @@ export function PostCallAnalysisPage() {
 
   const callId = searchParams.get('call_id')?.trim() ?? ''
   const { session } = useAuth()
-  const canManageEscalations =
-    session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
-  // A management user comes here from a report and only reads: the
-  // transcript, the summary and the audit.
+  const isAdmin = session?.role === 'ADMIN'
   const isManagement = session?.role === 'MANAGEMENT'
-  const canSeeAudit = canManageEscalations || isManagement
+  const canManageEscalations = session?.role === 'SUPERVISOR'
+  // An admin and a management user only read a finished call: the
+  // transcript, the summary, the tone, the estimate and the audit.
+  const isReader = isAdmin || isManagement
+  const canSeeAudit = canManageEscalations || isReader
+  // Keeping the system working is the admin's job too.
+  const canRetryProcessing = canManageEscalations || isAdmin
   const home = isManagement
     ? { to: '/reports', label: 'Back to reports', name: 'the reports' }
     : { to: '/dashboard', label: 'Back to dashboard', name: 'the dashboard' }
@@ -277,7 +280,7 @@ export function PostCallAnalysisPage() {
 
               <div className="button-row">
                 <CallStatusBadge status={call.status} phase={call.phase} />
-                {session?.role === 'ADMIN' && (
+                {isAdmin && (
                   <Link
                     className="text-link"
                     to={`/administration/ai-log?call_id=${encodeURIComponent(call.callId)}`}
@@ -285,7 +288,7 @@ export function PostCallAnalysisPage() {
                     AI log for this call
                   </Link>
                 )}
-                {isActiveCall && !isManagement && (
+                {isActiveCall && !isReader && (
                   <button
                     type="button"
                     className="button"
@@ -304,7 +307,7 @@ export function PostCallAnalysisPage() {
             summary={analysis.postCallSummary}
           />
 
-          {summaryState === 'unavailable' && canManageEscalations && (
+          {summaryState === 'unavailable' && canRetryProcessing && (
             <section className="panel">
               <p className="panel__label">Post-call processing</p>
               <p className="customer-panel__muted">
@@ -344,7 +347,7 @@ export function PostCallAnalysisPage() {
                   setAnalysis((current) => (current ? { ...current, escalation } : current))
                 }
               />
-              {!isManagement && <CustomerPanel callId={call.callId} />}
+              {!isReader && <CustomerPanel callId={call.callId} />}
               <section className="panel">
                 <p className="panel__label">Service estimate</p>
                 <ServiceEstimatePanel
@@ -360,7 +363,7 @@ export function PostCallAnalysisPage() {
             </aside>
           </div>
 
-          {!isManagement && (
+          {!isReader && (
             <CallComplaintsPanel
               callId={call.callId}
               isCallActive={isActiveCall}
@@ -372,7 +375,7 @@ export function PostCallAnalysisPage() {
             <CallAuditPanel callId={call.callId} refreshToken={`${call.status}:${hasSummary}`} />
           )}
 
-          {!isManagement && (
+          {!isReader && (
             <>
               <AiReviewPanel callId={call.callId} />
 

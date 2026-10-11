@@ -34,6 +34,7 @@ from app.domain.user import User, UserRole
 router = APIRouter(prefix="/learning", tags=["learning"])
 
 _ADMINS = require_roles(UserRole.ADMIN)
+_SUPERVISORS = require_roles(UserRole.SUPERVISOR)
 
 # The evidence list grows by several records per call.
 EVIDENCE_PAGE_SIZE = 500
@@ -60,7 +61,7 @@ def get_candidate(
 def approve_candidate(
     candidate_id: str,
     service: LearningManagementService = Depends(get_learning_service),
-    _: User = Depends(require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)),
+    _: User = Depends(_SUPERVISORS),
 ) -> LearningCandidateResponse:
     return LearningCandidateResponse.model_validate(service.approve(candidate_id))
 
@@ -69,7 +70,7 @@ def approve_candidate(
 def reject_candidate(
     candidate_id: str,
     service: LearningManagementService = Depends(get_learning_service),
-    _: User = Depends(require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)),
+    _: User = Depends(_SUPERVISORS),
 ) -> LearningCandidateResponse:
     return LearningCandidateResponse.model_validate(service.reject(candidate_id))
 
@@ -230,7 +231,7 @@ def list_improvements(
 def deactivate_improvement(
     improvement_id: str,
     service: LearningManagementService = Depends(get_learning_service),
-    _: User = Depends(require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)),
+    _: User = Depends(_SUPERVISORS),
 ) -> ActiveImprovementResponse:
     return _to_improvement_response(service.deactivate_improvement(improvement_id))
 

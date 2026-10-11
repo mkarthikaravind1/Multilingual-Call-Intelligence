@@ -26,7 +26,8 @@ from app.services.user_management_service import UNCHANGED, UserManagementServic
 router = APIRouter(prefix="/admin", tags=["administration"])
 
 _ADMINS = require_roles(UserRole.ADMIN)
-_SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
+# The post-call repair list: a supervisor retries a call, an admin keeps the system working.
+_REPAIRERS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
 
 
 class _Request(BaseModel):
@@ -406,7 +407,7 @@ class RetryPostCallResponse(BaseModel):
 @router.get("/post-call", response_model=PostCallRepairStatusResponse)
 def post_call_status(
     service: PostCallRepairService = Depends(get_post_call_repair_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_REPAIRERS),
 ) -> PostCallRepairStatusResponse:
     last_run = service.last_run
     return PostCallRepairStatusResponse(
@@ -419,7 +420,7 @@ def post_call_status(
 @router.post("/post-call/repair", response_model=RepairRunResponse)
 def run_post_call_repair(
     service: PostCallRepairService = Depends(get_post_call_repair_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_REPAIRERS),
 ) -> RepairRunResponse:
     return RepairRunResponse.model_validate(service.run())
 
@@ -428,6 +429,6 @@ def run_post_call_repair(
 def retry_post_call(
     call_id: str,
     service: PostCallRepairService = Depends(get_post_call_repair_service),
-    _: User = Depends(_SUPERVISORS),
+    _: User = Depends(_REPAIRERS),
 ) -> RetryPostCallResponse:
     return RetryPostCallResponse(call_id=call_id, repaired=service.retry(call_id) is not None)

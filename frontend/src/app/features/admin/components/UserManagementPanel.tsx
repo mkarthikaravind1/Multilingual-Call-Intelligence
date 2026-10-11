@@ -14,6 +14,11 @@ const errorMessage = (err: unknown, fallback: string) =>
   err instanceof ApiError ? err.message : fallback
 
 const DIAL_TARGET_HINT = 'Phone number or SIP address'
+const NO_CALLS_HINT = 'Not used: admins and management users take no calls'
+
+// Executives and supervisors take calls. An admin and a management user
+// do not: no location to answer at, no phone to ring.
+const roleTakesCalls = (role: UserRole) => role === 'ICR' || role === 'SUPERVISOR'
 
 type LocationSelectProps = {
   id: string
@@ -109,8 +114,7 @@ function UserCard({ user, locations, isCurrentUser, onUpdated }: UserCardProps) 
     })
   }
 
-  // A management user takes no calls: no location, no phone to ring.
-  const takesCalls = user.role !== 'MANAGEMENT'
+  const takesCalls = roleTakesCalls(user.role)
   const roleId = `role-${user.user_id}`
   const passwordId = `password-${user.user_id}`
   const nameId = `name-${user.user_id}`
@@ -186,7 +190,7 @@ function UserCard({ user, locations, isCurrentUser, onUpdated }: UserCardProps) 
         <label htmlFor={locationFieldId}>Location</label>
         <LocationSelect
           id={locationFieldId}
-          value={locationId}
+          value={takesCalls ? locationId : ''}
           locations={locations}
           disabled={isSaving || !takesCalls}
           onChange={setLocationId}
@@ -195,8 +199,8 @@ function UserCard({ user, locations, isCurrentUser, onUpdated }: UserCardProps) 
         <input
           id={dialTargetId}
           maxLength={200}
-          placeholder={takesCalls ? DIAL_TARGET_HINT : 'Not used: management users take no calls'}
-          value={dialTarget}
+          placeholder={takesCalls ? DIAL_TARGET_HINT : NO_CALLS_HINT}
+          value={takesCalls ? dialTarget : ''}
           disabled={isSaving || !takesCalls}
           onChange={(event) => setDialTarget(event.target.value)}
         />
@@ -270,6 +274,7 @@ export function UserManagementPanel({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<UserRole>('ICR')
+  const takesCalls = roleTakesCalls(role)
   const [displayName, setDisplayName] = useState('')
   const [locationId, setLocationId] = useState('')
   const [dialTarget, setDialTarget] = useState('')
@@ -393,9 +398,9 @@ export function UserManagementPanel({
           <label htmlFor="new-user-location">Location</label>
           <LocationSelect
             id="new-user-location"
-            value={role === 'MANAGEMENT' ? '' : locationId}
+            value={takesCalls ? locationId : ''}
             locations={locations}
-            disabled={isCreating || role === 'MANAGEMENT'}
+            disabled={isCreating || !takesCalls}
             onChange={setLocationId}
           />
         </div>
@@ -405,12 +410,12 @@ export function UserManagementPanel({
             id="new-user-dial-target"
             maxLength={200}
             placeholder={
-              role === 'MANAGEMENT'
-                ? 'Not used: management users take no calls'
-                : `${DIAL_TARGET_HINT}, e.g. +91 98000 00001 or sip:name@phone.plivo.com`
+              takesCalls
+                ? `${DIAL_TARGET_HINT}, e.g. +91 98000 00001 or sip:name@phone.plivo.com`
+                : NO_CALLS_HINT
             }
-            value={role === 'MANAGEMENT' ? '' : dialTarget}
-            disabled={isCreating || role === 'MANAGEMENT'}
+            value={takesCalls ? dialTarget : ''}
+            disabled={isCreating || !takesCalls}
             onChange={(event) => setDialTarget(event.target.value)}
           />
         </div>

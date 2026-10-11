@@ -80,11 +80,12 @@ def test_end_rejects_unknown_and_non_test_calls(supervisor):
     assert client.post("/api/v1/test-calls/plivo-uuid/end", json={}).status_code == 404
 
 
-def test_only_supervisors_and_admins_can_run_test_calls(crm_file):
+def test_only_supervisors_can_run_test_calls(crm_file):
     icr_client, services, _ = build_client(crm_file)
 
     assert icr_client.post("/api/v1/test-calls", json={}).status_code == 403
-    assert _as(icr_client, services, UserRole.ADMIN).post("/api/v1/test-calls", json={}).status_code == 201
+    assert _as(icr_client, services, UserRole.ADMIN).post("/api/v1/test-calls", json={}).status_code == 403
+    assert _as(icr_client, services, UserRole.SUPERVISOR).post("/api/v1/test-calls", json={}).status_code == 201
     assert TestClient(icr_client.app).post("/api/v1/test-calls", json={}).status_code == 401
 
 

@@ -119,18 +119,23 @@ def test_everything_outside_reports_refuses_a_management_user(api):
 
 
 def test_staff_are_let_in_where_they_were_before(api):
-    """The same sweep as an admin: nothing but the supervisor-only price
-    list refuses them, so the new rule took nothing away from staff."""
-    admin = api.user("admin-1", UserRole.ADMIN)
+    """The same sweep as a supervisor: nothing but the administration
+    refuses them, so the rule took nothing away from staff."""
+    supervisor = api.user("sup-1", UserRole.SUPERVISOR)
     call_id = api.call("finished-call", finished=True)
 
     refused = {
         path.removeprefix(API_V1_PREFIX)
         for method, path in _endpoints(api)
-        if _send(api, method, path, admin, call_id).status_code == 403
+        if _send(api, method, path, supervisor, call_id).status_code == 403
     }
 
-    assert all(path.startswith("/price-list") for path in refused), refused
+    assert refused
+    assert all(
+        path.startswith(("/admin/", "/learning/training-data")) for path in refused
+    ), refused
+    # The post-call repair list is theirs as well as the admin's.
+    assert not any(path.startswith("/admin/post-call") for path in refused), refused
 
 
 @pytest.mark.parametrize(

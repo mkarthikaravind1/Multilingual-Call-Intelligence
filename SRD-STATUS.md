@@ -30,7 +30,7 @@ Totals: 121 requirements: 85 met, 27 waiting, 9 not met.
 | 11 | Managers: category dashboards with trend lines; drill-down by category, location, period | Met | Reports with filters; a root cause links to its calls. |
 | 12 | QA and leadership: automated call auditing with category-level scoring | Met | An audit score per call with a score per category and the reason for each point. Fixed rules, shown as estimates. |
 | 13 | QA and leadership: evaluate executive performance | Met | Scorecard per executive on Reports > Performance. |
-| 14 | Admins: user management, access, system settings | Met | Administration: users, roles, locations, categories. Other settings are in `.env`. |
+| 14 | Admins: user management, access, system settings | Met | Administration: users, roles, locations, categories, report layout, data safety. Other settings are in `.env`. The admin sets up and maintains; it takes no calls and does none of the supervisor's work. |
 | 15 | Admins: monitor health, AI monitoring | Met | `/health`, `/metrics`, Prometheus alerts, Grafana dashboard, the AI log. |
 | 16 | Admins: model training, evaluate model performance, deploy updates | Waiting | No model is trained inside this system: the models are Groq's and Sarvam's. Built: the model is changed by a setting; the accuracy script compares one model with another on the same calls; reviewed corrections download as a training file for fine-tuning. Fine-tuning itself needs a provider or server that allows it, which you do not have yet. |
 
@@ -146,7 +146,7 @@ Totals: 121 requirements: 85 met, 27 waiting, 9 not met.
 | 97 | Minimal training; clear next-question and category feed | Waiting | Built; only real executives can say. |
 | 98 | One-click categorised report generation | Met | |
 | 99 | Mobile-friendly, desktop and tablet | Met | Every page checked at phone and tablet width for sideways scrolling. Not a design review of each page. |
-| 100 | Role-based access: executive, supervisor, management report view | Met | Plus admin. The management role is refused everything but reports and finished calls. |
+| 100 | Role-based access: executive, supervisor, management report view | Met | Plus admin. The management role is refused everything but reports and finished calls; the admin everything but administration, reports, the call list and finished calls. |
 | 101 | Headset and VoIP device support | Waiting | Audio is handled by Plivo and the executive's phone or softphone; the web app itself uses no microphone. |
 | 102 | Secure handling of customer data | Met | Sign-in with roles, encrypted recordings and copies, retention periods, audit log, production start-up checks. No penetration test (row 107). |
 | 103 | Compliance with data protection regulations | Not met | No legal review has been done. The pieces a review will ask for exist: consent-gated recording, retention, access log. |

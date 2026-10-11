@@ -30,7 +30,7 @@ router = APIRouter(prefix="/test-calls", tags=["test-calls"])
 
 TEST_PROVIDER = "test"
 _TEST_LINE_NUMBER = "test-line"
-_SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
+_SUPERVISORS = require_roles(UserRole.SUPERVISOR)
 
 
 def _require_enabled() -> None:

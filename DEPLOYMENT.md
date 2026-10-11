@@ -39,6 +39,9 @@ with a default password); never use it in production.
 - **First admin**: with `BOOTSTRAP_ADMIN_EMAIL`/`BOOTSTRAP_ADMIN_PASSWORD`
   set, an admin is created while the user table is empty. Sign in, create
   the real accounts under **Administration**, then clear both variables.
+  An admin sets the system up and takes no calls: create a **Supervisor**
+  first (live calls, escalations, the price list, recordings) and then the
+  executives (ICR). Administration shows a notice until a Supervisor exists.
   Alternatively, from the backend container:
 
   ```bash
@@ -174,9 +177,10 @@ given up on once it has waited `POST_CALL_REPAIR_RATE_LIMIT_GIVE_UP_SECONDS`
 (default 86400). So calls made after the day's LLM quota is used get their
 summary when the quota returns.
 
-A Redis lock ensures that only one instance sweeps at a time. Supervisors
-and admins can see waiting calls and retry them under **Administration →
-Post-call processing**, or from a call's post-call analysis page.
+A Redis lock ensures that only one instance sweeps at a time. Admins see
+the waiting calls and retry them under **Administration → Post-call
+processing**; supervisors and admins can also retry one from the call's
+post-call analysis page.
 
 ## Customer file (CRM)
 
@@ -192,7 +196,7 @@ With `CRM_PROVIDER=json_file`, production refuses to start if
   previous one stays in use and an error is logged.
 - Setting a call's customer by hand is logged with the user, the call and the
   customer ids (phone numbers show their last four digits only). On a
-  completed call only a supervisor or admin can change the customer.
+  completed call only a supervisor can change the customer.
 
 ## Customer summary texts
 

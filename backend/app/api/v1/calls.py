@@ -61,6 +61,7 @@ from app.services.call_service import CallService
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.live_calls import LiveCallFilters, LiveCallsBoard
 from app.api.security_dependencies import (
+    CALL_LIST_READERS,
     STAFF_ROLES,
     get_current_user,
     get_finished_call_reader,
@@ -85,7 +86,8 @@ DEFAULT_PAGE_LIMIT = 20
 MAX_PAGE_LIMIT = 100
 # The live view's page of calls.
 DEFAULT_LIVE_CALLS_LIMIT = 50
-_SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
+_SUPERVISORS = require_roles(UserRole.SUPERVISOR)
+_CALL_LIST_READERS = require_roles(*CALL_LIST_READERS)
 
 @router.get("", response_model=CallListResponse)
 def list_calls(
@@ -112,7 +114,7 @@ def list_calls(
     executive_user_id: str | None = Query(None, max_length=64),
     direction: CallDirection | None = Query(None),
     listing: CallListingQuery = Depends(get_call_listing),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_CALL_LIST_READERS),
 ) -> CallListResponse:
     filters = CallListFilters(
         statuses=frozenset(status),
@@ -146,7 +148,7 @@ def get_call_directory(
             (
                 CallDirectoryEntry(id=u.user_id, name=u.name, is_active=u.is_active)
                 for u in users.list_all()
-                # Management users take no calls.
+                # Admins and management users take no calls.
                 if u.role in STAFF_ROLES
             ),
             key=lambda entry: entry.name.casefold(),
@@ -224,7 +226,7 @@ def list_live_calls(
 @stats_router.get("/call-stats", response_model=CallStatsResponse)
 def get_call_stats(
     call_service: CallService = Depends(get_call_service),
-    _: User = Depends(get_current_user),
+    _: User = Depends(_CALL_LIST_READERS),
 ) -> CallStatsResponse:
     return to_call_stats_response(call_service.count_calls_by_status())
 
@@ -312,10 +314,7 @@ def identify_call_customer(
     # During the call its ICR identifies the caller. Afterwards the
     # summary has been sent and the complaints filed under that customer:
     # changing who the call was with is a correction for a supervisor.
-    if call.status == ConversationStatus.COMPLETED and user.role not in (
-        UserRole.SUPERVISOR,
-        UserRole.ADMIN,
-    ):
+    if call.status == ConversationStatus.COMPLETED and user.role is not UserRole.SUPERVISOR:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only a supervisor can change the customer of a completed call.",

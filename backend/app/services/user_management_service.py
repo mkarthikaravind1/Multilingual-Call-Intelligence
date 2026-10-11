@@ -5,7 +5,7 @@ import time
 
 from app.domain.location import LocationRepository
 from app.domain.phone_number import normalize_dial_target
-from app.domain.user import User, UserRole
+from app.domain.user import CALL_TAKING_ROLES, User, UserRole
 from app.domain.user_repository import UserRepository
 from app.security.password import MAX_PASSWORD_BYTES, hash_password, password_too_long
 from app.services.auth_service import AuthService, EmailAlreadyRegisteredError
@@ -78,7 +78,7 @@ class UserManagementService:
                 raise EmailAlreadyRegisteredError(f"Email already registered: {email!r}.")
             # Checked before the user exists, so a bad value leaves no user behind.
             display_name = _display_name(display_name)
-            if role is UserRole.MANAGEMENT:
+            if role not in CALL_TAKING_ROLES:
                 # Takes no calls: no service centre to answer at, no phone to ring.
                 location_id = dial_target = None
             location_id = self._location_id(location_id)
@@ -124,6 +124,9 @@ class UserManagementService:
             if loses_admin and self._active_admin_count() <= 1:
                 raise UserManagementError("At least one active admin must remain.")
 
+            # What an admin or a management user still has stored from an
+            # earlier role is not theirs any more (see _free_dial_target).
+            took_calls = user.role in CALL_TAKING_ROLES
             updated = dataclasses.replace(
                 user,
                 role=new_role,
@@ -134,18 +137,18 @@ class UserManagementService:
                     else _display_name(display_name)
                 ),
                 location_id=(
-                    user.location_id
+                    (user.location_id if took_calls else None)
                     if isinstance(location_id, _Unchanged)
                     else self._location_id(location_id)
                 ),
                 dial_target=(
-                    user.dial_target
+                    (user.dial_target if took_calls else None)
                     if isinstance(dial_target, _Unchanged)
                     else self._free_dial_target(dial_target, user.user_id)
                 ),
             )
-            if new_role is UserRole.MANAGEMENT:
-                # As in create_user: a management user is never rung.
+            if new_role not in CALL_TAKING_ROLES:
+                # As in create_user: an admin or a management user is never rung.
                 updated = dataclasses.replace(updated, location_id=None, dial_target=None)
             self._repository.save(updated)
         logger.info(
@@ -206,6 +209,9 @@ class UserManagementService:
                 "Enter a phone number with its country code, or a SIP address (sip:name@host)."
             )
         for other in self._repository.list_all():
+            # Only someone who takes calls holds a dial target.
+            if other.role not in CALL_TAKING_ROLES:
+                continue
             if other.user_id != own_id and other.dial_target == target:
                 raise UserManagementError(f"{target} is already the dial target of {other.email}.")
         if self._locations is not None and any(

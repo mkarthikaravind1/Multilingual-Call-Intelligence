@@ -8,9 +8,12 @@ import type { CallMetadataViewModel } from '../types/view-models'
 
 type CallTableProps = {
   calls: CallMetadataViewModel[]
+  // For an admin, who opens a call only once it has ended and has no
+  // live-call page: one link, and none on a call still in progress.
+  finishedCallsOnly?: boolean
 }
 
-export function CallTable({ calls }: CallTableProps) {
+export function CallTable({ calls, finishedCallsOnly = false }: CallTableProps) {
   return (
     <div className="panel panel--list call-table" role="table" aria-label="Calls">
       <div className="table-row table-row--calls table-row--head" role="row">
@@ -62,18 +65,24 @@ export function CallTable({ calls }: CallTableProps) {
             {call.utteranceCount}
           </span>
           <span className="table-cell call-history__actions" role="cell">
-            <Link
-              className="call-history__link"
-              to={`/live-call?call_id=${encodeURIComponent(call.callId)}`}
-            >
-              Call Transcript
-            </Link>
-            <Link
-              className="call-history__link"
-              to={`/post-call-analysis?call_id=${encodeURIComponent(call.callId)}`}
-            >
-              Post Call Analysis
-            </Link>
+            {!finishedCallsOnly && (
+              <Link
+                className="call-history__link"
+                to={`/live-call?call_id=${encodeURIComponent(call.callId)}`}
+              >
+                Call Transcript
+              </Link>
+            )}
+            {finishedCallsOnly && call.status.toLowerCase() !== 'completed' ? (
+              <small className="call-history__note">Opens when the call ends</small>
+            ) : (
+              <Link
+                className="call-history__link"
+                to={`/post-call-analysis?call_id=${encodeURIComponent(call.callId)}`}
+              >
+                Post Call Analysis
+              </Link>
+            )}
           </span>
         </div>
       ))}

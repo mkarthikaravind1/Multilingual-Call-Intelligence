@@ -7,7 +7,6 @@ import { StatePanel } from '../components/StatePanel'
 import { humanizeLabel } from '../format/text'
 
 import { learningRestService } from '../features/ai-improvement/services/learningRestService'
-import { TrainingDataPanel } from '../features/ai-improvement/components/TrainingDataPanel'
 import { EmergingComplaintsPanel } from '../features/complaints/components/EmergingComplaintsPanel'
 
 import { LEARNING_COMPONENTS } from '../features/ai-improvement/types/dto'
@@ -44,7 +43,7 @@ type ReviewNotice = {
 
 export function AiImprovementCenterPage() {
   const { session } = useAuth()
-  const canReviewCandidates = session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
+  const canReviewCandidates = session?.role === 'SUPERVISOR'
   const [candidates, setCandidates] = useState<LearningCandidateDto[]>([])
   const [patterns, setPatterns] = useState<LearningPatternDto[]>([])
   const [evidence, setEvidence] = useState<LearningEvidenceDto[]>([])
@@ -228,7 +227,7 @@ export function AiImprovementCenterPage() {
               <div className="section-heading">
                 <h3 className="section-title">Improvement candidates</h3>
                 {!canReviewCandidates && (
-                  <span className="badge">Review requires Supervisor or Admin</span>
+                  <span className="badge">Review requires a Supervisor</span>
                 )}
               </div>
 
@@ -353,7 +352,7 @@ export function AiImprovementCenterPage() {
             <div className="section-heading">
               <h3 className="section-title">Active improvements</h3>
               {!canReviewCandidates && improvements.length > 0 && (
-                <span className="badge">Deactivation requires Supervisor or Admin</span>
+                <span className="badge">Deactivation requires a Supervisor</span>
               )}
             </div>
 
@@ -524,8 +523,6 @@ export function AiImprovementCenterPage() {
           </section>
 
           <EmergingComplaintsPanel canReview={canReviewCandidates} />
-
-          {session?.role === 'ADMIN' && <TrainingDataPanel />}
         </>
       )}
     </section>

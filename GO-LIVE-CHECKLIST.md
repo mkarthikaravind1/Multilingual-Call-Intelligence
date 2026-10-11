@@ -90,8 +90,8 @@ the speech model is Sarvam's. Two things are in your hands.
 4. Watch `llm_unusable_answers_total` for a day: a model that often answers
    in the wrong shape shows up there first.
 
-**Fine-tuning a model of your own.** The AI Improvement Center has a
-"Training data" section (admins only) that downloads every AI output a
+**Fine-tuning a model of your own.** Administration has a "Training
+data" section (admins only) that downloads every AI output a
 person has corrected or judged, with the call's transcript, as a JSON
 Lines file. Lines with a known right answer carry a `messages` list in the
 shape chat-model fine-tuning takes. Groq does not offer fine-tuning on its
@@ -133,12 +133,14 @@ accuracy for these languages is unknown until then.
 - Answer URL: `https://<your host>/api/v1/telephony/plivo/answer` (POST)
 - Hangup URL: `https://<your host>/api/v1/telephony/plivo/status` (POST)
 
-**In the app**, under Administration:
+**In the app**, under Administration (signed in as an admin):
 
 1. Add each service centre as a **Location** with the Plivo number its
    customers dial.
-2. Give each executive a **name**, a **location** and a **dial target** (the
-   phone number or `sip:` address of their phone).
+2. Give each executive and supervisor a **name**, a **location** and a
+   **dial target** (the phone number or `sip:` address of their phone). An
+   admin or a management user has neither: they take no calls and are never
+   rung.
 
 **Tests, in this order**
 
@@ -224,6 +226,20 @@ ones people forget:
 | `LIVE_STATE_STORE_PROVIDER`, `CALL_MAPPING_STORE_PROVIDER` | `redis` with more than one backend server. |
 | `ROLE_PROVIDER` | `session`. |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | Set for the first start, then clear. |
+
+**First start, in this order**
+
+1. Start with the two `BOOTSTRAP_ADMIN_*` values set and sign in as that
+   admin. An admin sets the system up and reads the reports, the dashboard
+   and finished calls; it cannot take a call, watch live calls, handle
+   escalations, keep the price list or listen to a recording.
+2. Under Administration > Users, create a **Supervisor** before anything
+   else. The page shows a notice until an active one exists. Then create
+   the executives (ICR), and a Management user if someone only reads
+   reports.
+3. Sign in as the Supervisor to upload the price list and to run every
+   call test in this checklist (test audio, recordings, escalations).
+4. Clear the two `BOOTSTRAP_ADMIN_*` values and restart.
 
 Run the migrations (`alembic upgrade head`; the Docker image does it at
 start) and install the libraries added recently (`reportlab` 4.5 with

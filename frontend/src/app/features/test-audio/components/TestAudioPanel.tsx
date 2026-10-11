@@ -13,7 +13,7 @@ type TestAudioPanelProps = {
   replay: TestAudioReplay
 }
 
-// Supervisor/admin tool: replay a recorded conversation as if it were a live
+// Supervisor tool: replay a recorded conversation as if it were a live
 // phone call, to exercise every live and post-call feature end to end.
 export function TestAudioPanel({ replay }: TestAudioPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)

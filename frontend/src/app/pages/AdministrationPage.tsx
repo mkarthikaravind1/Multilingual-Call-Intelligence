@@ -9,6 +9,7 @@ import { DataSafetyPanel } from '../features/admin/components/DataSafetyPanel'
 import { LocationsPanel } from '../features/admin/components/LocationsPanel'
 import { PostCallRepairPanel } from '../features/admin/components/PostCallRepairPanel'
 import { ReportLayoutPanel } from '../features/admin/components/ReportLayoutPanel'
+import { TrainingDataPanel } from '../features/admin/components/TrainingDataPanel'
 import { UserManagementPanel } from '../features/admin/components/UserManagementPanel'
 import { adminRestService } from '../features/admin/services/adminRestService'
 import type { LocationDto, ManagedUserDto } from '../features/admin/types/dto'
@@ -18,22 +19,22 @@ const ROLE_CAPABILITIES = [
   {
     role: 'ICR',
     description:
-      'Handles calls: live call workspace, call history, post-call analysis, complaints and learning insights (read-only).',
+      'Takes calls: the dashboard, the live call workspace, post-call analysis, complaints, and the AI Improvement Center (read-only). Starts, holds and completes calls, records the customer and vehicle, updates complaints and corrects the AI on a call.',
   },
   {
     role: 'SUPERVISOR',
     description:
-      'Everything an ICR can do, plus the escalation queue, reports, reviewing AI improvements and emerging complaints, retrying post-call processing, and managing the price list.',
+      'Everything an ICR can do, plus the live calls view, the escalation queue (acknowledge and resolve), reports, the price list, reviewing AI improvements and emerging complaint themes, call recordings, test audio, and retrying post-call processing.',
+  },
+  {
+    role: 'ADMIN',
+    description:
+      'Sets up and maintains the system: users, locations, complaint categories, the report layout, data safety, the post-call repair list, the training data download, the audit log and the AI log. Reads the reports and the dashboard, and can open a call once it has ended (transcript, summary, audit score). Takes no calls, handles no complaints or escalations and cannot listen to recordings.',
   },
   {
     role: 'MANAGEMENT',
     description:
       'Reads the reports and performance figures, with their exports, and can open a finished call from a report (transcript, summary, audit score). Sees no live calls, changes nothing and takes no calls.',
-  },
-  {
-    role: 'ADMIN',
-    description:
-      'Everything a Supervisor can do except managing the price list, plus managing users, roles, locations and complaint categories, and reading the audit log and the AI log.',
   },
 ]
 
@@ -72,13 +73,30 @@ export function AdministrationPage() {
   const userCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const user of users) {
-      if (user.location_id) counts[user.location_id] = (counts[user.location_id] ?? 0) + 1
+      // Only those who take calls belong to a location.
+      if (user.location_id && (user.role === 'ICR' || user.role === 'SUPERVISOR')) {
+        counts[user.location_id] = (counts[user.location_id] ?? 0) + 1
+      }
     }
     return counts
   }, [users])
 
+  // The first account is an admin, who takes no calls: until a supervisor
+  // exists nobody can watch calls, handle escalations or keep the price list.
+  const needsSupervisor =
+    users.length > 0 && !users.some((user) => user.role === 'SUPERVISOR' && user.is_active)
+
   return (
     <section className="page-shell">
+      {needsSupervisor && (
+        <p className="inline-notice" role="status">
+          <strong>No active Supervisor yet.</strong> An Admin sets the system up but takes no
+          calls. Create a Supervisor under Users before calls can be taken or watched: the
+          Supervisor looks after live calls, escalations, the price list and call recordings, and
+          the executives (ICR) answer the calls.
+        </p>
+      )}
+
       <LocationsPanel
         locations={locations}
         isLoading={locationsLoading}
@@ -100,6 +118,8 @@ export function AdministrationPage() {
       <ReportLayoutPanel />
 
       <DataSafetyPanel />
+
+      <TrainingDataPanel />
 
       <section className="panel">
         <h3 className="section-title">Logs</h3>

@@ -665,6 +665,8 @@ def test_a_plivo_call_gets_its_location_from_the_number_and_its_executive_from_t
     client, services = _api()
     admin = _sign_in(client, services, _user("admin", UserRole.ADMIN))
     location_id, user_id = _set_up_chennai(client, admin)
+    # An admin sets the location up; a call in progress is read by staff.
+    supervisor = _sign_in(client, services, _user("sup", UserRole.SUPERVISOR))
 
     answer = client.post(
         ANSWER, data={"CallUUID": "uuid-1", "From": "919000000001", "To": "914440000001"}
@@ -674,7 +676,7 @@ def test_a_plivo_call_gets_its_location_from_the_number_and_its_executive_from_t
     assert "<Number>+919800000001</Number>" in answer.text
     assert '/api/v1/telephony/plivo/dial" callbackMethod="POST"' in answer.text
     call_id = _call_id(answer.text)
-    call = client.get(f"/api/v1/calls/{call_id}", headers=admin).json()
+    call = client.get(f"/api/v1/calls/{call_id}", headers=supervisor).json()
     assert (call["direction"], call["location_id"], call["executive_user_id"]) == (
         "inbound",
         location_id,
@@ -688,7 +690,7 @@ def test_a_plivo_call_gets_its_location_from_the_number_and_its_executive_from_t
     )
 
     assert ringing.status_code == picked_up.status_code == 200
-    call = client.get(f"/api/v1/calls/{call_id}", headers=admin).json()
+    call = client.get(f"/api/v1/calls/{call_id}", headers=supervisor).json()
     assert call["executive_user_id"] == user_id
 
     listed = client.get("/api/v1/calls", headers=admin).json()["items"][0]
@@ -704,6 +706,7 @@ def test_a_call_an_executive_places_through_plivo_rings_the_customer():
     client, services = _api()
     admin = _sign_in(client, services, _user("admin", UserRole.ADMIN))
     location_id, user_id = _set_up_chennai(client, admin)
+    supervisor = _sign_in(client, services, _user("sup", UserRole.SUPERVISOR))
 
     answer = client.post(
         ANSWER, data={"CallUUID": "uuid-2", "From": "919800000001", "To": "919000000001"}
@@ -711,7 +714,7 @@ def test_a_call_an_executive_places_through_plivo_rings_the_customer():
 
     assert f'callerId="{CHENNAI_LINE}"' in answer.text
     assert "<Number>+919000000001</Number>" in answer.text
-    call = client.get(f"/api/v1/calls/{_call_id(answer.text)}", headers=admin).json()
+    call = client.get(f"/api/v1/calls/{_call_id(answer.text)}", headers=supervisor).json()
     assert (call["direction"], call["location_id"], call["executive_user_id"]) == (
         "outbound",
         location_id,
@@ -758,15 +761,17 @@ def test_the_call_list_filters_by_location_executive_and_direction():
     asha = {"Authorization": f"Bearer {create_access_token(services.user_repository.get_by_id(user_id))}"}
     client.post("/api/v1/calls", json={"call_id": "by-asha"}, headers=asha)
     client.post("/api/v1/calls", json={"call_id": "by-asha-out", "direction": "outbound"}, headers=asha)
-    client.post("/api/v1/calls", json={"call_id": "by-admin"}, headers=admin)
+    supervisor = _sign_in(client, services, _user("sup", UserRole.SUPERVISOR))
+    client.post("/api/v1/calls", json={"call_id": "by-sup"}, headers=supervisor)
 
+    # The admin reads the list (the dashboard) without taking calls.
     def ids(**params) -> set[str]:
         page = client.get("/api/v1/calls", params=params, headers=admin).json()
         return {item["call_id"] for item in page["items"]}
 
-    assert ids() == {"by-asha", "by-asha-out", "by-admin"}
+    assert ids() == {"by-asha", "by-asha-out", "by-sup"}
     assert ids(location_id=location_id) == {"by-asha", "by-asha-out"}
-    assert ids(executive_user_id="admin") == {"by-admin"}
+    assert ids(executive_user_id="sup") == {"by-sup"}
     assert ids(direction="outbound") == {"by-asha-out"}
     assert ids(executive_user_id=user_id, direction="inbound") == {"by-asha"}
     assert ids(location_id="nowhere") == set()
@@ -781,10 +786,8 @@ def test_the_call_directory_lists_what_calls_can_be_filtered_by():
     directory = client.get("/api/v1/call-directory", headers=admin).json()
 
     assert directory["locations"] == [{"id": location_id, "name": "Chennai", "is_active": True}]
-    assert directory["executives"] == [
-        {"id": "admin", "name": "admin@example.com", "is_active": True},
-        {"id": user_id, "name": "Asha", "is_active": True},
-    ]
+    # The admin who set it up takes no calls and is not among them.
+    assert directory["executives"] == [{"id": user_id, "name": "Asha", "is_active": True}]
     assert client.get("/api/v1/call-directory").status_code == 401
 
 

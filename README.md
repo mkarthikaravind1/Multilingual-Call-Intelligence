@@ -39,16 +39,20 @@ nobody reads across calls.
 
 - **ICR (agent)**: handles the call; needs live guidance and no
   after-call paperwork.
-- **Supervisor**: watches escalations, works the complaint queue, reviews
-  newly discovered complaint themes and AI improvement candidates.
-- **Admin**: manages users and operational tooling (post-call repair).
+- **Supervisor**: watches live calls and escalations, works the complaint
+  queue, reviews newly discovered complaint themes and AI improvement
+  candidates, keeps the price list, listens to recordings.
+- **Admin**: sets up and maintains the system (users, locations, complaint
+  categories, report layout, data safety, post-call repair, the audit log
+  and the AI log) and reads the reports, the dashboard and finished calls.
+  Takes no calls and does none of the supervisor's work.
 - **Management**: reads the reports and performance figures (with their
   exports) and can open a finished call from a report: transcript, summary
   and audit score. Sees no live calls, changes nothing, takes no calls.
 
 Roles are enforced by the API (`ICR`, `SUPERVISOR`, `ADMIN`, `MANAGEMENT`).
-A management user is let in only where an endpoint names the role, so a new
-endpoint is closed to them unless it says otherwise.
+An admin and a management user are let in only where an endpoint names the
+role, so a new endpoint is closed to them unless it says otherwise.
 
 ## Key features
 
@@ -564,9 +568,9 @@ With the backend running, interactive OpenAPI docs are at
 | Escalations | `GET /escalations`, `POST /escalations/{call_id}/acknowledge`, `/resolve` |
 | Learning | `/learning/candidates` (+ approve/reject), `/learning/patterns`, `/learning/evidence`, `/learning/calls/{id}/observations`, `/learning/calls/{id}/feedback`, `/learning/improvements`, `/learning/training-data` (+ `/export`: every judged AI output with its transcript as JSON Lines, for fine-tuning a model elsewhere; admins only) |
 | Admin | `/admin/users`, `/admin/locations`, `/admin/complaint-categories`, `/admin/post-call` (+ repair/retry), `/admin/report-layout` (GET/PUT: the company name and title on the exported complaint report, its sections in order, and the columns of its list of complaints) |
-| Live view and alerts | `GET /live-calls` (every active call with tone, complaints, escalation and standing alerts; supervisors and admins), `GET/POST /calls/{id}/question-outcomes` (a suggested question accepted or skipped). A call's analysis carries its alerts (complaint not asked about, severe category, low confidence, poor audio; thresholds are the `ALERT_*` settings) and each complaint's confidence. On screen only: nothing is sent. |
+| Live view and alerts | `GET /live-calls` (every active call with tone, complaints, escalation and standing alerts; supervisors only), `GET/POST /calls/{id}/question-outcomes` (a suggested question accepted or skipped). A call's analysis carries its alerts (complaint not asked about, severe category, low confidence, poor audio; thresholds are the `ALERT_*` settings) and each complaint's confidence. On screen only: nothing is sent. |
 | Reports | `GET /reports/complaints` (category totals, trend by day or week, category by location, root causes), `GET /reports/complaints/export?format=csv\|xlsx\|pdf`; filters: dates, location, executive, category, tone, direction. Supervisors, admins and management users. `GET /reports/performance` (+ `/export?format=csv\|xlsx`): estimates by fixed rules (coverage score, First Call Resolution, repeat complaints, churn risk, CSAT) overall and per executive; the rules are in `app/services/performance.py` and on the page. |
-| Recordings | `GET /calls/{id}/recording` (whether there is one, its length, when it is removed, how often it was listened to), `GET /calls/{id}/recording/audio` (decrypted WAV; each request is logged). Supervisors and admins. Kept only with `RECORDING_ENABLED=true` and a `RECORDING_ENCRYPTION_KEY`; removed after `RECORDING_RETENTION_DAYS`. |
+| Recordings | `GET /calls/{id}/recording` (whether there is one, its length, when it is removed, how often it was listened to), `GET /calls/{id}/recording/audio` (decrypted WAV; each request is logged). Supervisors only. Kept only with `RECORDING_ENABLED=true` and a `RECORDING_ENCRYPTION_KEY`; removed after `RECORDING_RETENTION_DAYS`. |
 | Logs | `GET /admin/audit-log` (who did what, when; filters: dates, user, action, result, target), `GET /admin/ai-log` (every request to the LLM, without its text; filters: call, task, outcome, dates; token totals), `GET /admin/ai-log/{id}` (one request with what was asked and answered). Admins only; each read is itself in the audit log. Settings: `AUDIT_LOG_RETENTION_DAYS`, `AI_LOG_MODE` (`full`, `details`, `off`), `AI_LOG_RETENTION_DAYS`. |
 | Data safety | `GET /admin/data-safety` (copies off the server, the recording check, database backups), `POST /admin/data-safety/copy`, `/check`, `/backup` (run one now). Admins only. Off unless `ARCHIVE_STORAGE_PROVIDER` (`local` or `s3`) and `ARCHIVE_ENCRYPTION_KEY` are set; backups need `BACKUP_ENABLED=true` too. Restoring: `python -m scripts.restore_backup`. Replication: `deploy/docker-compose.replica.yml`. See `DEPLOYMENT.md`. |
 | Test calls | `/test-calls` (disabled in production) |
@@ -587,7 +591,8 @@ after, is in [GO-LIVE-CHECKLIST.md](GO-LIVE-CHECKLIST.md).
 ## Security considerations
 
 - JWT bearer authentication on every REST endpoint; roles checked on
-  supervisor/admin actions; inactive users are refused.
+  every endpoint (an admin and a management user are let in only where an
+  endpoint names the role); inactive users are refused.
 - Browser WebSockets never carry the access token: they use a 60-second,
   single-use ticket bound to the user and the call. Purpose-bound tokens
   (WebSocket tickets, telephony stream tokens) are refused as access tokens.

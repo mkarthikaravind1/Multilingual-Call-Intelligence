@@ -1026,7 +1026,7 @@ URL = "/api/v1/admin/data-safety"
 def test_an_administrator_sees_where_the_data_stands_and_can_copy_and_check_now(tmp_path):
     api = _Api(**_on(tmp_path))
     admin = api.user("admin-1", UserRole.ADMIN)
-    api.finished_call("call-1", admin)
+    api.finished_call("call-1", api.user("icr-1", UserRole.ICR))
     api.services.recording_archive.save("call-1", _call_recording())
 
     before = api.client.get(URL, headers=admin).json()
@@ -1051,7 +1051,9 @@ def test_an_administrator_sees_where_the_data_stands_and_can_copy_and_check_now(
     # "Archive complete" now means the copies are off the server.
     analysis = api.client.get("/api/v1/calls/call-1/analysis", headers=admin).json()
     assert "archive_complete" in analysis["logging_statuses"]
-    recording = api.client.get("/api/v1/calls/call-1/recording", headers=admin).json()
+    # The recording itself is the supervisor's to open.
+    supervisor = api.user("sup-1", UserRole.SUPERVISOR)
+    recording = api.client.get("/api/v1/calls/call-1/recording", headers=supervisor).json()
     assert (recording["archived"], recording["integrity"]) == (True, "ok")
     assert recording["verified_at"] is not None
 
@@ -1059,7 +1061,7 @@ def test_an_administrator_sees_where_the_data_stands_and_can_copy_and_check_now(
 def test_a_lost_recording_is_listed_for_the_administrator(tmp_path):
     api = _Api(**_on(tmp_path))
     admin = api.user("admin-1", UserRole.ADMIN)
-    api.finished_call("call-1", admin)
+    api.finished_call("call-1", api.user("icr-1", UserRole.ICR))
     stored = api.services.recording_archive.save("call-1", _call_recording())
     api.services.recording_archive.path_of(stored).unlink()
 
@@ -1068,7 +1070,8 @@ def test_a_lost_recording_is_listed_for_the_administrator(tmp_path):
     body = api.client.get(URL, headers=admin).json()
     assert body["recordings_lost"] == 1
     assert [lost["call_id"] for lost in body["lost"]] == ["call-1"]
-    recording = api.client.get("/api/v1/calls/call-1/recording", headers=admin).json()
+    supervisor = api.user("sup-1", UserRole.SUPERVISOR)
+    recording = api.client.get("/api/v1/calls/call-1/recording", headers=supervisor).json()
     assert recording["integrity"] == "lost"
 
 

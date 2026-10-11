@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 
+import type { UserRole } from '../api/types/auth'
 import { useAuth } from '../auth/useAuth'
 import { NavIcon, type NavIconName } from './NavIcon'
 import { SIDEBAR_ID } from './shell-layout-context'
@@ -18,10 +19,6 @@ const supervisorNavItems: NavItem[] = [
   { to: '/live-calls', label: 'Live Calls', icon: 'live-calls' },
   { to: '/escalations', label: 'Escalations', icon: 'escalations' },
   { to: '/reports', label: 'Reports', icon: 'reports' },
-]
-
-// Supervisors only, not admins.
-const supervisorRoleNavItems: NavItem[] = [
   { to: '/price-list', label: 'Price List', icon: 'price-list' },
 ]
 
@@ -29,21 +26,31 @@ const managementNavItems: NavItem[] = [
   { to: '/reports', label: 'Reports', icon: 'reports' },
 ]
 
+// An admin sets the system up and reads; the pages for working on calls
+// are not theirs.
 const adminNavItems: NavItem[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { to: '/reports', label: 'Reports', icon: 'reports' },
   { to: '/administration', label: 'Administration', icon: 'administration' },
 ]
+
+function itemsFor(role: UserRole | null | undefined): NavItem[] {
+  switch (role) {
+    case 'SUPERVISOR':
+      return [...navItems, ...supervisorNavItems]
+    case 'ADMIN':
+      return adminNavItems
+    case 'MANAGEMENT':
+      return managementNavItems
+    default:
+      return navItems
+  }
+}
 
 export function Sidebar() {
   const { session } = useAuth()
   const { isSidebarCollapsed, isDrawerOpen, closeDrawer } = useShellLayout()
-  // A management user has the reports and nothing else.
-  const isManagement = session?.role === 'MANAGEMENT'
-  const visibleItems = [
-    ...(isManagement ? managementNavItems : navItems),
-    ...(session?.role === 'SUPERVISOR' || session?.role === 'ADMIN' ? supervisorNavItems : []),
-    ...(session?.role === 'SUPERVISOR' ? supervisorRoleNavItems : []),
-    ...(session?.role === 'ADMIN' ? adminNavItems : []),
-  ]
+  const visibleItems = itemsFor(session?.role)
 
   const className = [
     'sidebar',

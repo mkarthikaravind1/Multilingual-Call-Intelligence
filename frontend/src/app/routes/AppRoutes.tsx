@@ -55,12 +55,19 @@ function RootRedirect() {
   return <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />
 }
 
-// The pages for people who work on calls. A management user is sent to the
-// reports, the one place they have (every other guard sends a user it
-// refuses to the dashboard, which brings them here).
-function StaffOnly({ children }: { children: ReactNode }) {
+// The dashboard: staff work from it and an admin reads it. A management
+// user is sent to the reports, the one place they have (every other guard
+// sends a user it refuses to the dashboard, which brings them here).
+function DashboardReaders({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   return session?.role === 'MANAGEMENT' ? <Navigate to="/reports" replace /> : <>{children}</>
+}
+
+// The pages for people who work on calls: executives and supervisors.
+function StaffOnly({ children }: { children: ReactNode }) {
+  const { session } = useAuth()
+  const allowed = session?.role === 'ICR' || session?.role === 'SUPERVISOR'
+  return allowed ? <>{children}</> : <Navigate to="/dashboard" replace />
 }
 
 function ReportReaders({ children }: { children: ReactNode }) {
@@ -75,14 +82,8 @@ function AdminOnly({ children }: { children: ReactNode }) {
   return session?.role === 'ADMIN' ? <>{children}</> : <Navigate to="/dashboard" replace />
 }
 
-function SupervisorOnly({ children }: { children: ReactNode }) {
-  const { session } = useAuth()
-  const allowed = session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
-  return allowed ? <>{children}</> : <Navigate to="/dashboard" replace />
-}
-
 // Supervisors only; admins too are sent away.
-function SupervisorRoleOnly({ children }: { children: ReactNode }) {
+function SupervisorOnly({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   return session?.role === 'SUPERVISOR' ? <>{children}</> : <Navigate to="/dashboard" replace />
 }
@@ -96,11 +97,11 @@ export function AppRoutes() {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <StaffOnly>
+            <DashboardReaders>
               <AppShell title="Dashboard" subtitle="Customer intelligence overview">
                 <DashboardPage />
               </AppShell>
-            </StaffOnly>
+            </DashboardReaders>
           </ProtectedRoute>
         }
       />
@@ -118,9 +119,9 @@ export function AppRoutes() {
         path="/call-history"
         element={
           <ProtectedRoute>
-            <StaffOnly>
+            <DashboardReaders>
               <CallHistoryRedirect />
-            </StaffOnly>
+            </DashboardReaders>
           </ProtectedRoute>
         }
       />
@@ -202,11 +203,11 @@ export function AppRoutes() {
         path="/price-list"
         element={
           <ProtectedRoute>
-            <SupervisorRoleOnly>
+            <SupervisorOnly>
               <AppShell title="Price List" subtitle="Service prices used for call estimates">
                 <PriceListPage />
               </AppShell>
-            </SupervisorRoleOnly>
+            </SupervisorOnly>
           </ProtectedRoute>
         }
       />
@@ -216,7 +217,7 @@ export function AppRoutes() {
         element={
           <ProtectedRoute>
             <AdminOnly>
-              <AppShell title="Administration" subtitle="Roles and user access">
+              <AppShell title="Administration" subtitle="Users, locations and the upkeep of the system">
                 <AdministrationPage />
               </AppShell>
             </AdminOnly>

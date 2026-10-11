@@ -445,7 +445,7 @@ def _api(tmp_path):
     return client, services, sign_in
 
 
-def test_supervisors_and_admins_can_listen_and_executives_cannot(tmp_path):
+def test_supervisors_can_listen_and_nobody_else(tmp_path):
     client, services, sign_in = _api(tmp_path)
     icr = sign_in("icr", UserRole.ICR)
     supervisor = sign_in("sup", UserRole.SUPERVISOR)
@@ -470,23 +470,23 @@ def test_supervisors_and_admins_can_listen_and_executives_cannot(tmp_path):
     assert audio.headers["cache-control"] == "no-store"
     with wave.open(io.BytesIO(audio.content)) as wav:
         assert wav.getnframes() == 8000
-    admin = sign_in("adm", UserRole.ADMIN)
-    assert client.get("/api/v1/calls/c1/recording/audio", headers=admin).status_code == 200
 
-    # Both listens are on record.
-    assert client.get("/api/v1/calls/c1/recording", headers=supervisor).json()["plays"] == 2
-    assert [p.user_id for p in services.recording_archive.plays("c1")] == ["sup", "adm"]
+    # The listen is on record.
+    assert client.get("/api/v1/calls/c1/recording", headers=supervisor).json()["plays"] == 1
+    assert [p.user_id for p in services.recording_archive.plays("c1")] == ["sup"]
 
     # A call without a recording (e.g. one started in the web app).
     none = client.get("/api/v1/calls/c2/recording", headers=supervisor).json()
     assert (none["enabled"], none["available"]) == (True, False)
     assert client.get("/api/v1/calls/c2/recording/audio", headers=supervisor).status_code == 404
 
+    admin = sign_in("adm", UserRole.ADMIN)
     for path in ("/api/v1/calls/c1/recording", "/api/v1/calls/c1/recording/audio"):
         assert client.get(path, headers=icr).status_code == 403
+        assert client.get(path, headers=admin).status_code == 403
         assert client.get(path).status_code == 401
     assert client.get("/api/v1/calls/nope/recording", headers=supervisor).status_code == 404
-    assert len(services.recording_archive.plays("c1")) == 2
+    assert len(services.recording_archive.plays("c1")) == 1
 
 
 def test_with_recording_off_the_api_says_so():

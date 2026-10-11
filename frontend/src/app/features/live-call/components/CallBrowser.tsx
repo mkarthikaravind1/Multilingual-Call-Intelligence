@@ -100,9 +100,11 @@ type ListState = {
 type CallBrowserProps = {
   // Shown when there are no calls at all (no filters set).
   emptyState: ReactNode
+  // See CallTable.
+  finishedCallsOnly?: boolean
 }
 
-export function CallBrowser({ emptyState }: CallBrowserProps) {
+export function CallBrowser({ emptyState, finishedCallsOnly = false }: CallBrowserProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [reloadCount, setReloadCount] = useState(0)
   const directory = useCallDirectory()
@@ -291,7 +293,7 @@ export function CallBrowser({ emptyState }: CallBrowserProps) {
     const pageCount = Math.max(1, Math.ceil(current.total / PAGE_SIZE))
     body = (
       <>
-        <CallTable calls={current.calls} />
+        <CallTable calls={current.calls} finishedCallsOnly={finishedCallsOnly} />
         <div className="pager">
           <span>
             Showing <strong>{firstShown}–{lastShown}</strong> of{' '}

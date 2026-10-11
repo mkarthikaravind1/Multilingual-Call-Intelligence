@@ -37,8 +37,7 @@ export function LiveCallPage() {
   const callId = searchParams.get('call_id')?.trim() ?? ''
   const isLiveSession = Boolean(callId) && !isCallDetailsView(searchParams)
   const { session } = useAuth()
-  const canManageEscalations =
-    session?.role === 'SUPERVISOR' || session?.role === 'ADMIN'
+  const canManageEscalations = session?.role === 'SUPERVISOR'
   // A supervisor's acknowledge/resolve, shown until the next poll catches up.
   const [savedEscalation, setSavedEscalation] = useState<EscalationViewModel | null>(null)
 

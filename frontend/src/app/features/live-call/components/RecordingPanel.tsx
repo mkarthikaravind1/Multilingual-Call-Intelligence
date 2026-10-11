@@ -9,7 +9,7 @@ type RecordingPanelProps = {
   callId: string
 }
 
-// A finished call's recording, for supervisors and admins. The audio is
+// A finished call's recording, for supervisors. The audio is
 // fetched only when asked for (each fetch is logged as a listen) and is
 // never started by the page itself.
 export function RecordingPanel({ callId }: RecordingPanelProps) {

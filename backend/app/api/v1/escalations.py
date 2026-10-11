@@ -15,7 +15,7 @@ from app.services.escalation_service import EscalationService
 
 router = APIRouter(prefix="/escalations", tags=["escalations"])
 
-_SUPERVISORS = require_roles(UserRole.SUPERVISOR, UserRole.ADMIN)
+_SUPERVISORS = require_roles(UserRole.SUPERVISOR)
 
 
 @router.get("", response_model=list[EscalationResponse])

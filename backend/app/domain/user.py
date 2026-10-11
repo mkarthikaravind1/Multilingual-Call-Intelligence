@@ -11,6 +11,12 @@ class UserRole(str, Enum):
     MANAGEMENT = "MANAGEMENT"
 
 
+# Who takes calls and works on them. An admin sets the system up and a
+# management user reads reports: neither answers a customer, so neither
+# has a service centre or a phone to ring.
+CALL_TAKING_ROLES = (UserRole.ICR, UserRole.SUPERVISOR)
+
+
 @dataclass(frozen=True)
 class User:
     user_id: str
