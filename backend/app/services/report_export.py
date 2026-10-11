@@ -3,7 +3,6 @@
 
 import csv
 import io
-import re
 from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
@@ -12,6 +11,7 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
 from app.services.performance import Figures, PerformanceReport
+from app.services.pdf_text import LEFT_OUT_NOTE, PdfText
 from app.services.reporting import Report
 
 EXPORT_FORMATS = ("csv", "xlsx", "pdf")
@@ -328,16 +328,6 @@ def _xlsx(report: Report) -> bytes:
 
 # ---- PDF ----
 
-# The PDF's built-in fonts print Latin script only: text in Tamil, Telugu,
-# Kannada or Malayalam would come out as black squares. Such text is left
-# out, visibly, and the PDF says where to find it.
-_UNPRINTABLE = re.compile("[^\\x00-\\xff\\u2010-\\u2027\\u2030-\\u205e]+")
-_LEFT_OUT = "[...]"
-_LEFT_OUT_NOTE = (
-    "Text in Tamil or another Indian script cannot be printed in this PDF and is shown "
-    "as [...]. The Excel and CSV exports carry it in full."
-)
-
 
 def _pdf(report: Report) -> bytes:
     # Imported here: only this export needs the PDF library.
@@ -351,13 +341,11 @@ def _pdf(report: Report) -> bytes:
     body = styles["BodyText"]
     small = styles["BodyText"].clone("small", fontSize=8, leading=10)
 
-    left_out = False
+    # Tamil, Telugu, Kannada and Malayalam are printed in their own fonts.
+    writer = PdfText()
 
     def text(value, style=small) -> Paragraph:
-        nonlocal left_out
-        printable = _UNPRINTABLE.sub(_LEFT_OUT, str(value))
-        left_out = left_out or printable != str(value)
-        return Paragraph(escape(printable), style)
+        return writer.paragraph(value, style)
 
     def table(rows: list[list], widths: list[float] | None = None) -> Table:
         made = Table([[text(cell) for cell in row] for row in rows], colWidths=widths, repeatRows=1)
@@ -456,9 +444,9 @@ def _pdf(report: Report) -> bytes:
                 )
             story.append(Spacer(1, 2 * mm))
 
-    if left_out:
+    if writer.left_out:
         # Under the title, where it is read before the tables.
-        story.insert(1, Paragraph(escape(_LEFT_OUT_NOTE), body))
+        story.insert(1, Paragraph(escape(LEFT_OUT_NOTE), body))
 
     buffer = io.BytesIO()
     SimpleDocTemplate(

@@ -1,6 +1,6 @@
 # Where the system stands against the SRD
 
-Checked on 11 October 2026 against `main` at 6053cc2 (row 77 updated since), requirement by
+Checked on 11 October 2026 against `main` at 6053cc2 (rows 77 and 94 updated since), requirement by
 requirement, from "AI_Multilingual_CRM_SRD_Updated (2).docx". Each row was
 checked in the code and its tests, not from earlier notes.
 
@@ -11,7 +11,7 @@ yet (Plivo, the paid Groq key, the SMS gateway, a storage bucket, recordings
 in the other languages) or with real users and real load.
 **Not met**: missing or short of what the SRD says, with the reason.
 
-Totals: 121 requirements: 81 met, 25 waiting, 15 not met.
+Totals: 121 requirements: 82 met, 25 waiting, 14 not met.
 
 ## 1. Scope and users (SRD 1.2, 1.3)
 
@@ -140,7 +140,7 @@ Totals: 121 requirements: 81 met, 25 waiting, 15 not met.
 | 91 | REST APIs | Met | |
 | 92 | CRM APIs | Not met | Left out by your decision. |
 | 93 | Telephony APIs | Waiting | Plivo, incoming and outgoing, built to its documentation. Needs a real call. |
-| 94 | Report export: CSV, PDF, Excel, filtered by category | Not met | All three work. The PDF cannot print Tamil or another Indian script: it shows `[...]` and points to Excel and CSV. Printing them needs four font files and a newer PDF library. |
+| 94 | Report export: CSV, PDF, Excel, filtered by category | Met | All three, with the filters applied. The PDF prints Tamil, Telugu, Kannada and Malayalam in bundled Noto fonts; text copied out of the PDF in those scripts does not copy back correctly (use Excel or CSV for that). |
 | 95 | Cloud, on-premise or hybrid | Met | |
 | 96 | 24/7 operation, at least 99.9% availability | Waiting | Nothing here has run long enough, or on real infrastructure, to say. |
 | 97 | Minimal training; clear next-question and category feed | Waiting | Built; only real executives can say. |
@@ -188,10 +188,6 @@ Needs a different speech recogniser:
 Not what this kind of system does:
 
 - Training or retraining models (rows 16, 84). Audio above 16 kHz (row 43).
-
-Small, and could be built:
-
-- Indian scripts in the PDF export (row 94): needs font files and a library downloaded.
 
 Needs something outside the software:
 

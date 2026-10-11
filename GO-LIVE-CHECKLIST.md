@@ -199,8 +199,8 @@ ones people forget:
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | Set for the first start, then clear. |
 
 Run the migrations (`alembic upgrade head`; the Docker image does it at
-start) and install the two libraries added recently (`reportlab`,
-`cryptography`; both are in `requirements-api.txt`).
+start) and install the libraries added recently (`reportlab` 4.5 with
+`uharfbuzz`, `cryptography`, `boto3`; all are in `requirements-api.txt`).
 
 ### Data safety: copies off the server, backups, replication
 
@@ -390,7 +390,6 @@ The full list, with the reason for each, closes `SRD-STATUS.md`. In short:
 - **Not what this system does:** training or retraining AI models (the
   models are Groq's and Sarvam's; the instructions given to them are what
   improves), and audio above 16 kHz.
-- **Small and not built:** Indian scripts in the PDF export.
 - **Outside the software:** a data-protection review, and a measured
   figure for data reliability.
 
@@ -460,9 +459,14 @@ customer's summary by SMS, and the AI Improvement Center.
   vehicle, and so on). It is a word list, not understanding: the same
   cause put in quite different words still lands in separate groups, and
   the list is English.
-- **PDF exports** print only Latin script. Text in Tamil or another Indian
-  script is shown as `[...]` with a note saying so; the Excel and CSV
-  exports carry it in full.
+- **PDF exports** print Tamil, Telugu, Kannada and Malayalam in bundled
+  Noto Sans fonts (Google Fonts, SIL Open Font License; the licences are
+  beside the fonts in `backend/app/assets/fonts`). Seen correct on a sample
+  report by eye; I do not read these scripts, so have a native reader look
+  once. Text in those scripts copied out of the PDF, or searched for in it,
+  does not come back correctly: use Excel or CSV for that. Any other
+  script (Hindi, say) is shown as `[...]` with a note. A rupee sign in
+  Latin text is written "Rs".
 - **E-mail alerts** were checked in Docker on 11 October 2026 with the
   local mail catcher: a test alert arrived with the right subject and
   template. The "resolved" e-mail (sent up to five minutes later) and a
