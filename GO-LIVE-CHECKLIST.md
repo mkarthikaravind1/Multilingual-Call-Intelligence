@@ -8,6 +8,36 @@ Nothing here has been run against the real services yet unless it says so.
 Items marked **Unverified** were built to the provider's documentation and
 need the test beside them before they can be trusted.
 
+Where every SRD requirement stands (met, waiting on an access, or not met
+and why) is in `SRD-STATUS.md`, checked on 11 October 2026.
+
+## 0. The order to work in when the accesses arrive
+
+Each step proves the rows of `SRD-STATUS.md` named beside it.
+
+1. **Paid Groq key** (section 1). Fill it in, set `LIVE_ANALYSIS_SPEED=fast`
+   and replay one test recording. A complaint should appear about a second
+   after its line, with no long waits. Proves row 45.
+2. **Plivo** (section 3). The three tests there, in order: an incoming
+   call, an outgoing call, and a two-sided call as separate tracks. Proves
+   rows 25, 26, 93, 101, 121 and shows Incoming and Outgoing on screen.
+3. **Recording** (section 5), if you have decided to record. One real call
+   with `RECORDING_ENABLED=true`. Proves row 57.
+4. **Storage bucket** (section 6, "Data safety"). Its five tests. Proves
+   rows 61 and 65. Restore one backup into an empty database while there.
+5. **HTTPS** in front of the web app (`DEPLOYMENT.md`, "First deployment").
+   Plivo needs it for step 2 on a server. Proves row 64.
+6. **SMS gateway** (section 4), on a number of your own first.
+7. **Recordings in Telugu, Kannada and Malayalam**, and written-down
+   transcripts for at least 30 calls per language (section 7). Proves rows
+   1, 47 to 50, 109 and 113.
+8. **Real executives for a week.** Their Accept and Skip choices give the
+   question relevance figure (row 51) and tell you whether the screen needs
+   training (rows 97, 114).
+9. **Real servers.** Rebuild the Docker image (unproven since `pg_dump`,
+   the S3 library and the recordings volume were added), then the load test
+   of section 7 against it. Proves rows 96, 104 to 106 and 116.
+
 ## 1. Groq (the AI)
 
 | Setting | What to put | Notes |
@@ -284,10 +314,23 @@ This costs nothing: it starts its own backend with stand-ins for the speech
 recogniser and the AI and in-memory storage, and touches no real service.
 See section 8 for what it found on the development laptop.
 
-**Not measured by either tool:** the SRD's speed targets with the real
-providers (transcript within 2 s, categories within 3 s, a question within
-1.5 s), 99.9% availability, failover and disaster recovery, and penetration
-testing.
+**Speed, as measured on 11 October 2026** in five replays on this laptop
+with the real speech recogniser and the free Groq key (times read off the
+screen's data every 2 seconds, so each is good to about 2 seconds):
+
+- A transcript line appeared about 1 to 3 seconds after the speaker
+  stopped. The SRD asks for under 2 seconds: not met for longer lines,
+  because speech is transcribed at each pause, not as it is spoken.
+- With `LIVE_ANALYSIS_SPEED=fast`, each analysis took about 1 second after
+  the line was transcribed, and the complaint and its questions were on
+  screen about 4 seconds after the customer finished speaking. The SRD
+  asks for 3 seconds (categories) and 1.5 seconds (questions) from the end
+  of the utterance: the category target is within reach on the paid key,
+  the question target is not without a streaming speech recogniser.
+- In the standard mode the analysis runs every 30 seconds, by decision.
+
+**Not measured by anything here:** 99.9% availability, failover and
+disaster recovery, and penetration testing.
 
 ## 8. What the load test found
 
@@ -335,10 +378,26 @@ the same for 5 and for 500 calls; the page's real load time at 500 calls
 on your PostgreSQL and Redis has not been measured (SRD: under 3 s). Apply
 migration 0020 (an index the page's query uses).
 
-## 9. In the SRD and not built
+## 9. In the SRD and not met
 
-- A real CRM connection (customers come from a file), WhatsApp delivery,
-  failover and disaster recovery, penetration testing: set aside by decision.
+The full list, with the reason for each, closes `SRD-STATUS.md`. In short:
+
+- **Set aside by decision:** a real CRM connection (customers come from a
+  file), automatic failover and disaster-recovery testing, penetration
+  testing.
+- **Needs a streaming speech recogniser:** a transcript within 2 seconds
+  and a question within 1.5 seconds of the end of an utterance.
+- **Not what this system does:** training or retraining AI models (the
+  models are Groq's and Sarvam's; the instructions given to them are what
+  improves), and audio above 16 kHz.
+- **Small and not built:** an alert of its own for negative sentiment (the
+  tone is shown and feeds the escalation level), and Indian scripts in the
+  PDF export.
+- **Outside the software:** a data-protection review, and a measured
+  figure for data reliability.
+
+Not in the SRD and built anyway: service estimates from a price list, the
+customer's summary by SMS, and the AI Improvement Center.
 
 ## 10. Known weak spots
 
