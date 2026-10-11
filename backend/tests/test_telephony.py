@@ -561,7 +561,7 @@ def test_answer_webhook_creates_call_and_returns_stream_xml():
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/xml")
     call_id = _extract_call_id(response.text)
-    assert call_id.startswith("plivo-")
+    assert call_id == "CALL-000001"
     assert services.call_service.get_call(call_id).status.value == "active"
 
 
@@ -1456,7 +1456,9 @@ def test_test_call_streams_plivo_frames_without_a_telephony_provider(monkeypatch
         "test", InboundCallEvent("test-uuid-1", "", "test-line")
     )
 
-    with client.websocket_connect(_stream_path(call_id)) as ws:
+    # As test_calls.py hands it out: the token says it is a test call.
+    token = create_stream_token(call_id, test_call=True)
+    with client.websocket_connect(f"/api/v1/calls/{call_id}/telephony-stream?token={token}") as ws:
         _send_stream_start(ws)
         _wait_for_stream(services, "test-uuid-1", is_open=True)
         _send_media(ws, 1, 80)

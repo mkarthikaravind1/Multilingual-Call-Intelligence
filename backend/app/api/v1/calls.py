@@ -249,7 +249,7 @@ def start_call(
     start_time = time.time() if payload.start_time is None else payload.start_time
     # A call started here is taken by whoever is signed in, at their location.
     call = call_service.start_call(
-        payload.call_id,
+        payload.call_id or call_service.new_call_id(),
         start_time,
         direction=payload.direction,
         location_id=user.location_id,

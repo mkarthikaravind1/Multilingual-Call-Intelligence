@@ -82,7 +82,7 @@ async def start_test_call(
     call_id = await run_in_threadpool(
         telephony_call_service.start_call_from_provider, TEST_PROVIDER, event, route
     )
-    token = create_stream_token(call_id, get_settings())
+    token = create_stream_token(call_id, get_settings(), test_call=True)
     return StartTestCallResponse(
         call_id=call_id,
         provider_call_id=provider_call_id,

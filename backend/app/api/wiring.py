@@ -30,6 +30,7 @@ from app.composition.providers import (
 from app.core.config import Settings, get_settings
 from app.composition.speaker_sessions import build_speaker_session_registry
 from app.services.call_service import CallService
+from app.domain.call_number import CallNumbers
 from app.services.call_workflow_service import CallWorkflowService
 from app.services.customer_summary_delivery_service import CustomerSummaryDeliveryService
 from app.services.customer_summary_repository import (
@@ -230,6 +231,7 @@ def build_api_services(
     transcript_archive_repository: TranscriptArchiveRepository | None = None,
     backup_repository: BackupRepository | None = None,
     report_layout_repository: ReportLayoutRepository | None = None,
+    call_numbers: CallNumbers | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -276,7 +278,7 @@ def build_api_services(
         AlertRules.from_settings(settings),
     )
 
-    call_service = CallService(ConversationService(conversation_repository))
+    call_service = CallService(ConversationService(conversation_repository), call_numbers)
     auth_service, user_management_service = _build_user_services(
         settings, user_repository, location_repository
     )

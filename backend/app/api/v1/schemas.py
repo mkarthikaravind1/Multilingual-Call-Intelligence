@@ -20,7 +20,9 @@ class _Response(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class StartCallRequest(_Request):
-    call_id: str = Field(min_length=1)
+    # Left out (as the web app does): the server gives the call the next
+    # number, "CALL-000123".
+    call_id: str | None = Field(default=None, min_length=1)
     # null: now, by the server's clock. The web app sends null: a PC's
     # clock can be minutes off, and phone calls start on the server's.
     start_time: float | None = 0.0

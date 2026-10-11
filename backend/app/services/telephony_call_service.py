@@ -2,7 +2,6 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from uuid import uuid4
 
 from app.domain.conversation import CallDirection, ConversationStatus
 from app.domain.telephony_call_mapping import TelephonyCallMapping
@@ -106,7 +105,7 @@ class TelephonyCallService:
                 existing,
             )
             return existing
-        call_id = f"{provider}-{uuid4()}"
+        call_id = self._call_service.new_call_id()
         self._call_service.start_call(
             call_id,
             self._clock(),

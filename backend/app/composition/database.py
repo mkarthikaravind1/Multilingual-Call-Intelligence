@@ -109,6 +109,8 @@ from app.infrastructure.database.repositories.report_layout_repository import (
     PostgresReportLayoutRepository,
 )
 from app.services.report_layout import ReportLayoutRepository
+from app.domain.call_number import CallNumbers
+from app.infrastructure.database.repositories.call_numbers import PostgresCallNumbers
 from app.services.ai_log import AiLogRepository
 from app.services.audit_log import AuditLogRepository
 from app.infrastructure.database.repositories.location_repository import (
@@ -149,6 +151,7 @@ class PostgresRepositories:
     transcript_archive: TranscriptArchiveRepository | None = None
     backup: BackupRepository | None = None
     report_layout: ReportLayoutRepository | None = None
+    call_numbers: CallNumbers | None = None
     # Read model over conversations, customers, escalations and complaints.
     call_listing: CallListingQuery | None = None
     session_factory: sessionmaker[Session] | None = None
@@ -193,6 +196,7 @@ def build_postgres_repositories(
         transcript_archive=PostgresTranscriptArchiveRepository(session_factory),
         backup=PostgresBackupRepository(session_factory),
         report_layout=PostgresReportLayoutRepository(session_factory),
+        call_numbers=PostgresCallNumbers(session_factory),
         session_factory=session_factory,
     )
 

@@ -38,7 +38,8 @@ export interface CallListFilters {
 }
 
 export interface StartCallRequest {
-  call_id: string
+  // Left out: the server gives the call the next number ("CALL-000123").
+  call_id?: string
   // null: the server's clock (the browser's may be wrong).
   start_time?: number | null
 }
@@ -51,13 +52,10 @@ export class CallRestService {
     )
   }
 
-  // Always a fresh ID: the backend rejects (409) a call_id that is already
-  // in use, so user-typed IDs are never used to create calls.
+  // The server names the call, so user-typed IDs are never used to create
+  // calls and two calls can never ask for the same one.
   startManualCall() {
-    return this.startCall({
-      call_id: `manual-${crypto.randomUUID()}`,
-      start_time: null,
-    })
+    return this.startCall({ start_time: null })
   }
 
   listCalls(limit: number, offset: number, filters: CallListFilters = {}) {

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings, get_settings
 from app.domain.user import User, UserRole
 from app.security.jwt import create_access_token
-from app.security.stream_token import is_valid_stream_token
+from app.security.stream_token import is_test_call_stream, is_valid_stream_token
 from tests.test_call_customer import CRM, build_client
 
 
@@ -47,11 +47,13 @@ def test_start_creates_a_telephony_call_with_the_caller_identified(supervisor):
     assert response.status_code == 201
     body = response.json()
     call_id = body["call_id"]
-    assert call_id.startswith("test-")
+    # Numbered like every other call; only the stream knows it is a test.
+    assert call_id == "CALL-000001"
     assert body["provider_call_id"].startswith("test-")
     assert body["stream_path"].startswith(f"/api/v1/calls/{call_id}/telephony-stream?token=")
     token = body["stream_path"].split("token=", 1)[1]
     assert is_valid_stream_token(token, call_id, get_settings())
+    assert is_test_call_stream(token, call_id, get_settings())
     assert client.get(f"/api/v1/calls/{call_id}").json()["status"].lower() == "active"
     assert client.get(f"/api/v1/calls/{call_id}/customer").json()["customer"]["customer_id"] == "C-2"
 

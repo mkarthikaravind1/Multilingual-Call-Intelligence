@@ -295,7 +295,6 @@ def test_complete_call_with_end_time_before_start_is_rejected():
 @pytest.mark.parametrize(
     "body",
     [
-        {},
         {"call_id": ""},
         {"call_id": "   "},
         {"call_id": CALL_ID, "start_time": "soon"},
@@ -304,6 +303,20 @@ def test_complete_call_with_end_time_before_start_is_rejected():
 )
 def test_start_call_rejects_invalid_data(body):
     assert _client().post(BASE, json=body).status_code == 422
+
+
+def test_a_call_started_without_an_id_is_given_the_next_number():
+    client = _client()
+
+    first = client.post(BASE, json={})
+    second = client.post(BASE, json={"start_time": None})
+    named = client.post(BASE, json={"call_id": CALL_ID})
+
+    assert (first.status_code, second.status_code, named.status_code) == (201, 201, 201)
+    assert (first.json()["call_id"], second.json()["call_id"]) == ("CALL-000001", "CALL-000002")
+    # An id that is given is still used as it is.
+    assert named.json()["call_id"] == CALL_ID
+    assert client.get(f"{BASE}/CALL-000002").json()["status"] == "active"
 
 @pytest.mark.parametrize(
     "overrides",

@@ -28,7 +28,11 @@ _PURPOSE = "telephony_stream"
 _LIVE_CALL_PURPOSE = "live_call_ws"
 
 
-def create_stream_token(call_id: str, settings: Settings | None = None) -> str:
+def create_stream_token(
+    call_id: str, settings: Settings | None = None, test_call: bool = False
+) -> str:
+    """test_call: the stream is a replayed recording (see test_calls.py),
+    which sends Plivo-format frames whichever provider is configured."""
     settings = settings or get_settings()
     now = int(time.time())
     payload = {
@@ -37,7 +41,27 @@ def create_stream_token(call_id: str, settings: Settings | None = None) -> str:
         "iat": now,
         "exp": now + settings.telephony_stream_token_ttl_seconds,
     }
+    if test_call:
+        payload["test_call"] = True
     return jwt.encode(payload, settings.auth_secret_key, algorithm=_ALGORITHM)
+
+
+def is_test_call_stream(
+    token: str | None, call_id: str, settings: Settings | None = None
+) -> bool:
+    """Whether this is our token for a test call's stream of this call."""
+    if not token:
+        return False
+    settings = settings or get_settings()
+    try:
+        payload = jwt.decode(token, settings.auth_secret_key, algorithms=[_ALGORITHM])
+    except jwt.PyJWTError:
+        return False
+    return (
+        payload.get("purpose") == _PURPOSE
+        and payload.get("sub") == call_id
+        and payload.get("test_call") is True
+    )
 
 
 def is_valid_stream_token(

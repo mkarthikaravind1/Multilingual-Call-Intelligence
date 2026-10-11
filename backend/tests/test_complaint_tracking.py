@@ -365,18 +365,24 @@ def test_discovery_needs_two_completed_calls_and_keeps_rejections():
     _say(icr, "active", 0, "The AC smells like smoke")  # active calls are not read
 
     run = service.discover()
-    (found,) = service.list_candidates()
     assert (run.calls_scanned, run.new_candidates) == (2, 1)
-    assert set(found.call_ids) == {"a", "b"}
+    # Found, and held back until it has come up on a third call.
+    assert (service.list_candidates(), service.hidden_pending_count()) == ((), 1)
+
+    _completed_call(icr, "c", "The AC smells like smoke.")
+    service.discover()
+    (found,) = service.list_candidates()
+    assert set(found.call_ids) == {"a", "b", "c"}
+    assert service.hidden_pending_count() == 0
 
     service.review(found.candidate_id, EmergingComplaintReviewStatus.REJECTED, "sup@example.com")
-    _completed_call(icr, "c", "The AC smells like smoke.")
+    _completed_call(icr, "d", "The AC smells like smoke.")
     rerun = service.discover()
 
     (again,) = service.list_candidates()
     assert rerun.new_candidates == 0
     assert again.status is EmergingComplaintReviewStatus.REJECTED
-    assert set(again.call_ids) == {"a", "b", "c"}
+    assert set(again.call_ids) == {"a", "b", "c", "d"}
 
 
 def test_background_discovery_is_coalesced():
@@ -544,7 +550,7 @@ def test_failed_background_discovery_is_retried_next_time():
 
 def test_evidence_is_trimmed_when_stored():
     many = tuple(f"quote {i}" for i in range(MAX_EVIDENCE_PER_CANDIDATE + 5))
-    app = _api(FakeProvider(candidate(evidence=many)))
+    app = _api(FakeProvider(candidate(evidence=many, call_ids=("a", "b", "c"), occurrence_count=3)))
     icr = _client(app, UserRole.ICR)
     _completed_call(icr, "a", "x y")
     _completed_call(icr, "b", "x y")
@@ -691,16 +697,21 @@ def test_emerging_complaints_api_is_reviewed_by_supervisors():
     supervisor = _client(app, UserRole.SUPERVISOR)
     _completed_call(icr, "a", "Wiper makes a squeaking noise")
     _completed_call(icr, "b", "wiper makes a squeaking noise")
+    _completed_call(icr, "c", "Wiper makes a squeaking noise.")
 
-    assert icr.get("/api/v1/emerging-complaints").json() == {"candidates": [], "last_run": None}
+    assert icr.get("/api/v1/emerging-complaints").json() == {
+        "candidates": [],
+        "last_run": None,
+        "hidden_pending": 0,
+    }
     assert icr.post("/api/v1/emerging-complaints/discover").status_code == 403
     run = supervisor.post("/api/v1/emerging-complaints/discover").json()
     assert run["new_candidates"] == 1
 
     listing = icr.get("/api/v1/emerging-complaints").json()
     (item,) = listing["candidates"]
-    assert listing["last_run"]["calls_scanned"] == 2
-    assert item["status"] == "pending_review" and sorted(item["call_ids"]) == ["a", "b"]
+    assert listing["last_run"]["calls_scanned"] == 3
+    assert item["status"] == "pending_review" and sorted(item["call_ids"]) == ["a", "b", "c"]
 
     url = f"/api/v1/emerging-complaints/{item['candidate_id']}/review"
     assert icr.post(url, json={"decision": "accepted"}).status_code == 403

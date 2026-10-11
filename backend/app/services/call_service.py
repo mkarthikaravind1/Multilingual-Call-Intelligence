@@ -1,11 +1,21 @@
+from app.domain.call_number import CallNumbers, InMemoryCallNumbers, format_call_id
 from app.domain.conversation import CallDirection, Conversation, ConversationStatus
 from app.domain.utterance import Utterance
 from app.services.conversation_service import ConversationCompletion, ConversationService
 
 
 class CallService:
-    def __init__(self, conversation_service: ConversationService) -> None:
+    def __init__(
+        self,
+        conversation_service: ConversationService,
+        call_numbers: CallNumbers | None = None,
+    ) -> None:
         self._conversation_service = conversation_service
+        self._call_numbers = call_numbers or InMemoryCallNumbers()
+
+    def new_call_id(self) -> str:
+        """The id for a call about to start: "CALL-" and the next number."""
+        return format_call_id(self._call_numbers.next())
 
     def start_call(
         self,

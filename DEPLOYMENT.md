@@ -49,6 +49,13 @@ with a default password); never use it in production.
   ```
 
   (`reset-password` and `list-users` work the same way.)
+- **Call ids**: every call is named `CALL-` and a running number
+  (`CALL-000123`), whichever way it started. A database sequence (migration
+  0027) hands the numbers out, so several backend instances never clash.
+  Calls made before that keep their older ids until you run, with the
+  backend stopped, `python -m app.cli renumber-calls` (a dry run that lists
+  what would change) and then the same with `--yes`. Take a backup first:
+  links to the old ids stop working.
 - **TLS**: put a TLS-terminating proxy or load balancer in front of `web`.
   Plivo needs `https://` webhooks and a `wss://` media stream.
 

@@ -32,6 +32,8 @@ from app.core.config import get_settings
 from app.infrastructure.database import models as _models  # noqa: F401  (registers tables)
 from app.infrastructure.database.base import Base
 from app.infrastructure.database.engine import build_engine
+from app.infrastructure.database.repositories.call_numbers import CALL_NUMBER_SEQUENCE
+from app.services.call_renumbering import renumber_calls
 from app.composition.providers import create_customer_directory
 from app.domain.user import UserRole
 from app.services.call_customer_service import CallCustomerService
@@ -86,7 +88,28 @@ def _reset_data(confirmed: bool) -> None:
     quoted = ", ".join(f'"{name}"' for name in tables)
     with build_engine(settings).begin() as connection:
         connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY"))
+        # No calls are left: the next one is CALL-000001 again.
+        connection.execute(text(f"ALTER SEQUENCE IF EXISTS {CALL_NUMBER_SEQUENCE} RESTART"))
     print(f"Cleared {len(tables)} tables. Restart the backend to clear in-memory live state.")
+
+
+def _renumber_calls(apply: bool) -> None:
+    result = renumber_calls(build_engine(get_settings()), apply=apply)
+    if not result.renamed:
+        print("Every call already has a number; nothing to rename.")
+    else:
+        first, last = list(result.renamed.values())[0], list(result.renamed.values())[-1]
+        print(f"{len(result.renamed)} calls, oldest first: {first} to {last}.")
+        for name, count in sorted(result.rows_changed.items()):
+            print(f"  {name}: {count} rows")
+    for call_id, reason in result.kept.items():
+        print(f"Kept as it is: {call_id} ({reason}).")
+    if result.left_behind:
+        print(f"WARNING: {result.left_behind} rows still name a renamed call.")
+    if result.applied:
+        print("Done. Start the backend again.")
+    else:
+        print("Dry run: nothing was changed. Stop the backend, then run it again with --yes.")
 
 
 def _backfill_call_customers() -> None:
@@ -125,6 +148,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     reset_data.add_argument("--yes", action="store_true", help="Skip the confirmation prompt.")
 
+    renumber = commands.add_parser(
+        "renumber-calls",
+        help="Rename calls with an older id to CALL-<number>, oldest first (backend stopped).",
+    )
+    renumber.add_argument("--yes", action="store_true", help="Do it (default: a dry run).")
+
     commands.add_parser(
         "backfill-call-customers",
         help="Store CRM customer names and vehicle numbers on calls that lack them.",
@@ -136,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "backfill-call-customers":
         _backfill_call_customers()
+        return 0
+    if args.command == "renumber-calls":
+        _renumber_calls(args.yes)
         return 0
     service = _service()
 

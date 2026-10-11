@@ -58,7 +58,7 @@ from app.observability.metrics import (
     PROVIDER_ERRORS,
     TELEPHONY_STREAMS_OPEN,
 )
-from app.security.stream_token import is_valid_stream_token
+from app.security.stream_token import is_test_call_stream, is_valid_stream_token
 from app.telephony.plivo.provider import parse_plivo_media_stream_event
 from app.telephony.provider import (
     TRACKS,
@@ -67,7 +67,6 @@ from app.telephony.provider import (
     TelephonyStreamError,
     track_roles,
 )
-from app.api.v1.test_calls import TEST_PROVIDER
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +124,9 @@ async def telephony_stream(
     recording_store: CallRecordingStore | None = Depends(get_call_recording_store),
 ) -> None:
     settings = get_settings()
+    token = websocket.query_params.get("token")
     if settings.telephony_stream_auth_required and not is_valid_stream_token(
-        websocket.query_params.get("token"), call_id, settings
+        token, call_id, settings
     ):
         logger.warning("Rejected telephony stream for call %r: missing or invalid token", call_id)
         await websocket.close(code=AUTH_FAILED_CLOSE_CODE)
@@ -145,6 +145,7 @@ async def telephony_stream(
             telephony_call_service,
             flush_after_seconds,
             recording_store,
+            is_test_call=is_test_call_stream(token, call_id, settings),
         )
     finally:
         TELEPHONY_STREAMS_OPEN.dec()
@@ -160,6 +161,7 @@ async def _serve_stream(
     telephony_call_service: TelephonyCallService | None,
     flush_after_seconds: float,
     recording_store: CallRecordingStore | None = None,
+    is_test_call: bool = False,
 ) -> None:
 
     rejection = await run_in_threadpool(handler.open, call_id)
@@ -171,7 +173,7 @@ async def _serve_stream(
     # Test calls (see test_calls.py) stream Plivo-format frames whichever
     # provider is configured, or even when none is.
     parse_stream_event: Callable[[Mapping[str, Any], str | None], MediaStreamEvent] | None
-    if call_id.startswith(f"{TEST_PROVIDER}-"):
+    if is_test_call:
         parse_stream_event = parse_plivo_media_stream_event
     elif provider is not None:
         parse_stream_event = provider.parse_media_stream_event
