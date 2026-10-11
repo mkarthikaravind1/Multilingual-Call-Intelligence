@@ -1,0 +1,61 @@
+# A second PostgreSQL server that follows the first continuously (streaming
+# replication). Add it to the production stack:
+#
+#   docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.replica.yml \
+#     --env-file deploy/.env.production up -d
+#
+# Set REPLICATION_PASSWORD in deploy/.env.production first. On a database
+# that already holds data, also run deploy/postgres/enable-replication.sh
+# once (the command is at its top). Switching over to the replica when the
+# primary is lost is described in DEPLOYMENT.md ("Replication").
+#
+# For real protection the replica belongs on ANOTHER machine: run this
+# service there with PRIMARY_HOST set to the primary's address. On one
+# machine it protects against a damaged database, not a lost server.
+
+services:
+  postgres:
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=5
+      - -c
+      - max_replication_slots=5
+      # A replica that stays away cannot fill the primary's disk: beyond
+      # this the primary lets go of it, and the replica is copied again.
+      - -c
+      - max_slot_wal_keep_size=4GB
+    environment:
+      REPLICATION_USER: ${REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?set REPLICATION_PASSWORD}
+    volumes:
+      - ./postgres/enable-replication.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
+
+  postgres-replica:
+    image: postgres:16
+    restart: unless-stopped
+    entrypoint: ["sh", "/replica-entrypoint.sh"]
+    environment:
+      PRIMARY_HOST: ${REPLICA_PRIMARY_HOST:-postgres}
+      REPLICATION_USER: ${REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:?set REPLICATION_PASSWORD}
+      REPLICA_SLOT: ${REPLICA_SLOT:-replica_1}
+      POSTGRES_USER: ${POSTGRES_USER:-calls}
+      POSTGRES_DB: ${POSTGRES_DB:-multilingual_call_intelligence}
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./postgres/replica-entrypoint.sh:/replica-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Healthy while it is a standby that answers.
+      test: ["CMD-SHELL", "psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -Atc 'SELECT pg_is_in_recovery()' | grep -q t"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres_replica_data:

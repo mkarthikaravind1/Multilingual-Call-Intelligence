@@ -139,8 +139,9 @@ before turning it on.
   stored recording can be read.
 - With more than one backend server, `RECORDING_DIR` must be a folder they
   all share.
-- Archive to cloud storage and backups are **not built**. Back the folder
-  up yourself until they are.
+- Recordings are copied off the server and checked daily once the copies
+  below are turned on ("Data safety"). Until then, back the folder up
+  yourself.
 - If a call's audio stream drops and reconnects, only the first part is
   recorded.
 
@@ -170,6 +171,52 @@ ones people forget:
 Run the migrations (`alembic upgrade head`; the Docker image does it at
 start) and install the two libraries added recently (`reportlab`,
 `cryptography`; both are in `requirements-api.txt`).
+
+### Data safety: copies off the server, backups, replication
+
+All off by default. `DEPLOYMENT.md` ("Backups", "Replication") has the full
+steps; these are the settings.
+
+| Setting | What to put | Notes |
+|---|---|---|
+| `ARCHIVE_STORAGE_PROVIDER` | `s3` | Any S3-compatible bucket. `local` (a folder) to try it first. |
+| `ARCHIVE_S3_BUCKET`, `ARCHIVE_S3_ACCESS_KEY_ID`, `ARCHIVE_S3_SECRET_ACCESS_KEY` | From the storage account | A key that can read, write and delete in that bucket only. |
+| `ARCHIVE_S3_ENDPOINT_URL`, `ARCHIVE_S3_REGION` | From the storage account | Endpoint empty for Amazon S3. |
+| `ARCHIVE_ENCRYPTION_KEY` | A new key | Made like the recording key. Transcripts and backups are encrypted with it. |
+| `BACKUP_ENABLED` | `true` | A daily encrypted database backup into the same bucket, kept `BACKUP_RETENTION_DAYS` (14). |
+| `REPLICATION_PASSWORD` | A long random value | Only with `deploy/docker-compose.replica.yml`. |
+
+**Before relying on it**
+
+- **Keep `ARCHIVE_ENCRYPTION_KEY` and `RECORDING_ENCRYPTION_KEY` outside
+  the bucket and outside the server.** Without them nothing in the bucket
+  can be read.
+- **A real bucket has not been tried.** The S3 code is tested against a
+  stand-in that answers like S3, and the whole path against a folder. The
+  first test below is the proof.
+- **Restore a backup once** (`DEPLOYMENT.md`, "Restoring") before you
+  count on it.
+- **The Docker image has not been rebuilt here** since `pg_dump`, the S3
+  library and the recordings volume were added to it.
+- The daily recording check compares each file with its checksum, and each
+  copy by its size. A copy changed inside the bucket without its size
+  changing is found only when it is needed for a restore.
+- Transcript copies are kept for good: retention removes recordings and
+  their copies, not transcripts.
+
+**Test after filling in**
+
+1. Open Administration > Data safety. "Copies off the server" should read
+   On and name the bucket.
+2. Finish a call, wait a quarter of an hour (or press **Copy now**), and
+   look in the bucket: `transcripts/<year>/<month>/<call>.json.enc`, and
+   `recordings/...` if recording is on. Neither should open as text or
+   audio.
+3. Press **Back up now**. A file should appear under `backups/` and the
+   page should show its size. Then restore it into an empty database.
+4. With recording on, press **Check now**: the page should read Intact.
+5. With the replica: the query under "Replication" in `DEPLOYMENT.md`
+   should show one row with `streaming`.
 
 ### Audit log and AI log
 
@@ -290,7 +337,6 @@ migration 0020 (an index the page's query uses).
 
 ## 9. In the SRD and not built
 
-- Cloud archive and backups of recordings.
 - A real CRM connection (customers come from a file), WhatsApp delivery,
   failover and disaster recovery, penetration testing: set aside by decision.
 

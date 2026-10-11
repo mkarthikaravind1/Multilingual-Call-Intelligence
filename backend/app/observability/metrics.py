@@ -249,3 +249,26 @@ LOG_ENTRIES_DROPPED = REGISTRY.register(
         ("log",),
     )
 )
+OFFSITE_COPIES = REGISTRY.register(
+    Counter(
+        "offsite_copies_total",
+        "Copies made off the server, by kind (recording, transcript, removed: a copy "
+        "taken away with its recording) and outcome (done, failed).",
+        ("kind", "outcome"),
+    )
+)
+RECORDING_INTEGRITY_CHECKS = REGISTRY.register(
+    Counter(
+        "recording_integrity_checks_total",
+        "Stored recordings compared with their checksum, by result (ok, repaired, "
+        "lost, error: the check itself could not be made).",
+        ("result",),
+    )
+)
+DATABASE_BACKUPS = REGISTRY.register(
+    Counter(
+        "database_backups_total",
+        "Database backups, by outcome (done, failed).",
+        ("outcome",),
+    )
+)

@@ -9,6 +9,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# pg_dump, for the automatic database backups (BACKUP_ENABLED). It must be
+# at least as new as the database server: Debian 13 ships version 17, which
+# backs up the PostgreSQL 16 of the compose file.
+RUN apt-get update     && apt-get install -y --no-install-recommends postgresql-client     && rm -rf /var/lib/apt/lists/*
+
 COPY requirements-api.txt ./
 RUN pip install -r requirements-api.txt
 
@@ -21,9 +26,14 @@ RUN if [ "$INSTALL_DIARIZATION" = "true" ]; then pip install -r requirements-dia
 COPY alembic.ini main.py docker-entrypoint.sh ./
 COPY alembic ./alembic
 COPY app ./app
+# For scripts/restore_backup.py (fetching a database backup back).
+COPY scripts ./scripts
 
+# /app/data is where recordings go: made here so that the volume mounted
+# over it starts out owned by the user the server runs as.
 RUN useradd --system --uid 10001 --home-dir /app appuser \
     && chmod +x docker-entrypoint.sh \
+    && mkdir -p /app/data \
     && chown -R appuser /app
 USER appuser
 

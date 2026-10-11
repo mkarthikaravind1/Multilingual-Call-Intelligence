@@ -137,6 +137,11 @@ export interface CallRecordingDto {
   deleted_at: number | null
   // How many times it has been listened to.
   plays: number
+  // Whether its copy off the server exists.
+  archived: boolean
+  // When the file was last compared with its checksum, and the result.
+  verified_at: number | null
+  integrity: 'ok' | 'repaired' | 'lost' | null
 }
 
 export type QuestionOutcomeChoice = 'accepted' | 'skipped'

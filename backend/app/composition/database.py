@@ -99,6 +99,12 @@ from app.infrastructure.database.repositories.log_repositories import (
     PostgresAiLogRepository,
     PostgresAuditLogRepository,
 )
+from app.infrastructure.database.repositories.data_safety_repositories import (
+    PostgresBackupRepository,
+    PostgresTranscriptArchiveRepository,
+)
+from app.services.database_backup import BackupRepository
+from app.services.offsite_archive import TranscriptArchiveRepository
 from app.services.ai_log import AiLogRepository
 from app.services.audit_log import AuditLogRepository
 from app.infrastructure.database.repositories.location_repository import (
@@ -136,6 +142,8 @@ class PostgresRepositories:
     recording: RecordingRepository | None = None
     audit_log: AuditLogRepository | None = None
     ai_log: AiLogRepository | None = None
+    transcript_archive: TranscriptArchiveRepository | None = None
+    backup: BackupRepository | None = None
     # Read model over conversations, customers, escalations and complaints.
     call_listing: CallListingQuery | None = None
     session_factory: sessionmaker[Session] | None = None
@@ -177,6 +185,8 @@ def build_postgres_repositories(
         recording=PostgresRecordingRepository(session_factory),
         audit_log=PostgresAuditLogRepository(session_factory),
         ai_log=PostgresAiLogRepository(session_factory),
+        transcript_archive=PostgresTranscriptArchiveRepository(session_factory),
+        backup=PostgresBackupRepository(session_factory),
         session_factory=session_factory,
     )
 

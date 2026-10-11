@@ -102,6 +102,21 @@ export function RecordingPanel({ callId }: RecordingPanelProps) {
             </button>
           )}
           <p className="customer-panel__muted">Each time it is loaded is logged with your name.</p>
+          <p className="customer-panel__muted">
+            {info.archived ? 'A copy is kept off the server.' : 'No copy off the server yet.'}
+            {info.integrity === 'ok' &&
+              info.verified_at != null &&
+              ` File checked intact on ${formatRecordTimestamp(info.verified_at)}.`}
+            {info.integrity === 'repaired' &&
+              info.verified_at != null &&
+              ` A damaged or missing copy was made good on ${formatRecordTimestamp(info.verified_at)}.`}
+          </p>
+          {info.integrity === 'lost' && (
+            <p className="review-form__error" role="alert">
+              The stored file is missing or has been changed, and there is no good copy to restore
+              it from.
+            </p>
+          )}
         </>
       )}
 

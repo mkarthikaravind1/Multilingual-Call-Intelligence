@@ -17,6 +17,42 @@ class UnsafeConfigurationError(RuntimeError):
     pass
 
 
+def _data_safety_problems(settings: Settings) -> list[str]:
+    """Copies off the server and backups that are asked for but could not
+    run, or would send something unencrypted."""
+    # Imported here: the recording module pulls in the cryptography library.
+    from app.services.recording_archive import RecordingError, parse_key
+
+    problems: list[str] = []
+    provider = settings.archive_storage_provider.strip().lower()
+    if provider not in {"", "none", "local", "s3"}:
+        return ["ARCHIVE_STORAGE_PROVIDER must be none, local or s3."]
+    if provider in {"", "none"}:
+        if settings.backup_enabled:
+            problems.append(
+                "BACKUP_ENABLED is true but ARCHIVE_STORAGE_PROVIDER does not say where "
+                "backups go."
+            )
+        return problems
+    try:
+        parse_key(settings.archive_encryption_key, "ARCHIVE_ENCRYPTION_KEY")
+    except RecordingError as error:
+        problems.append(f"ARCHIVE_STORAGE_PROVIDER is {provider} but {error}")
+    if provider == "local" and not settings.archive_storage_local_dir.strip():
+        problems.append("ARCHIVE_STORAGE_LOCAL_DIR is not set.")
+    if provider == "s3":
+        for name, value in (
+            ("ARCHIVE_S3_BUCKET", settings.archive_s3_bucket),
+            ("ARCHIVE_S3_ACCESS_KEY_ID", settings.archive_s3_access_key_id),
+            ("ARCHIVE_S3_SECRET_ACCESS_KEY", settings.archive_s3_secret_access_key),
+        ):
+            if not value.strip() or value.startswith(PLACEHOLDER_PREFIX):
+                problems.append(f"{name} must be set for S3 storage.")
+    if settings.backup_enabled and settings.backup_retention_days <= 0:
+        problems.append("BACKUP_RETENTION_DAYS must be more than 0.")
+    return problems
+
+
 def configuration_problems(settings: Settings) -> list[str]:
     problems: list[str] = []
 
@@ -82,6 +118,8 @@ def configuration_problems(settings: Settings) -> list[str]:
             problems.append(f"RECORDING_ENABLED is true but {error}")
         if settings.recording_retention_days <= 0:
             problems.append("RECORDING_RETENTION_DAYS must be more than 0.")
+
+    problems.extend(_data_safety_problems(settings))
 
     if settings.audit_log_retention_days <= 0:
         problems.append("AUDIT_LOG_RETENTION_DAYS must be more than 0.")

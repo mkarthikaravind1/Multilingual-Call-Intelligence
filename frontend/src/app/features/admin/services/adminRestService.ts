@@ -1,9 +1,13 @@
 import { apiClient } from '../../../api/client'
 
 import type {
+  ArchiveRunDto,
   CreateCategoryDto,
   CreateLocationDto,
   CreateUserDto,
+  DatabaseBackupDto,
+  DataSafetyDto,
+  IntegrityRunDto,
   LocationDto,
   ManagedCategoryDto,
   ManagedUserDto,
@@ -67,6 +71,22 @@ export const adminRestService = {
       `${basePath}/complaint-categories/${encodeURIComponent(key)}`,
       { method: 'PATCH', body: JSON.stringify(payload) },
     )
+  },
+
+  getDataSafety(): Promise<DataSafetyDto> {
+    return apiClient.get<DataSafetyDto>(`${basePath}/data-safety`)
+  },
+
+  copyOffsiteNow(): Promise<ArchiveRunDto> {
+    return apiClient.post<ArchiveRunDto>(`${basePath}/data-safety/copy`, {})
+  },
+
+  checkRecordingsNow(): Promise<IntegrityRunDto> {
+    return apiClient.post<IntegrityRunDto>(`${basePath}/data-safety/check`, {})
+  },
+
+  backUpNow(): Promise<DatabaseBackupDto> {
+    return apiClient.post<DatabaseBackupDto>(`${basePath}/data-safety/backup`, {})
   },
 
   getPostCallStatus(): Promise<PostCallRepairStatusDto> {

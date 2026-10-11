@@ -84,6 +84,8 @@ def build_app():
         recording_repository=repositories.recording,
         audit_log_repository=repositories.audit_log,
         ai_log=ai_log,
+        transcript_archive_repository=repositories.transcript_archive,
+        backup_repository=repositories.backup,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),
     )
     services = dataclasses.replace(

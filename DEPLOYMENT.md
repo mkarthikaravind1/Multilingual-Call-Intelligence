@@ -362,5 +362,123 @@ logs.
 
 ## Backups
 
-Back up the `postgres_data` volume (e.g. `pg_dump` on a schedule). Redis
-holds only live, reconstructible state.
+Redis holds only live, reconstructible state. What must survive the server
+is the database, the recordings and the keys.
+
+### Copies off the server
+
+Set `ARCHIVE_STORAGE_PROVIDER=s3` with the bucket, its keys and an
+`ARCHIVE_ENCRYPTION_KEY` (see `deploy/.env.production.example`). Then, every
+five minutes, the backend copies to the bucket:
+
+- each kept recording, exactly as it is stored (already encrypted with
+  `RECORDING_ENCRYPTION_KEY`), under `recordings/<year>/<month>/`;
+- each finished call's transcript, fifteen minutes after the call ends,
+  encrypted with `ARCHIVE_ENCRYPTION_KEY`, under `transcripts/<year>/<month>/`.
+
+When retention removes a recording its copy is removed too. Transcript
+copies are kept. A copy that fails is tried again at the next sweep and
+counted in `offsite_copies_total{outcome="failed"}`.
+
+Once a day each stored recording is compared with the SHA-256 noted when it
+was written. A file that is missing or changed is restored from its copy; a
+copy that is missing is sent again; a recording with no good copy left is
+marked lost, listed under Administration > Data safety and logged as an
+error (`recording_integrity_checks_total{result="lost"}`). The daily check
+compares the copy's size, not its content: the content is read only when a
+file has to be restored.
+
+**Keep both keys somewhere else** (a password manager, a printed copy in a
+safe). The bucket without `RECORDING_ENCRYPTION_KEY` and
+`ARCHIVE_ENCRYPTION_KEY` is unreadable, to you as much as to anyone else.
+
+### Database backups
+
+With `BACKUP_ENABLED=true` the backend runs `pg_dump` once a day, encrypts
+the dump with `ARCHIVE_ENCRYPTION_KEY` and puts it in the same storage under
+`backups/`. Backups older than `BACKUP_RETENTION_DAYS` (14) are removed, but
+never the newest good one. Each attempt is listed under Administration >
+Data safety, failed ones with the reason, and "Back up now" makes one at
+once. With several backend containers only one of them makes each backup.
+
+`pg_dump` must be at least as new as the database server. The Docker image
+installs it; elsewhere install the PostgreSQL client and, if it is not on
+the path, set `BACKUP_PG_DUMP_PATH`.
+
+### Restoring
+
+From `backend/` (or `docker compose exec backend`), with the same
+`ARCHIVE_*` settings the backups were made with:
+
+```bash
+python -m scripts.restore_backup --list
+python -m scripts.restore_backup --latest --out restore.dump
+pg_restore --list restore.dump          # look inside before using it
+createdb -h HOST -U USER restored_calls
+pg_restore --no-owner -h HOST -U USER -d restored_calls restore.dump
+```
+
+Always restore into an **empty** database, check it, and then point
+`DATABASE_URL` at it. Never restore over the live one. Practise this once
+before you need it: a backup nobody has restored is a hope, not a backup.
+
+A recording whose file is lost comes back by itself at the next check.
+A transcript copy is a JSON file encrypted like a backup; it is for
+keeping, and nothing reads it back into the application.
+
+## Replication
+
+`deploy/docker-compose.replica.yml` adds a second PostgreSQL server that
+follows the first continuously, a few moments behind at most. It is
+read-only until you switch over to it.
+
+```bash
+# REPLICATION_PASSWORD must be set in deploy/.env.production
+docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.replica.yml \
+  --env-file deploy/.env.production up -d
+```
+
+On a database that already holds data, allow the replica in once (a new
+database does this by itself):
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.replica.yml \
+  --env-file deploy/.env.production exec postgres sh /docker-entrypoint-initdb.d/10-replication.sh
+```
+
+Adding the replica restarts the primary once (it needs `wal_level=replica`),
+so do it outside calling hours.
+
+Check that it follows:
+
+```bash
+docker compose ... exec postgres psql -U calls -d multilingual_call_intelligence \
+  -c "SELECT client_addr, state, replay_lag FROM pg_stat_replication"
+```
+
+One row with `state = streaming` means it is in step.
+
+**Where the replica runs matters.** On the same machine it protects against
+a damaged database, not against losing the machine. For that, run the
+`postgres-replica` service on a second machine with `REPLICA_PRIMARY_HOST`
+set to the first one's address, and open port 5432 between the two only.
+
+### Switching over
+
+When the primary is lost:
+
+1. Make sure the old primary is really stopped and stays stopped
+   (`docker compose ... stop postgres`). Two servers taking writes at once
+   cannot be merged afterwards.
+2. Promote the replica:
+   `docker compose ... exec postgres-replica psql -U calls -d multilingual_call_intelligence -c "SELECT pg_promote()"`
+3. Point the backend at it: set `DATABASE_URL` to the replica's host
+   (`postgres-replica` in the compose network) and restart the backend
+   containers.
+4. Whatever the old primary had not yet sent is lost: normally nothing, at
+   worst the last moments before it failed.
+5. Before the old primary is started again, empty its data volume and bring
+   it back as a replica of the new primary. Do not start it as it was.
+
+This is a manual switch. Nothing promotes the replica by itself, and
+nothing here spreads reads over the two servers.

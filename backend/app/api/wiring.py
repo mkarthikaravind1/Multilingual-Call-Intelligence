@@ -146,7 +146,17 @@ from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.domain.location import InMemoryLocationRepository, LocationRepository
 from app.services.call_routing_service import CallRoutingService
 from app.services.location_service import LocationService
-from app.services.recording_archive import RecordingArchive, RecordingRepository
+from app.services.recording_archive import (
+    InMemoryRecordingRepository,
+    RecordingArchive,
+    RecordingRepository,
+)
+from app.composition.data_safety import DataSafety, build_data_safety
+from app.services.database_backup import BackupRepository, InMemoryBackupRepository
+from app.services.offsite_archive import (
+    InMemoryTranscriptArchiveRepository,
+    TranscriptArchiveRepository,
+)
 from app.services.ai_log import AiLog, InMemoryAiLogRepository, parse_mode
 from app.services.audit_log import AuditLog, AuditLogRepository, InMemoryAuditLogRepository
 from app.services.call_alerts import (
@@ -169,6 +179,8 @@ from app.services.reporting import (
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+# The in-memory stores (tests, a laptop without a database) hold few calls.
+MAX_IN_MEMORY_CALLS = 100_000
 
 
 def build_api_services(
@@ -208,6 +220,8 @@ def build_api_services(
     recording_repository: RecordingRepository | None = None,
     audit_log_repository: AuditLogRepository | None = None,
     ai_log: AiLog | None = None,
+    transcript_archive_repository: TranscriptArchiveRepository | None = None,
+    backup_repository: BackupRepository | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -382,7 +396,22 @@ def build_api_services(
         evidence_repository=evidence_repository,
     )
     # --- Recordings, telephony, and what each call's screen shows of them ---
+    recording_repository = recording_repository or InMemoryRecordingRepository()
     recording_archive = _build_recording_archive(settings, recording_repository)
+    # --- Copies off the server, the recording check and database backups ---
+    data_safety = build_data_safety(
+        settings,
+        live_state_store,
+        recording_archive,
+        recording_repository,
+        transcript_archive_repository
+        or InMemoryTranscriptArchiveRepository(
+            lambda: conversation_repository.list_page(MAX_IN_MEMORY_CALLS, 0)
+        ),
+        backup_repository or InMemoryBackupRepository(),
+        call_service.get_call,
+        post_call_summary_repository.get,
+    )
     telephony_call_service = _build_telephony_call_service(
         settings, call_service, call_customer_service, live_state_store, call_routing
     )
@@ -392,8 +421,12 @@ def build_api_services(
         is_being_recorded=(
             None if recording_archive is None else telephony_call_service.stream_is_open
         ),
+        # "Archive complete": with copies off the server, once the call's
+        # copies are there; without, once its recording is stored here.
         has_recording=(
-            None
+            data_safety.offsite.has_copy
+            if data_safety.offsite is not None
+            else None
             if recording_archive is None
             else lambda call_id: (
                 (stored := recording_archive.get(call_id)) is not None and stored.is_available
@@ -492,6 +525,7 @@ def build_api_services(
         live_alert_sweeper,
         audit_log,
         ai_log,
+        data_safety,
     )
     telephony_provider = _optional(
         lambda: create_telephony_provider(settings), "Telephony provider is not available"
@@ -557,6 +591,8 @@ def build_api_services(
         call_indicators=call_indicators,
         question_outcome_repository=question_outcome_repository,
         recording_archive=recording_archive,
+        recording_repository=recording_repository,
+        data_safety=data_safety,
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
         category_admin=category_admin,
@@ -734,11 +770,7 @@ def _build_recording_archive(
     if not settings.recording_enabled:
         return None
     try:
-        from app.services.recording_archive import (
-            InMemoryRecordingRepository,
-            RecordingArchive,
-            parse_key,
-        )
+        from app.services.recording_archive import parse_key
 
         return RecordingArchive(
             repository or InMemoryRecordingRepository(),
@@ -789,6 +821,7 @@ def _build_background_jobs(
     live_alert_sweeper: LiveAlertSweeper | None = None,
     audit_log: AuditLog | None = None,
     ai_log: AiLog | None = None,
+    data_safety: DataSafety | None = None,
 ) -> BackgroundJobRunner:
     """The periodic jobs; one with interval 0 is not run."""
     stale_call_sweeper = StaleCallSweeper(
@@ -801,6 +834,7 @@ def _build_background_jobs(
     retries_summaries = (
         settings.customer_summary_enabled and customer_summary_delivery_service is not None
     )
+    data_safety = data_safety or DataSafety()
     return BackgroundJobRunner(
         [
             PeriodicJob(
@@ -824,6 +858,21 @@ def _build_background_jobs(
                 "recording_retention",
                 settings.recording_retention_sweep_seconds if recording_archive else 0.0,
                 lambda: recording_archive.purge_expired(),
+            ),
+            PeriodicJob(
+                "offsite_archive",
+                settings.archive_sweep_seconds if data_safety.offsite else 0.0,
+                lambda: data_safety.offsite.run(),
+            ),
+            PeriodicJob(
+                "recording_integrity",
+                settings.integrity_sweep_seconds if data_safety.integrity else 0.0,
+                lambda: data_safety.integrity.run(),
+            ),
+            PeriodicJob(
+                "database_backup",
+                settings.backup_sweep_seconds if data_safety.backups else 0.0,
+                lambda: data_safety.backups.run_if_due(),
             ),
             PeriodicJob(
                 "audit_log_retention",

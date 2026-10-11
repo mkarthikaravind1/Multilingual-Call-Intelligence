@@ -157,6 +157,8 @@ def test_schema_creates_all_expected_tables(engine):
         "recording_plays",
         "audit_log",
         "ai_inference_log",
+        "transcript_archives",
+        "database_backups",
     }
 
 

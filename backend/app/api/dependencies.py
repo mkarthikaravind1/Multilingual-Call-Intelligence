@@ -41,7 +41,8 @@ from app.telephony.provider import TelephonyProvider
 from starlette.requests import HTTPConnection
 
 if TYPE_CHECKING:
-    from app.services.recording_archive import RecordingArchive
+    from app.composition.data_safety import DataSafety
+    from app.services.recording_archive import RecordingArchive, RecordingRepository
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,9 @@ class ApiServices:
     question_outcome_repository: QuestionOutcomeRepository | None = None
     # Encrypted call recordings on disk; None when recording is off.
     recording_archive: "RecordingArchive | None" = None
+    recording_repository: "RecordingRepository | None" = None
+    # Copies off the server, the recording check and database backups.
+    data_safety: "DataSafety | None" = None
     # Who did what, and what the AI was asked and answered.
     audit_log: AuditLog | None = None
     ai_log: AiLog | None = None

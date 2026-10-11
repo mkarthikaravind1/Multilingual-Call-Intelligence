@@ -9,10 +9,15 @@ file cannot be passed off as another call's.
 Files are on this instance's disk (RECORDING_DIR): with several API
 instances the folder must be shared between them. A file is removed only by
 the retention sweep, once its call's keep-until date has passed.
+
+Each file's SHA-256 is noted when it is written, so that a later check can
+tell a file that was damaged or swapped (see offsite_archive, which also
+copies the files off the server).
 """
 
 import base64
 import binascii
+import hashlib
 import io
 import logging
 import os
@@ -22,6 +27,7 @@ import wave
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from enum import Enum
 from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
@@ -47,6 +53,26 @@ class RecordingNotFoundError(RecordingError):
     pass
 
 
+class RecordingIntegrity(str, Enum):
+    # The file is as it was written (and so is its copy off the server).
+    OK = "ok"
+    # One copy was missing or changed and was made good from the other.
+    REPAIRED = "repaired"
+    # The file is missing or changed and there is no good copy to restore.
+    LOST = "lost"
+
+
+@dataclass(frozen=True)
+class RecordingCounts:
+    # Recordings kept now (not yet removed by retention).
+    kept: int = 0
+    # Of those, copied off the server.
+    archived: int = 0
+    # Of those, checked at least once.
+    checked: int = 0
+    lost: int = 0
+
+
 @dataclass(frozen=True)
 class StoredRecording:
     call_id: str
@@ -60,6 +86,15 @@ class StoredRecording:
     delete_after: float
     # When the retention sweep removed the file; None while it is kept.
     deleted_at: float | None = None
+    # SHA-256 of the encrypted file as written; None for a recording made
+    # before checksums were kept (noted at its first check).
+    sha256: str | None = None
+    # Where its copy off the server is, and since when; None: not copied.
+    archive_key: str | None = None
+    archived_at: float | None = None
+    # When the file was last compared with its checksum, and the result.
+    verified_at: float | None = None
+    integrity: RecordingIntegrity | None = None
 
     @property
     def is_available(self) -> bool:
@@ -96,6 +131,35 @@ class RecordingRepository(ABC):
         """Oldest first."""
         raise NotImplementedError
 
+    @abstractmethod
+    def list_unarchived(self, limit: int) -> tuple[StoredRecording, ...]:
+        """Recordings kept that have no copy off the server, oldest first."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_to_verify(
+        self, limit: int, verified_before: float | None = None
+    ) -> tuple[StoredRecording, ...]:
+        """Recordings kept that were never checked or last checked before
+        verified_before (None: all of them), the never-checked first, then
+        the longest unchecked."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_removed_with_copy(self, limit: int) -> tuple[StoredRecording, ...]:
+        """Recordings removed by retention whose copy off the server is
+        still there."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_lost(self, limit: int) -> tuple[StoredRecording, ...]:
+        """Recordings kept whose last check found them lost, newest first."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def counts(self) -> RecordingCounts:
+        raise NotImplementedError
+
 
 class InMemoryRecordingRepository(RecordingRepository):
     def __init__(self) -> None:
@@ -119,27 +183,63 @@ class InMemoryRecordingRepository(RecordingRepository):
     def list_plays(self, call_id: str) -> tuple[RecordingPlay, ...]:
         return tuple(p for p in self._plays if p.call_id == call_id)
 
+    def _kept(self) -> list[StoredRecording]:
+        return [r for r in self._recordings.values() if r.is_available]
 
-def parse_key(value: str) -> bytes:
-    """The 32-byte key in RECORDING_ENCRYPTION_KEY (base64). Raises
+    def list_unarchived(self, limit: int) -> tuple[StoredRecording, ...]:
+        waiting = [r for r in self._kept() if r.archived_at is None]
+        return tuple(sorted(waiting, key=lambda r: r.created_at)[:limit])
+
+    def list_to_verify(
+        self, limit: int, verified_before: float | None = None
+    ) -> tuple[StoredRecording, ...]:
+        due = [
+            r
+            for r in self._kept()
+            if verified_before is None or r.verified_at is None or r.verified_at < verified_before
+        ]
+        return tuple(
+            sorted(due, key=lambda r: (r.verified_at is not None, r.verified_at or 0.0))[:limit]
+        )
+
+    def list_removed_with_copy(self, limit: int) -> tuple[StoredRecording, ...]:
+        return tuple(
+            [r for r in self._recordings.values() if not r.is_available and r.archive_key][:limit]
+        )
+
+    def list_lost(self, limit: int) -> tuple[StoredRecording, ...]:
+        lost = [r for r in self._kept() if r.integrity is RecordingIntegrity.LOST]
+        return tuple(sorted(lost, key=lambda r: r.created_at, reverse=True)[:limit])
+
+    def counts(self) -> RecordingCounts:
+        kept = self._kept()
+        return RecordingCounts(
+            kept=len(kept),
+            archived=sum(1 for r in kept if r.archived_at is not None),
+            checked=sum(1 for r in kept if r.verified_at is not None),
+            lost=sum(1 for r in kept if r.integrity is RecordingIntegrity.LOST),
+        )
+
+
+def parse_key(value: str, setting: str = "RECORDING_ENCRYPTION_KEY") -> bytes:
+    """The 32-byte key (base64) in the named setting. Raises
     RecordingError when it is missing or not a 32-byte key."""
     text = (value or "").strip()
     if not text:
-        raise RecordingError("RECORDING_ENCRYPTION_KEY is not set.")
+        raise RecordingError(f"{setting} is not set.")
     try:
         key = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
     except (binascii.Error, ValueError) as exc:
-        raise RecordingError("RECORDING_ENCRYPTION_KEY is not valid base64.") from exc
+        raise RecordingError(f"{setting} is not valid base64.") from exc
     if len(key) != KEY_BYTES:
         raise RecordingError(
-            f"RECORDING_ENCRYPTION_KEY must be {KEY_BYTES} random bytes in base64 "
-            f"(it holds {len(key)})."
+            f"{setting} must be {KEY_BYTES} random bytes in base64 (it holds {len(key)})."
         )
     return key
 
 
 def generate_key() -> str:
-    """A new key, as RECORDING_ENCRYPTION_KEY takes it."""
+    """A new key, as RECORDING_ENCRYPTION_KEY and ARCHIVE_ENCRYPTION_KEY take it."""
     return base64.urlsafe_b64encode(os.urandom(KEY_BYTES)).decode()
 
 
@@ -213,9 +313,14 @@ class RecordingArchive:
             channels=channels,
             created_at=now,
             delete_after=now + self._retention_seconds,
+            sha256=hashlib.sha256(encrypted).hexdigest(),
         )
         self._repository.save(stored)
         return stored
+
+    def path_of(self, stored: StoredRecording) -> Path:
+        """Where the recording's encrypted file is (or should be)."""
+        return self._directory / stored.file_name
 
     def get(self, call_id: str) -> StoredRecording | None:
         return self._repository.get(call_id)

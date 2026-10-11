@@ -3857,3 +3857,9 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Administration > Data safety: a folder path or bucket name has no spaces. */
+.data-safety__where {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

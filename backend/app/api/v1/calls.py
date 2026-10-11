@@ -69,7 +69,11 @@ from app.api.security_dependencies import (
 )
 from app.domain.call_alert import QuestionOutcome
 from app.services.call_alerts import QuestionOutcomeRepository
-from app.services.recording_archive import RecordingError, RecordingNotFoundError
+from app.services.recording_archive import (
+    RecordingError,
+    RecordingIntegrity,
+    RecordingNotFoundError,
+)
 from app.domain.user import User, UserRole
 
 
@@ -446,6 +450,12 @@ class CallRecordingResponse(BaseModel):
     deleted_at: float | None = None
     # How many times it has been listened to.
     plays: int = 0
+    # Whether its copy off the server exists.
+    archived: bool = False
+    # When the file was last compared with its checksum, and the result
+    # (ok, repaired, lost); None: not checked yet.
+    verified_at: float | None = None
+    integrity: RecordingIntegrity | None = None
 
 
 @router.get("/{call_id}/recording", response_model=CallRecordingResponse)
@@ -470,6 +480,9 @@ def get_call_recording(
         delete_after=stored.delete_after,
         deleted_at=stored.deleted_at,
         plays=len(archive.plays(call_id)),
+        archived=stored.archived_at is not None,
+        verified_at=stored.verified_at,
+        integrity=stored.integrity,
     )
 
 

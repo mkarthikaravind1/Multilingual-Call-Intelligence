@@ -22,6 +22,7 @@ from app.api.v1.admin import router as admin_router
 from app.api.v1.price_list import router as price_list_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.health import router as health_router
+from app.api.v1.data_safety import router as data_safety_router
 from app.api.v1.logs import router as logs_router
 from app.api.v1.test_calls import router as test_calls_router
 from app.core.config import get_settings
@@ -73,6 +74,7 @@ def create_app(services: ApiServices) -> FastAPI:
     app.include_router(emerging_complaints_router, prefix=API_V1_PREFIX)
     app.include_router(admin_router, prefix=API_V1_PREFIX)
     app.include_router(logs_router, prefix=API_V1_PREFIX)
+    app.include_router(data_safety_router, prefix=API_V1_PREFIX)
     app.include_router(price_list_router, prefix=API_V1_PREFIX)
     app.include_router(reports_router, prefix=API_V1_PREFIX)
     app.include_router(test_calls_router, prefix=API_V1_PREFIX)

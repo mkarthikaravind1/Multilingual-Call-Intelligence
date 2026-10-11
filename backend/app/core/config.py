@@ -76,6 +76,44 @@ class Settings(BaseSettings):
     recording_retention_days: float = 90.0
     # How often expired recordings are removed (0: never).
     recording_retention_sweep_seconds: float = 3600.0
+    # Copies off the server (see app.services.object_storage): each kept
+    # recording, each finished call's transcript and the database backups.
+    # "none": nothing is copied. "local": a folder (a stand-in for trying
+    # it, or a network share). "s3": an S3-compatible bucket (Amazon S3,
+    # Cloudflare R2, Backblaze B2, MinIO).
+    archive_storage_provider: str = "none"
+    archive_storage_local_dir: str = "data/archive"
+    archive_s3_bucket: str = ""
+    # Empty for Amazon S3; the service's address for the others.
+    archive_s3_endpoint_url: str = ""
+    archive_s3_region: str = ""
+    archive_s3_access_key_id: str = ""
+    archive_s3_secret_access_key: str = ""
+    # A folder inside the bucket, when it is shared with something else.
+    archive_key_prefix: str = ""
+    # 32 random bytes in base64 (made like RECORDING_ENCRYPTION_KEY):
+    # transcripts and backups are encrypted with it before they leave.
+    # Losing it makes them unreadable.
+    archive_encryption_key: str = ""
+    # How often pending copies are made (0: never), how long after a call
+    # ends its transcript is copied, and how many copies one sweep makes.
+    archive_sweep_seconds: float = 300.0
+    archive_transcript_delay_seconds: float = 900.0
+    archive_batch_size: int = 50
+    # Each stored recording is compared with its checksum this often; the
+    # check looks for due recordings every INTEGRITY_SWEEP_SECONDS (0:
+    # never), at most INTEGRITY_CHECK_BATCH_SIZE at a time.
+    integrity_check_interval_seconds: float = 86400.0
+    integrity_sweep_seconds: float = 3600.0
+    integrity_check_batch_size: int = 500
+    # Database backups into the same storage (needs pg_dump on the server).
+    backup_enabled: bool = False
+    backup_interval_seconds: float = 86400.0
+    backup_retention_days: float = 14.0
+    # How often a due backup is looked for (0: never).
+    backup_sweep_seconds: float = 3600.0
+    backup_pg_dump_path: str = "pg_dump"
+    backup_timeout_seconds: float = 3600.0
     # The audit log (who did what, when) keeps an entry this many days.
     audit_log_retention_days: float = 365.0
     # The AI log keeps every request to the LLM for a call. "full": with the

@@ -54,6 +54,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Encrypted call recordings (RECORDING_DIR=data/recordings). Shared by
+    # every backend container on this machine; on several machines it must
+    # be a network share.
+    volumes:
+      - backend_data:/app/data
     # Not published: reached through "web". Expose 8000 only to your
     # monitoring network if Prometheus scrapes /metrics directly.
     expose:
@@ -130,6 +135,7 @@ services:
 
 volumes:
   postgres_data:
+  backend_data:
   redis_data:
   prometheus_data:
   alertmanager_data:

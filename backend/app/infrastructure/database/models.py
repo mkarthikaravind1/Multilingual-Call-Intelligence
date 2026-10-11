@@ -375,6 +375,40 @@ class CallRecordingModel(Base):
     created_at: Mapped[float] = mapped_column(Float, nullable=False)
     delete_after: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     deleted_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The encrypted file's SHA-256, its copy off the server and its last
+    # integrity check (see app.services.offsite_archive).
+    sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+    archive_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    archived_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    verified_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    integrity: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class TranscriptArchiveModel(Base):
+    # One row per call whose transcript has been copied off the server.
+    __tablename__ = "transcript_archives"
+
+    call_id: Mapped[str] = mapped_column(String, primary_key=True)
+    archive_key: Mapped[str] = mapped_column(String, nullable=False)
+    sha256: Mapped[str] = mapped_column(String, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    archived_at: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class DatabaseBackupModel(Base):
+    # Every database backup tried: where it went, or why it failed.
+    __tablename__ = "database_backups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    started_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    finished_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    archive_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When retention removed the file from the storage; NULL while kept.
+    removed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class RecordingPlayModel(Base):

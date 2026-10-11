@@ -112,3 +112,56 @@ export interface RetryPostCallDto {
   call_id: string
   repaired: boolean
 }
+
+// Copies off the server, the recording check and database backups.
+export interface ArchiveRunDto {
+  ran_at: number
+  recordings_copied: number
+  transcripts_copied: number
+  copies_removed: number
+  failed: number
+  last_error: string | null
+  // Why it did not run, e.g. another server is running it.
+  skipped_reason: string | null
+}
+
+export interface IntegrityRunDto {
+  ran_at: number
+  checked: number
+  ok: number
+  repaired: number
+  lost: number
+  skipped_reason: string | null
+}
+
+export interface DatabaseBackupDto {
+  backup_id: number | null
+  started_at: number
+  finished_at: number | null
+  status: 'running' | 'done' | 'failed'
+  archive_key: string | null
+  size_bytes: number | null
+  error: string | null
+  removed_at: number | null
+}
+
+export interface DataSafetyDto {
+  archive_enabled: boolean
+  // "S3 bucket calls-archive", "folder data/archive"; null when off.
+  storage: string | null
+  transcripts_archived: number
+  transcripts_pending: number
+  last_archive_run: ArchiveRunDto | null
+  recordings_enabled: boolean
+  recordings_kept: number
+  recordings_archived: number
+  recordings_checked: number
+  recordings_lost: number
+  lost: Array<{ call_id: string; created_at: number; verified_at: number | null }>
+  last_integrity_run: IntegrityRunDto | null
+  backups_enabled: boolean
+  backup_interval_seconds: number | null
+  backup_retention_days: number | null
+  // Newest first.
+  backups: DatabaseBackupDto[]
+}
