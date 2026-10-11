@@ -43,7 +43,7 @@ class LLMRoleJudge:
             '"confidence": <0 to 1>}'
         )
         try:
-            response = self._llm_client.complete(LLMRequest(prompt=prompt))
+            response = self._llm_client.complete(LLMRequest(prompt=prompt, task="speaker_roles"))
             match = _JSON_OBJECT.search(response.text or "")
             payload = json.loads(match.group(0)) if match else {}
         except Exception:

@@ -119,7 +119,7 @@ class LLMEmergingComplaintDiscoveryProvider(EmergingComplaintDiscoveryProvider):
             "confidence must be a number between 0.0 and 1.0, not text.\n"
             "If there are no such recurring patterns, respond with exactly: []"
         )
-        return LLMRequest(prompt=prompt)
+        return LLMRequest(prompt=prompt, task="emerging_themes")
 
     def _parse_response(
         self,

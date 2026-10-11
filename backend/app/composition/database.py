@@ -95,6 +95,12 @@ from app.domain.managed_category import ManagedCategoryRepository
 from app.infrastructure.database.repositories.managed_category_repository import (
     PostgresManagedCategoryRepository,
 )
+from app.infrastructure.database.repositories.log_repositories import (
+    PostgresAiLogRepository,
+    PostgresAuditLogRepository,
+)
+from app.services.ai_log import AiLogRepository
+from app.services.audit_log import AuditLogRepository
 from app.infrastructure.database.repositories.location_repository import (
     PostgresLocationRepository,
 )
@@ -128,6 +134,8 @@ class PostgresRepositories:
     call_alert: CallAlertRepository | None = None
     question_outcome: QuestionOutcomeRepository | None = None
     recording: RecordingRepository | None = None
+    audit_log: AuditLogRepository | None = None
+    ai_log: AiLogRepository | None = None
     # Read model over conversations, customers, escalations and complaints.
     call_listing: CallListingQuery | None = None
     session_factory: sessionmaker[Session] | None = None
@@ -167,6 +175,8 @@ def build_postgres_repositories(
         call_alert=PostgresCallAlertRepository(session_factory),
         question_outcome=PostgresQuestionOutcomeRepository(session_factory),
         recording=PostgresRecordingRepository(session_factory),
+        audit_log=PostgresAuditLogRepository(session_factory),
+        ai_log=PostgresAiLogRepository(session_factory),
         session_factory=session_factory,
     )
 

@@ -58,7 +58,7 @@ class LLMPostCallSummaryProvider(SummaryGenerationProvider):
         prompt = self._build_prompt(request)
 
         try:
-            response = self._llm_client.complete(LLMRequest(prompt=prompt))
+            response = self._llm_client.complete(LLMRequest(prompt=prompt, task="summary"))
         except LLMRateLimitedError:
             raise  # the caller waits and tries again
         except Exception:

@@ -76,6 +76,17 @@ class Settings(BaseSettings):
     recording_retention_days: float = 90.0
     # How often expired recordings are removed (0: never).
     recording_retention_sweep_seconds: float = 3600.0
+    # The audit log (who did what, when) keeps an entry this many days.
+    audit_log_retention_days: float = 365.0
+    # The AI log keeps every request to the LLM for a call. "full": with the
+    # prompt and the answer (they contain what the customer said);
+    # "details": the task, model, time taken, outcome and token counts
+    # only; "off": nothing.
+    ai_log_mode: str = "full"
+    # Short, because of what the prompts contain.
+    ai_log_retention_days: float = 30.0
+    # How often old entries of both logs are removed (0: never).
+    log_retention_sweep_seconds: float = 3600.0
     sarvam_input_audio_codec: str | None = None
     language_provider: str = "not_configured"
     diarization_enabled: bool = True

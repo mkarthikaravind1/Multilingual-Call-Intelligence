@@ -3767,3 +3767,93 @@
 .recording-panel__player {
   width: 100%;
 }
+
+/* The audit log and the AI log (administrators): one row per entry. */
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.log-table th,
+.log-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.log-table thead th {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The date may break after the year when the table is tight. */
+.log-table td:first-child {
+  min-width: 104px;
+}
+
+.log-table .button {
+  white-space: nowrap;
+}
+
+.log-table__sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.log-table__note {
+  max-width: 320px;
+}
+
+/* Call ids and the like are long and have no spaces. */
+.log-table__id,
+.log-table .text-link {
+  display: inline-block;
+  min-width: 14ch;
+  overflow-wrap: anywhere;
+}
+
+.log-table__detail td {
+  background: var(--color-surface);
+}
+
+/* The table scrolls sideways when it is wider than the page; an opened
+   request's text stays as wide as what is visible. */
+.log-table-scroll {
+  overflow-x: auto;
+  container-type: inline-size;
+}
+
+.log-entry-text {
+  display: grid;
+  gap: var(--space-3);
+  position: sticky;
+  left: var(--space-2);
+  width: calc(100cqw - 2 * var(--space-2));
+}
+
+.log-entry-text > div {
+  min-width: 0;
+}
+
+.log-entry-text pre {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -15,6 +15,8 @@ import { ComplaintsPage } from '../pages/ComplaintsPage'
 import { PriceListPage } from '../pages/PriceListPage'
 import { ReportsPage } from '../pages/ReportsPage'
 import { LiveCallsPage } from '../pages/LiveCallsPage'
+import { AuditLogPage } from '../pages/AuditLogPage'
+import { AiLogPage } from '../pages/AiLogPage'
 import { isCallDetailsView } from '../features/live-call/liveCallMode'
 
 // "Call details" for a call opened from a list, "Live Call" otherwise.
@@ -191,6 +193,31 @@ export function AppRoutes() {
             <AdminOnly>
               <AppShell title="Administration" subtitle="Roles and user access">
                 <AdministrationPage />
+              </AppShell>
+            </AdminOnly>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/administration/audit-log"
+        element={
+          <ProtectedRoute>
+            <AdminOnly>
+              <AppShell title="Audit Log" subtitle="Who did what, and when">
+                <AuditLogPage />
+              </AppShell>
+            </AdminOnly>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/administration/ai-log"
+        element={
+          <ProtectedRoute>
+            <AdminOnly>
+              <AppShell title="AI Log" subtitle="What the AI was asked and what it answered, per call">
+                <AiLogPage />
               </AppShell>
             </AdminOnly>
           </ProtectedRoute>

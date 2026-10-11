@@ -20,8 +20,10 @@ from app.composition.providers import (
     create_llm_client,
     create_question_provider,
     create_sentiment_provider,
+    use_ai_log,
 )
 from app.core.config import get_settings
+from app.services.ai_log import AiLog, parse_mode
 from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.core.production_checks import check_configuration
 from app.observability.logging import configure_logging
@@ -35,6 +37,13 @@ def build_app():
     check_configuration(settings, logger)
     repositories = build_production_repositories(settings)
 
+    # Before any provider is built: every request to the LLM is logged.
+    ai_log = AiLog(
+        repositories.ai_log,
+        mode=parse_mode(settings.ai_log_mode),
+        retention_days=settings.ai_log_retention_days,
+    )
+    use_ai_log(ai_log)
     llm_client = create_llm_client(settings)
     # Built-in categories plus accepted emerging themes; shared by detection
     # and the emerging-complaint review so an accept takes effect at once.
@@ -73,6 +82,8 @@ def build_app():
         call_alert_repository=repositories.call_alert,
         question_outcome_repository=repositories.question_outcome,
         recording_repository=repositories.recording,
+        audit_log_repository=repositories.audit_log,
+        ai_log=ai_log,
         emerging_complaint_provider=create_emerging_complaint_provider(llm_client, settings),
     )
     services = dataclasses.replace(

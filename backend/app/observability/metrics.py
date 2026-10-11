@@ -240,3 +240,12 @@ POST_CALL_REPAIRS = REGISTRY.register(
         ("outcome",),
     )
 )
+# The audit log and the AI log are written in the background; an entry is
+# dropped when its queue is full or the database refuses the write.
+LOG_ENTRIES_DROPPED = REGISTRY.register(
+    Counter(
+        "log_entries_dropped_total",
+        "Audit-log and AI-log entries that could not be stored, by log (audit, ai).",
+        ("log",),
+    )
+)

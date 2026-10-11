@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.audit import AuditMiddleware
 from app.api.dependencies import ApiServices
 from app.api.errors import register_exception_handlers
 from app.api.v1.calls import router as calls_router
@@ -21,6 +22,7 @@ from app.api.v1.admin import router as admin_router
 from app.api.v1.price_list import router as price_list_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.health import router as health_router
+from app.api.v1.logs import router as logs_router
 from app.api.v1.test_calls import router as test_calls_router
 from app.core.config import get_settings
 from app.observability.middleware import RequestContextMiddleware
@@ -44,6 +46,8 @@ def create_app(services: ApiServices) -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+    # Innermost: it reads the request id the outermost middleware sets.
+    app.add_middleware(AuditMiddleware, api_prefix=API_V1_PREFIX)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=get_settings().cors_origins,
@@ -68,6 +72,7 @@ def create_app(services: ApiServices) -> FastAPI:
     app.include_router(call_complaints_router, prefix=API_V1_PREFIX)
     app.include_router(emerging_complaints_router, prefix=API_V1_PREFIX)
     app.include_router(admin_router, prefix=API_V1_PREFIX)
+    app.include_router(logs_router, prefix=API_V1_PREFIX)
     app.include_router(price_list_router, prefix=API_V1_PREFIX)
     app.include_router(reports_router, prefix=API_V1_PREFIX)
     app.include_router(test_calls_router, prefix=API_V1_PREFIX)

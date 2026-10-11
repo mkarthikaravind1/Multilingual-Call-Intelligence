@@ -237,7 +237,7 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
             f"{self._ranked_shape(context)}\n"
             "If no important fact is missing for any open complaint, respond with exactly: []"
         )
-        return LLMRequest(prompt=prompt)
+        return LLMRequest(prompt=prompt, task="questions")
 
     def ranked_task(self, context: QuestionGenerationContext, limit: int) -> str:
         """This provider's task inside a combined live-analysis request (see
@@ -319,7 +319,7 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
             '{"answered": [<the numbers of the questions already answered>]}'
         )
         try:
-            data = _decode(self._check_client.complete(LLMRequest(prompt=prompt)).text)
+            data = _decode(self._check(prompt))
             answered = data["answered"]
             if not isinstance(answered, list):
                 raise TypeError("answered must be a list of question numbers")
@@ -335,6 +335,10 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
             )
         # Their places close up.
         return tuple(replace(s, priority=rank) for rank, s in enumerate(kept))
+
+    def _check(self, prompt: str) -> str:
+        request = LLMRequest(prompt=prompt, task="question_check")
+        return self._check_client.complete(request).text
 
     def _ask(self, context: QuestionGenerationContext) -> QuestionSuggestion | None:
         response = self._llm_client.complete(self._build_request(context))
@@ -359,9 +363,7 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
             '{"already_answered": true or false, "where": "<the customer\'s words, or empty>"}'
         )
         try:
-            data = json.loads(
-                _strip_code_fence(self._check_client.complete(LLMRequest(prompt=prompt)).text)
-            )
+            data = json.loads(_strip_code_fence(self._check(prompt)))
             answered = data["already_answered"]
             if not isinstance(answered, bool):
                 raise TypeError("already_answered must be true or false")
@@ -451,7 +453,7 @@ class LLMQuestionProvider(QuestionSuggestionProvider):
             "If the conversation does not contain enough information to ask a "
             "meaningful question, respond with exactly: null"
         )
-        return LLMRequest(prompt=prompt)
+        return LLMRequest(prompt=prompt, task="questions")
 
     def _parse_response(
         self, text: str, context: QuestionGenerationContext

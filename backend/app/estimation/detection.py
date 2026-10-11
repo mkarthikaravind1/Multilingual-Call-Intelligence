@@ -107,7 +107,7 @@ class LLMServiceDetector(ServiceDetectionProvider):
         if not utterances:
             return ServiceDetection([], None)
         try:
-            response = self._llm_client.complete(LLMRequest(prompt=self._prompt(utterances)))
+            response = self._llm_client.complete(LLMRequest(prompt=self._prompt(utterances), task="service_detection"))
             return self._parse(response.text or "")
         except Exception as exc:
             # One line: while the LLM is rate limited this repeats.

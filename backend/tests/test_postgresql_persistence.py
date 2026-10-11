@@ -155,6 +155,8 @@ def test_schema_creates_all_expected_tables(engine):
         "call_recordings",
         "managed_complaint_categories",
         "recording_plays",
+        "audit_log",
+        "ai_inference_log",
     }
 
 

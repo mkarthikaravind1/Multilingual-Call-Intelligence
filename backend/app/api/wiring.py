@@ -147,6 +147,8 @@ from app.domain.location import InMemoryLocationRepository, LocationRepository
 from app.services.call_routing_service import CallRoutingService
 from app.services.location_service import LocationService
 from app.services.recording_archive import RecordingArchive, RecordingRepository
+from app.services.ai_log import AiLog, InMemoryAiLogRepository, parse_mode
+from app.services.audit_log import AuditLog, AuditLogRepository, InMemoryAuditLogRepository
 from app.services.call_alerts import (
     AlertRules,
     CallAlertRepository,
@@ -204,6 +206,8 @@ def build_api_services(
     call_alert_repository: CallAlertRepository | None = None,
     question_outcome_repository: QuestionOutcomeRepository | None = None,
     recording_repository: RecordingRepository | None = None,
+    audit_log_repository: AuditLogRepository | None = None,
+    ai_log: AiLog | None = None,
 ) -> ApiServices:
 
     """Build the services the live application uses.
@@ -464,6 +468,17 @@ def build_api_services(
     post_call_repair_service = _build_post_call_repair_service(
         settings, call_service, workflow_service, post_call_summary_repository, live_state_store
     )
+    # --- The audit log and the AI log ---
+    audit_log = AuditLog(
+        audit_log_repository or InMemoryAuditLogRepository(),
+        retention_days=settings.audit_log_retention_days,
+    )
+    # main.py passes the log its LLM clients write to (see use_ai_log).
+    ai_log = ai_log or AiLog(
+        InMemoryAiLogRepository(),
+        mode=parse_mode(settings.ai_log_mode),
+        retention_days=settings.ai_log_retention_days,
+    )
     background_jobs = _build_background_jobs(
         settings,
         call_service,
@@ -475,6 +490,8 @@ def build_api_services(
         customer_contact_resolver,
         recording_archive,
         live_alert_sweeper,
+        audit_log,
+        ai_log,
     )
     telephony_provider = _optional(
         lambda: create_telephony_provider(settings), "Telephony provider is not available"
@@ -543,6 +560,8 @@ def build_api_services(
         price_list_service=price_list_service,
         complaint_category_catalog=complaint_category_catalog,
         category_admin=category_admin,
+        audit_log=audit_log,
+        ai_log=ai_log,
         background_jobs=background_jobs,
         warm_up=(
             (lambda: _warm_up_live_models(settings))
@@ -768,6 +787,8 @@ def _build_background_jobs(
     customer_contact_resolver: Callable[[str], CustomerContact | None],
     recording_archive: "RecordingArchive | None" = None,
     live_alert_sweeper: LiveAlertSweeper | None = None,
+    audit_log: AuditLog | None = None,
+    ai_log: AiLog | None = None,
 ) -> BackgroundJobRunner:
     """The periodic jobs; one with interval 0 is not run."""
     stale_call_sweeper = StaleCallSweeper(
@@ -803,6 +824,16 @@ def _build_background_jobs(
                 "recording_retention",
                 settings.recording_retention_sweep_seconds if recording_archive else 0.0,
                 lambda: recording_archive.purge_expired(),
+            ),
+            PeriodicJob(
+                "audit_log_retention",
+                settings.log_retention_sweep_seconds if audit_log else 0.0,
+                lambda: audit_log.purge_expired(),
+            ),
+            PeriodicJob(
+                "ai_log_retention",
+                settings.log_retention_sweep_seconds if ai_log else 0.0,
+                lambda: ai_log.purge_expired(),
             ),
             PeriodicJob(
                 "live_alert_sweep",

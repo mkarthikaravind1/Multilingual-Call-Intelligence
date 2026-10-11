@@ -3,6 +3,8 @@ from collections.abc import Callable
 
 from app.ai.llm.client import LLMClient
 from app.ai.llm.groq_client import GroqLLMClient
+from app.ai.llm.logged_client import LoggedLLMClient
+from app.services.ai_log import AiLog
 from app.ai.question.llm_provider import LLMQuestionProvider
 from app.ai.question.provider import QuestionSuggestionProvider
 from app.ai.question.rule_based_provider import RuleBasedQuestionProvider
@@ -80,6 +82,18 @@ _LLM_CLIENT_BUILDERS: dict[str, Callable[[str | None, int | None], LLMClient]] =
 }
 
 
+# The AI log that LLM clients built here write to (see use_ai_log).
+_ai_log: AiLog | None = None
+
+
+def use_ai_log(log: AiLog | None) -> None:
+    """Have every LLM client built from now on keep its requests in log
+    (None: in no log). Called once at startup, before any provider is
+    built, so that no request to the LLM goes unrecorded."""
+    global _ai_log
+    _ai_log = log
+
+
 def create_llm_client(
     settings: Settings | None = None,
     model: str | None = None,
@@ -94,7 +108,10 @@ def create_llm_client(
             f"Unsupported LLM provider: {settings.llm_provider!r}. "
             f"Available: {sorted(_LLM_CLIENT_BUILDERS)}."
         )
-    return builder(model, max_retries)
+    client = builder(model, max_retries)
+    if _ai_log is not None and _ai_log.enabled:
+        return LoggedLLMClient(client, _ai_log, model or settings.groq_model)
+    return client
 
 
 def create_question_provider(

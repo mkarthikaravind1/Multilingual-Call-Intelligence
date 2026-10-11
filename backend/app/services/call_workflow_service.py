@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Callable, Protocol
 
+from app.ai.llm.call_context import working_on_call
 from app.ai.sentiment.provider import SentimentResult, keeping_earlier
 from app.domain.conversation import Conversation, ConversationStatus
 from app.domain.conversation_coverage import ConversationCoverage
@@ -302,7 +303,8 @@ class CallWorkflowService:
         still_active: Callable[[], bool] | None = None,
     ) -> CallAnalysisResult:
         try:
-            return self._analyze_and_store_now(conversation, still_active)
+            with working_on_call(conversation.call_id):
+                return self._analyze_and_store_now(conversation, still_active)
         finally:
             # Whatever happened, the AI is back to waiting for speech.
             self._ai(conversation.call_id, AiStatus.LISTENING)
@@ -521,7 +523,8 @@ class CallWorkflowService:
         """Generate, store and deliver the post-call summary once (see
         PostCallProcessor). Safe to repeat; failures are logged and leave
         the call COMPLETED."""
-        return self._post_call.process(call_id)
+        with working_on_call(call_id):
+            return self._post_call.process(call_id)
 
     def post_call_rate_limit_wait(self, call_id: str) -> float | None:
         """Seconds the LLM asked to wait, when the call's last post-call

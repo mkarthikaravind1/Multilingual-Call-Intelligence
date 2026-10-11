@@ -31,6 +31,11 @@ def _retry_after(exc: RateLimitError) -> float | None:
     hours, minutes, seconds, millis = (float(g) if g else 0.0 for g in match.groups())
     return hours * 3600 + minutes * 60 + seconds + millis / 1000
 
+def _count(usage, name: str) -> int | None:
+    value = getattr(usage, name, None)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 class GroqLLMClient(LLMClient):
     def __init__(self, model: str | None = None, max_retries: int | None = None) -> None:
         retries = settings.groq_max_retries if max_retries is None else max_retries
@@ -62,4 +67,10 @@ class GroqLLMClient(LLMClient):
             PROVIDER_REQUEST_DURATION.observe(time.monotonic() - started, "llm")
 
         text = response.choices[0].message.content or ""
-        return LLMResponse(text=text)
+        usage = getattr(response, "usage", None)
+        return LLMResponse(
+            text=text,
+            model=self._model,
+            prompt_tokens=_count(usage, "prompt_tokens"),
+            completion_tokens=_count(usage, "completion_tokens"),
+        )

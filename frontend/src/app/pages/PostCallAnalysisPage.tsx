@@ -270,6 +270,14 @@ export function PostCallAnalysisPage() {
 
               <div className="button-row">
                 <CallStatusBadge status={call.status} phase={call.phase} />
+                {session?.role === 'ADMIN' && (
+                  <Link
+                    className="text-link"
+                    to={`/administration/ai-log?call_id=${encodeURIComponent(call.callId)}`}
+                  >
+                    AI log for this call
+                  </Link>
+                )}
                 {isActiveCall && (
                   <button
                     type="button"

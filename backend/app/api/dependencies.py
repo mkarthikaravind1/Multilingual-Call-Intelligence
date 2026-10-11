@@ -8,6 +8,8 @@ from starlette.requests import HTTPConnection
 from app.ai.asr.provider import ASRProvider
 from app.api.v1.live_handler import LiveCallHandler
 from app.domain.user_repository import UserRepository
+from app.services.ai_log import AiLog
+from app.services.audit_log import AuditLog
 from app.services.auth_service import AuthService
 from app.services.login_throttle import LoginThrottle
 from app.services.call_alerts import CallAlertService, QuestionOutcomeRepository
@@ -87,6 +89,9 @@ class ApiServices:
     question_outcome_repository: QuestionOutcomeRepository | None = None
     # Encrypted call recordings on disk; None when recording is off.
     recording_archive: "RecordingArchive | None" = None
+    # Who did what, and what the AI was asked and answered.
+    audit_log: AuditLog | None = None
+    ai_log: AiLog | None = None
     price_list_service: PriceListService | None = None
     background_jobs: BackgroundJobRunner | None = None
     # Loads slow models (e.g. diarization) in the background at startup.
@@ -160,6 +165,20 @@ def get_category_admin(connection: HTTPConnection) -> ComplaintCategoryAdminServ
     if service is None:
         raise HTTPException(status_code=503, detail="Category management is not configured.")
     return service
+
+
+def get_audit_log(connection: HTTPConnection) -> AuditLog:
+    log = connection.app.state.services.audit_log
+    if log is None:
+        raise HTTPException(status_code=503, detail="The audit log is not configured.")
+    return log
+
+
+def get_ai_log(connection: HTTPConnection) -> AiLog:
+    log = connection.app.state.services.ai_log
+    if log is None:
+        raise HTTPException(status_code=503, detail="The AI log is not configured.")
+    return log
 
 
 def get_category_names(connection: HTTPConnection) -> Callable[[str], str]:

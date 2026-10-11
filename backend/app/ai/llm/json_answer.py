@@ -11,6 +11,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any, TypeVar
 
 from app.ai.llm.client import LLMClient, LLMRequest
@@ -76,10 +77,13 @@ def ask_for_json(
     once more, saying so. Raises UnusableAnswer when the second answer is
     unusable too. A failing request (rate limit, network) is not retried
     here and raises as it always did. task: the name it is counted under."""
+    if not request.task:
+        request = replace(request, task=task)
     response = llm_client.complete(request)
     try:
         return parse(response.text)
     except UnusableAnswer as exc:
+        llm_client.report_unusable(response, str(exc))
         logger.warning(
             "Unusable LLM %s answer (%s); asking once more. Answer began: %s",
             task,
@@ -88,9 +92,12 @@ def ask_for_json(
         )
 
     try:
-        response = llm_client.complete(LLMRequest(prompt=request.prompt + RETRY_NOTE))
+        response = llm_client.complete(
+            replace(request, prompt=request.prompt + RETRY_NOTE, attempt=2)
+        )
         result = parse(response.text)
     except UnusableAnswer as exc:
+        llm_client.report_unusable(response, str(exc))
         LLM_UNUSABLE_ANSWERS.inc(task, "dropped")
         logger.warning(
             "Unusable LLM %s answer again (%s); giving up. Answer began: %s",

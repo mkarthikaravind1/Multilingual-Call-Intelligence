@@ -50,7 +50,7 @@ class RequestContextMiddleware:
             await self.app(scope, receive, send_with_id)
         finally:
             duration = time.perf_counter() - started
-            template = _route_template(scope)
+            template = route_template(scope)
             method = scope.get("method", "")
             HTTP_REQUESTS.inc(method, template, str(status_code))
             HTTP_REQUEST_DURATION.observe(duration, method, template)
@@ -73,7 +73,7 @@ class RequestContextMiddleware:
             request_id_var.reset(token)
 
 
-def _route_template(scope: Scope) -> str:
+def route_template(scope: Scope) -> str:
     """The matched route's full path template, e.g. /api/v1/calls/{call_id}.
     Routes of an included router only know their path below its prefix, so
     the prefix is recovered from the actual request path."""

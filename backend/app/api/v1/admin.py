@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.api.audit import note_target
 from app.api.dependencies import (
     get_category_admin,
     get_location_service,
@@ -82,6 +83,7 @@ def list_users(
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: CreateUserRequest,
+    request: Request,
     service: UserManagementService = Depends(get_user_management_service),
     _: User = Depends(_ADMINS),
 ) -> UserResponse:
@@ -96,6 +98,7 @@ def create_user(
         )
     except EmailAlreadyRegisteredError as exc:
         raise HTTPException(status_code=409, detail="A user with this email already exists.") from exc
+    note_target(request, "user", user.user_id)
     return UserResponse.model_validate(user)
 
 
@@ -166,12 +169,13 @@ def list_locations(
 )
 def create_location(
     payload: CreateLocationRequest,
+    request: Request,
     service: LocationService = Depends(get_location_service),
     _: User = Depends(_ADMINS),
 ) -> LocationResponse:
-    return LocationResponse.model_validate(
-        service.create_location(payload.name, payload.phone_number)
-    )
+    location = service.create_location(payload.name, payload.phone_number)
+    note_target(request, "location", location.location_id)
+    return LocationResponse.model_validate(location)
 
 
 @router.patch("/locations/{location_id}", response_model=LocationResponse)
@@ -255,10 +259,13 @@ def list_complaint_categories(
 )
 def add_complaint_category(
     payload: CreateCategoryRequest,
+    request: Request,
     service: ComplaintCategoryAdminService = Depends(get_category_admin),
     admin: User = Depends(_ADMINS),
 ) -> ManagedCategoryResponse:
-    return _category_response(service.add(payload.name, payload.description, admin.user_id))
+    entry = service.add(payload.name, payload.description, admin.user_id)
+    note_target(request, "category", entry.key)
+    return _category_response(entry)
 
 
 @router.patch("/complaint-categories/{key}", response_model=ManagedCategoryResponse)

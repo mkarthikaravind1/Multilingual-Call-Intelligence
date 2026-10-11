@@ -5,6 +5,7 @@ them; elsewhere they are logged as warnings."""
 from pathlib import Path
 
 from app.core.config import Settings
+from app.services.ai_log import AiLogMode
 
 _UNSET = {"", "not_configured", "change-me-in-development"}
 MIN_SECRET_LENGTH = 32
@@ -81,6 +82,14 @@ def configuration_problems(settings: Settings) -> list[str]:
             problems.append(f"RECORDING_ENABLED is true but {error}")
         if settings.recording_retention_days <= 0:
             problems.append("RECORDING_RETENTION_DAYS must be more than 0.")
+
+    if settings.audit_log_retention_days <= 0:
+        problems.append("AUDIT_LOG_RETENTION_DAYS must be more than 0.")
+    ai_log_mode = settings.ai_log_mode.strip().lower()
+    if ai_log_mode not in {mode.value for mode in AiLogMode}:
+        problems.append("AI_LOG_MODE must be full, details or off.")
+    elif ai_log_mode != AiLogMode.OFF.value and settings.ai_log_retention_days <= 0:
+        problems.append("AI_LOG_RETENTION_DAYS must be more than 0.")
 
     if settings.role_provider.strip().lower() != "session":
         problems.append("ROLE_PROVIDER must be session (static is for tests).")

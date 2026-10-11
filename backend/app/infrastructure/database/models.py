@@ -387,6 +387,50 @@ class RecordingPlayModel(Base):
     played_at: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+class AuditLogModel(Base):
+    # Append-only: who did what, and when. Rows are removed by the
+    # retention sweep only.
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    occurred_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    role: Mapped[str | None] = mapped_column(String, nullable=True)
+    action: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    method: Mapped[str] = mapped_column(String, nullable=False)
+    path: Mapped[str] = mapped_column(String, nullable=False)
+    target_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class AiLogModel(Base):
+    # One row per request to the LLM. prompt and answer are NULL when
+    # AI_LOG_MODE keeps the details only.
+    __tablename__ = "ai_inference_log"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    call_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    task: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    duration_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    outcome: Mapped[str] = mapped_column(String, nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    answer_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("ix_ai_inference_log_call_started", "call_id", "started_at"),)
+
+
 class LocationModel(Base):
     __tablename__ = "locations"
 

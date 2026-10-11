@@ -3,6 +3,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.api.audit import note_detail, note_user
 from app.api.dependencies import get_auth_service, get_login_throttle
 from app.api.security_dependencies import get_current_session
 from app.api.v1.auth_schemas import LoginRequest, TokenResponse
@@ -35,12 +36,15 @@ def login(
     except InvalidCredentialsError:
         if throttle is not None:
             throttle.failed(payload.email, address)
+        # Who it was tried as: the only request content the audit log keeps.
+        note_detail(request, email=payload.email.strip().lower()[:200])
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
     if throttle is not None:
         throttle.succeeded(payload.email)
+    note_user(request, user)
     return TokenResponse(access_token=create_access_token(user))
 
 

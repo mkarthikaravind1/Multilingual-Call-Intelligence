@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { ApiError } from '../api/errors'
 import { useAuth } from '../auth/useAuth'
@@ -25,7 +26,7 @@ const ROLE_CAPABILITIES = [
   {
     role: 'ADMIN',
     description:
-      'Everything a Supervisor can do except managing the price list, plus managing users, roles, locations and complaint categories.',
+      'Everything a Supervisor can do except managing the price list, plus managing users, roles, locations and complaint categories, and reading the audit log and the AI log.',
   },
 ]
 
@@ -88,6 +89,27 @@ export function AdministrationPage() {
       <ComplaintCategoriesPanel />
 
       <PostCallRepairPanel />
+
+      <section className="panel">
+        <h3 className="section-title">Logs</h3>
+        <div className="card-stack">
+          <article className="list-card">
+            <Link className="text-link list-card__title" to="/administration/audit-log">
+              Audit log
+            </Link>
+            <p>
+              Who did what, and when: every change, sign-ins, recordings listened to and
+              downloads.
+            </p>
+          </article>
+          <article className="list-card">
+            <Link className="text-link list-card__title" to="/administration/ai-log">
+              AI log
+            </Link>
+            <p>What the AI was asked and what it answered for each call, with token counts.</p>
+          </article>
+        </div>
+      </section>
 
       <section className="panel">
         <h3 className="section-title">Roles</h3>

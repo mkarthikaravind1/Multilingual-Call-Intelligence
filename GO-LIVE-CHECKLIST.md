@@ -171,6 +171,36 @@ Run the migrations (`alembic upgrade head`; the Docker image does it at
 start) and install the two libraries added recently (`reportlab`,
 `cryptography`; both are in `requirements-api.txt`).
 
+### Audit log and AI log
+
+Both are on without any setting, and administrators read them under
+Administration > Logs. Decide these before real customers call:
+
+| Setting | Default | Notes |
+|---|---|---|
+| `AUDIT_LOG_RETENTION_DAYS` | `365` | Who did what, and when. Holds no request content. |
+| `AI_LOG_MODE` | `full` | `full` keeps every prompt and answer, which contain what the customer said. `details` keeps everything but that text. `off` keeps nothing. |
+| `AI_LOG_RETENTION_DAYS` | `30` | Keep it short while the mode is `full`. |
+
+- **The AI log holds customer speech** in `full` mode. Only administrators
+  can read it, and each time one opens it (or one request's text) is in the
+  audit log. If your policy does not allow keeping it, set `details`.
+- **Space.** A one-line test call made 7 requests and stored about 18 KB.
+  A two-minute call is estimated at about 60 KB (from its token count, not
+  measured), so 10,000 calls a month is roughly 0.6 GB before the 30-day
+  clean-up. `LIVE_ANALYSIS_SPEED=fast` makes more requests per call and
+  will store several times that.
+- **Token counts per call** are now real figures from Groq: open a finished
+  call as an administrator and follow "AI log for this call".
+
+**Test after filling in**
+
+1. Sign in, change something (rename a location, say), and open
+   Administration > Logs > Audit log. Both should be listed with your name.
+2. Make a call, end it, and open "AI log for this call" on its page. Each
+   request should show its task, time taken and tokens; "Show text" shows
+   what was asked and answered.
+
 ## 7. Measuring against the SRD's targets
 
 **Accuracy.** Label a set of recordings and run, from `backend/`:
@@ -265,6 +295,19 @@ migration 0020 (an index the page's query uses).
   failover and disaster recovery, penetration testing: set aside by decision.
 
 ## 10. Known weak spots
+
+- **The audit log names the user by id.** The name shown is the user's
+  name today; a changed name shows as the new one on old entries.
+- **Both logs are written a moment after the event**, in the background. If
+  the database is down or cannot keep up, entries are dropped rather than
+  slowing a call, and counted in `log_entries_dropped_total` on `/metrics`.
+  Entries still waiting when the backend is stopped are lost.
+- **Background work is not in the audit log**: only requests made by a user
+  or by the telephony provider. What the retention jobs remove is in the
+  server log.
+- **The address a request came from** is the proxy's unless the proxy
+  passes the real one on (`proxy_headers` is on; the proxy must set
+  `X-Forwarded-For`).
 
 - **On Hold is what the executive marks in the web app** (Hold / Resume on
   the call screen). Plivo does not report a hold made on the handset: the

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+from app.api.audit import note_target
 from app.api.dependencies import (
     get_question_outcome_repository,
     get_location_service,
@@ -216,6 +217,7 @@ def get_call_stats(
 @router.post("", response_model=CallResponse, status_code=status.HTTP_201_CREATED)
 def start_call(
     payload: StartCallRequest,
+    request: Request,
     call_service: CallService = Depends(get_call_service),
     call_customer_service: CallCustomerService | None = Depends(
         get_optional_call_customer_service
@@ -239,6 +241,7 @@ def start_call(
     )
     if call_customer_service is not None and caller_number is not None:
         call_customer_service.record_caller(call.call_id, caller_number)
+    note_target(request, "call", call.call_id)
     return to_call_response(call)
 
 @router.get("/{call_id}", response_model=CallResponse)

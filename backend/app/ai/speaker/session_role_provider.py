@@ -20,6 +20,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from app.ai.llm.call_context import working_on_call
 from app.ai.speaker.content_role_scorer import ContentRoleScorer
 from app.ai.speaker.llm_role_judge import LLMRoleJudge
 from app.ai.speaker.provider import (
@@ -194,7 +195,8 @@ class SessionRoleIdentificationProvider(RoleIdentificationProvider):
             return None
         state["llm_attempts"] = attempts + 1
         self._save(state)
-        icr = self._llm_judge.icr_speaker(lines)
+        with working_on_call(self._session.call_id):
+            icr = self._llm_judge.icr_speaker(lines)
         return (icr, "LLM judgement") if icr is not None else None
 
     def _complete_roles(self) -> None:
