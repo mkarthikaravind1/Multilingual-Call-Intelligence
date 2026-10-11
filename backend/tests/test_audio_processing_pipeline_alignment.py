@@ -156,20 +156,6 @@ def test_consecutive_items_of_same_speaker_share_one_utterance():
     assert [(u.start_time, u.end_time) for u in result] == [(0.0, 2.0), (2.0, 4.0)]
 
 
-@pytest.mark.parametrize(
-    "roles", [{"A": AIRole.ICR}, {"A": AIRole.ICR, "B": AIRole.UNKNOWN}]
-)
-def test_unmapped_speaker_raises(roles):
-    timed = [word("a", 0.0, 1.0), word("b", 1.0, 2.0)]
-    segments = [seg("A", 0.0, 1.0), seg("B", 1.0, 2.0)]
-    setup = Setup(asr("a b", timed, end=2.0), segments, roles)
-
-    with pytest.raises(AudioPipelineError, match="speaker 'B'"):
-        setup.pipeline.build_utterances(AUDIO)
-
-    assert setup.language.texts == []
-
-
 def test_empty_timed_text_falls_back_to_single_utterance():
     result_asr = asr("hello sir")
     segments = [seg("A", 0.0, 1.0), seg("B", 1.0, 3.0)]
@@ -203,15 +189,6 @@ def test_build_utterance_still_returns_single_utterance_for_timed_text():
     assert result.speaker_role is SpeakerRole.CUSTOMER
     assert (result.start_time, result.end_time) == (5.0, 8.0)
     assert setup.language.texts == ["hello there"]
-
-
-def test_no_speaker_overlap_raises():
-    setup = Setup(
-        asr("x", [word("x", 5.0, 6.0)], end=6.0), [seg("A", 0.0, 1.0)], ROLES
-    )
-
-    with pytest.raises(AudioPipelineError, match="overlaps"):
-        setup.pipeline.build_utterances(AUDIO)
 
 
 def test_invalid_timed_text_raises():

@@ -96,23 +96,6 @@ def test_ai_roles_map_to_domain_roles(speaker_id: str, expected: SpeakerRole) ->
     assert utterance.speaker_role is expected
 
 
-def test_unknown_role_raises_pipeline_error() -> None:
-    with pytest.raises(AudioPipelineError, match="No usable role"):
-        make_pipeline(single_speaker("S3")).build_utterance(b"audio")
-
-
-def test_speaker_missing_from_role_mapping_raises_pipeline_error() -> None:
-    with pytest.raises(AudioPipelineError, match="No usable role"):
-        make_pipeline(single_speaker("S9")).build_utterance(b"audio")
-
-
-def test_unknown_role_never_reaches_workflow() -> None:
-    workflow = RecordingWorkflow()
-    with pytest.raises(AudioPipelineError):
-        make_pipeline(single_speaker("S3"), workflow).process_audio("call-1", b"audio")
-    assert workflow.calls == []
-
-
 def test_call_id_and_domain_utterance_reach_workflow() -> None:
     workflow = RecordingWorkflow()
     result = make_pipeline(single_speaker("S1"), workflow).process_audio(

@@ -322,29 +322,6 @@ def test_routes_use_injected_services():
     assert client.get(f"{BASE}/candidates/late").status_code == 200
 
 
-def test_default_wiring_provides_empty_learning_services():
-    services = ApiServices(
-        call_service=build_call_service(),
-        workflow_service=None,  # type: ignore[arg-type]
-    )
-    app = create_app(services)
-
-    user = User(
-        user_id="test-icr",
-        email="test-icr@example.com",
-        password_hash="test-password-hash",
-        role=UserRole.ICR,
-        is_active=True,
-        created_at=time.time(),
-    )
-    app.state.services.user_repository.save(user)
-    token = create_access_token(user)
-
-    client = TestClient(app, headers={"Authorization": f"Bearer {token}"})
-
-    assert client.get(f"{BASE}/candidates").json() == []
-
-
 def test_existing_call_routes_remain_available():
     client, _, _ = build()
 

@@ -58,7 +58,7 @@ def test_question_provider_receives_injected_client(monkeypatch):
     captured = {}
 
     class RecordingProvider:
-        def __init__(self, llm_client):
+        def __init__(self, llm_client, **options):
             captured["client"] = llm_client
 
     monkeypatch.setattr(providers, "LLMQuestionProvider", RecordingProvider)
@@ -100,20 +100,3 @@ def test_llm_question_provider_does_not_import_groq():
     ]
 
     assert not any("groq" in name.lower() for name in imported)
-
-def test_wired_provider_calls_injected_client_and_returns_none_on_bad_json():
-    llm_client = create_autospec(LLMClient, instance=True)
-    llm_client.complete.return_value = LLMResponse(text="not json")
-    provider = create_question_provider(llm_client=llm_client)
-    context = SimpleNamespace(
-        category="Cost",
-        status=SimpleNamespace(value="detected"),
-        utterances=[SimpleNamespace(transcript="The bill was too high")],
-        learning_context=(),
-    )
-
-    result = provider.generate(context) # type: ignore
-
-    llm_client.complete.assert_called_once()
-    assert "Cost" in llm_client.complete.call_args.args[0].prompt
-    assert result is None

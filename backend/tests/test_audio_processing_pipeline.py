@@ -280,6 +280,11 @@ INVALID_RESULT_CASES = {
         "asr": ASRResult("hi", "xx", 1.0, 3.0),
         "language": LanguageIdentificationResult([]),
     },
+}
+
+# Who is speaking could not be told (the speaker separation or the roles
+# gave nothing usable). What was said is still worth keeping.
+UNKNOWN_SPEAKER_CASES = {
     "no_diarized_segments": {"segments": []},
     "segments_wrong_type": {"segments": "segments"},
     "segment_element_wrong_type": {"segments": ["segment"]},
@@ -293,6 +298,20 @@ INVALID_RESULT_CASES = {
     },
     "no_overlap_with_speech": {"segments": [DiarizedSegment("spk_0", 10.0, 12.0)]},
 }
+
+
+@pytest.mark.parametrize(
+    "overrides", UNKNOWN_SPEAKER_CASES.values(), ids=UNKNOWN_SPEAKER_CASES.keys()
+)
+def test_speech_whose_speaker_cannot_be_told_is_kept_with_an_unknown_speaker(overrides):
+    setup = make_setup(**overrides)
+
+    setup.pipeline.process_audio("call-1", AUDIO)
+
+    ((call_id, utterance),) = setup.workflow.calls
+    assert call_id == "call-1"
+    assert utterance.speaker_role is SpeakerRole.UNKNOWN
+    assert utterance.transcript == "vanakkam sir"
 
 
 @pytest.mark.parametrize(

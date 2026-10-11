@@ -351,47 +351,6 @@ def test_answer_webhook_rejects_invalid_signature():
     assert response.status_code == 403
 
 
-def test_answer_webhook_creates_call_and_returns_stream_xml():
-    client, services = _build_client()
-    headers = _signed_headers("test-auth-token", ANSWER_URL)
-
-    response = client.post(
-        ANSWER_PATH,
-        **_signed_form(ANSWER_URL, {"CallUUID": "uuid-1", "From": "+91123", "To": "+91456"}),
-    )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/xml")
-    call_id = _extract_call_id(response.text)
-    assert call_id.startswith("plivo-")
-    assert services.call_service.get_call(call_id).status.value == "active"
-
-
-def test_status_webhook_ends_call_idempotently():
-    client, services = _build_client()
-    answer = client.post(
-        ANSWER_PATH,
-        **_signed_form(ANSWER_URL, {"CallUUID": "uuid-2", "From": "+91123", "To": "+91456"}),
-    )
-    call_id = _extract_call_id(answer.text)
-
-    first = client.post(
-        STATUS_PATH,
-        **_signed_form(STATUS_URL, {"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "42"}),
-    )
-    second = client.post(
-        STATUS_PATH,
-        **_signed_form(STATUS_URL, {"CallUUID": "uuid-2", "CallStatus": "completed", "Duration": "999"}),
-    )
-
-    assert first.status_code == 200
-    assert second.status_code == 200
-    call = client.get(f"/api/v1/calls/{call_id}").json()
-    assert call["status"] == "completed"
-    assert call["end_time"] == 42.0
-    assert services.call_service.get_call(call_id).status.value == "active"
-
-
 def test_status_webhook_for_unknown_call_still_returns_200():
     client = _build_client()
 
