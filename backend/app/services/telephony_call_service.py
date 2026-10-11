@@ -34,6 +34,10 @@ _TERMINAL_STATUSES = frozenset(
 # Upper bound on how long a terminal status waits for the call's media stream
 # to finish its buffered and in-flight audio before completing anyway.
 STREAM_DRAIN_TIMEOUT_SECONDS = 30.0
+# Right after a restart the speech models are still loading and a call's
+# audio waits for them: the wait above then starts once they are ready,
+# but never lasts longer than this in all.
+STREAM_WARM_UP_DRAIN_LIMIT_SECONDS = 300.0
 
 # How long a stream stays marked open in the shared store after its last
 # sign of life, so one whose instance died without cleaning up is not
@@ -59,7 +63,12 @@ class TelephonyCallService:
         live_state: LiveStateStore | None = None,
         clock: Callable[[], float] = time.time,
         call_routing: CallRoutingService | None = None,
+        is_warming_up: Callable[[], bool] | None = None,
+        warm_up_drain_limit_seconds: float = STREAM_WARM_UP_DRAIN_LIMIT_SECONDS,
     ) -> None:
+        # Whether the speech models are still loading (see ModelWarmUp).
+        self._is_warming_up = is_warming_up or (lambda: False)
+        self._warm_up_drain_limit_seconds = warm_up_drain_limit_seconds
         self._call_service = call_service
         self._call_routing = call_routing
         self._mapping_repository = mapping_repository
@@ -205,19 +214,37 @@ class TelephonyCallService:
 
     def wait_for_stream_drain(self, call_id: str) -> bool:
         """Block until the call's media stream drains or the timeout passes.
-        Returns False on timeout. Run it off the event loop."""
+        Returns False on timeout. Run it off the event loop.
+
+        While the speech models are still loading the timeout does not run:
+        the call's audio is queued behind them, and completing the call now
+        would throw its whole transcript away."""
         with self._streams_guard:
             drained = self._open_streams.get(call_id)
-        if drained is not None:
-            return drained.wait(self._stream_drain_timeout_seconds)
 
-        # The stream is on another instance: watch the shared store.
-        deadline = time.monotonic() + self._stream_drain_timeout_seconds
-        while self._stream_open_elsewhere(call_id):
-            if time.monotonic() >= deadline:
+        timeout = self._stream_drain_timeout_seconds
+        started = time.monotonic()
+        deadline = started + timeout
+        limit = started + max(timeout, self._warm_up_drain_limit_seconds)
+        was_warming_up = False
+        step = min(timeout, _SHARED_DRAIN_POLL_SECONDS)
+        while True:
+            if drained is not None:
+                if drained.wait(step):
+                    return True
+            elif not self._stream_open_elsewhere(call_id):
+                # The stream is on another instance: the shared store says.
+                return True
+            else:
+                time.sleep(step)
+            now = time.monotonic()
+            warming_up = self._is_warming_up()
+            # The timeout runs from the moment the models are ready.
+            if warming_up or was_warming_up:
+                deadline = min(limit, now + timeout)
+            was_warming_up = warming_up
+            if now >= deadline:
                 return False
-            time.sleep(_SHARED_DRAIN_POLL_SECONDS)
-        return True
 
     def complete_after_stream_drains(
         self,

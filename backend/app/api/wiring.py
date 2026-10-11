@@ -152,6 +152,7 @@ from app.services.recording_archive import (
     RecordingRepository,
 )
 from app.composition.data_safety import DataSafety, build_data_safety
+from app.services.model_warm_up import ModelWarmUp
 from app.services.database_backup import BackupRepository, InMemoryBackupRepository
 from app.services.offsite_archive import (
     InMemoryTranscriptArchiveRepository,
@@ -398,6 +399,8 @@ def build_api_services(
     # --- Recordings, telephony, and what each call's screen shows of them ---
     recording_repository = recording_repository or InMemoryRecordingRepository()
     recording_archive = _build_recording_archive(settings, recording_repository)
+    # Loads the slow speech models in the background once the server starts.
+    model_warm_up = ModelWarmUp(lambda: warm_up_diarization(settings))
     # --- Copies off the server, the recording check and database backups ---
     data_safety = build_data_safety(
         settings,
@@ -413,7 +416,12 @@ def build_api_services(
         post_call_summary_repository.get,
     )
     telephony_call_service = _build_telephony_call_service(
-        settings, call_service, call_customer_service, live_state_store, call_routing
+        settings,
+        call_service,
+        call_customer_service,
+        live_state_store,
+        call_routing,
+        model_warm_up,
     )
     call_indicators = CallIndicators(
         live_state_store,
@@ -599,11 +607,7 @@ def build_api_services(
         audit_log=audit_log,
         ai_log=ai_log,
         background_jobs=background_jobs,
-        warm_up=(
-            (lambda: _warm_up_live_models(settings))
-            if live_chunk_processing_service is not None
-            else None
-        ),
+        warm_up=model_warm_up.run if live_chunk_processing_service is not None else None,
         health_checks={"live_state": live_state_store.ping} if shared_live_state else {},
     )
     _register_gauges(services)
@@ -791,6 +795,7 @@ def _build_telephony_call_service(
     call_customer_service: CallCustomerService,
     live_state_store: LiveStateStore,
     call_routing: CallRoutingService,
+    model_warm_up: ModelWarmUp | None = None,
 ) -> TelephonyCallService:
     # Degrades to in-memory by itself, so an unconfigured store never
     # prevents the rest of the app (learning, auth, the manual /live
@@ -805,6 +810,8 @@ def _build_telephony_call_service(
         call_customer_service=call_customer_service,
         live_state=live_state_store,
         call_routing=call_routing,
+        # A call that ends while the models still load waits for them.
+        is_warming_up=None if model_warm_up is None else (lambda: model_warm_up.in_progress),
     )
 
 
@@ -935,13 +942,6 @@ def live_analysis_interval_seconds(settings: Settings) -> float:
     if speed != "standard":
         logger.warning("Unknown LIVE_ANALYSIS_SPEED %r; using standard", speed)
     return settings.live_analysis_min_interval_seconds
-
-
-def _warm_up_live_models(settings: Settings) -> None:
-    try:
-        warm_up_diarization(settings)
-    except Exception as exc:
-        logger.warning("Diarization model could not be preloaded: %s", exc)
 
 
 def _register_gauges(services: ApiServices) -> None:
