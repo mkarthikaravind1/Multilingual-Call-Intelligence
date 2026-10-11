@@ -90,6 +90,8 @@ class SessionRoleIdentificationProvider(RoleIdentificationProvider):
         self._store = evidence_store or SpeakerEvidenceStore()
         # The latest chunk's labels -> call-wide speaker ids.
         self._chunk_speakers: dict[str, str] = {}
+        # Earlier lines of speakers whose role has just been decided.
+        self._settled_lines: list[tuple[str, AISpeakerRole]] = []
 
     def identify_roles(
         self, segments: list[DiarizedSegment]
@@ -156,9 +158,19 @@ class SessionRoleIdentificationProvider(RoleIdentificationProvider):
                 icr_speaker, SpeakerRole.ICR, method="llm" if how == "LLM judgement" else "content"
             )
             self._complete_roles()
+            # Everything but the line just heard (its role is returned
+            # here) was stored before anyone knew who was speaking.
+            for earlier_speaker, said in lines[:-1]:
+                role = self._session.role_for(earlier_speaker)
+                if role is not None:
+                    self._settled_lines.append((said, _DOMAIN_TO_AI[role]))
 
         known = self._session.role_for(speaker)
         return _DOMAIN_TO_AI[known] if known is not None else None
+
+    def take_settled_lines(self) -> tuple[tuple[str, AISpeakerRole], ...]:
+        settled, self._settled_lines = tuple(self._settled_lines), []
+        return settled
 
     def _decide_from_scores(self, scores: Mapping[str, int]) -> tuple[str, str] | None:
         speakers = list(self._tracker.speaker_ids) or list(scores)

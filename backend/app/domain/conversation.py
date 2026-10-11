@@ -1,6 +1,7 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from app.domain.utterance import Utterance
+from app.domain.utterance import SpeakerRole, Utterance
 
 class ConversationStatus(str, Enum):
     ACTIVE = "active"
@@ -178,6 +179,27 @@ class Conversation:
     @property
     def duration(self) -> float | None:
         return None if self.end_time is None else self.end_time - self.start_time
+
+    def name_speakers(self, roles_by_words: Mapping[str, SpeakerRole]) -> int:
+        """Give a speaker to lines stored without one, now that it is known
+        who said them: roles_by_words maps what was said to who said it. A
+        line is named when it has no speaker and holds those words (it may
+        have grown since). Lines that already have a speaker are never
+        changed. Returns how many lines were named."""
+        changed = 0
+        for index, utterance in enumerate(self._utterances):
+            if utterance.speaker_role != SpeakerRole.UNKNOWN:
+                continue
+            roles = {
+                role
+                for words, role in roles_by_words.items()
+                if words and words in utterance.transcript and role != SpeakerRole.UNKNOWN
+            }
+            # Two speakers' words in one line: it cannot be given to either.
+            if len(roles) == 1:
+                self._utterances[index] = replace(utterance, speaker_role=roles.pop())
+                changed += 1
+        return changed
 
     def rate_utterances(self, ratings) -> int:
         """Give lines their tone (UtteranceSentiment each). A line that is

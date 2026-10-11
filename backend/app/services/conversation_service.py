@@ -132,6 +132,16 @@ class ConversationService:
                 self._repository.save(conversation)
             return conversation
 
+    def name_speakers(self, call_id: str, roles_by_words) -> int:
+        """Give a speaker to the call's lines stored without one (see
+        Conversation.name_speakers). Returns how many lines changed."""
+        with self._lock_for(call_id):
+            conversation = self.get_conversation(call_id)
+            changed = conversation.name_speakers(roles_by_words)
+            if changed:
+                self._repository.save(conversation)
+            return changed
+
     def hold(self, call_id: str, at: float) -> Conversation:
         """Put the call on hold (see Conversation.hold); a call already on
         hold stays as it is."""

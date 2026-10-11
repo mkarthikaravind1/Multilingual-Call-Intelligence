@@ -613,3 +613,123 @@ def test_follow_up_analysis_waits_for_the_minimum_interval():
 
     assert runs == ["c", "c"]
     assert len(slept) == 1 and 4.0 < slept[0] <= 5.0
+
+
+# ---- Lines stored before the speakers were told apart ----
+
+
+def test_once_roles_are_decided_the_earlier_lines_of_each_speaker_are_handed_over():
+    provider, _ = _provider()
+    _roles(provider, [seg("A", ICR_VOICE)])
+    assert provider.observe_speech("A", "hello") is None
+    _roles(provider, [seg("B", CUSTOMER_VOICE)])
+    assert provider.observe_speech("B", "yes tell me") is None
+    assert provider.take_settled_lines() == ()
+
+    _roles(provider, [seg("A", _near(ICR_VOICE))])
+    learned = provider.observe_speech("A", "Thank you for calling, how can I help you?")
+
+    assert learned == AISpeakerRole.ICR
+    assert provider.take_settled_lines() == (
+        ("hello", AISpeakerRole.ICR),
+        ("yes tell me", AISpeakerRole.CUSTOMER),
+    )
+    # Handed over once.
+    assert provider.take_settled_lines() == ()
+
+
+def _line(utterance_id: str, words: str, role: SpeakerRole, start: float) -> Utterance:
+    return Utterance(utterance_id, words, role, ("en",), start, start + 1.0)
+
+
+def test_only_lines_without_a_speaker_are_named_and_only_when_it_is_clear():
+    from app.domain.conversation import Conversation
+
+    call = Conversation("call-1")
+    call.add_utterance(_line("u1", "hello", SpeakerRole.UNKNOWN, 0.0))
+    call.add_utterance(_line("u2", "yes tell me, I am listening", SpeakerRole.UNKNOWN, 1.0))
+    call.add_utterance(_line("u3", "hello", SpeakerRole.CUSTOMER, 2.0))  # already has one
+    call.add_utterance(_line("u4", "hello yes tell me", SpeakerRole.UNKNOWN, 3.0))  # both
+    call.add_utterance(_line("u5", "something else", SpeakerRole.UNKNOWN, 4.0))
+
+    changed = call.name_speakers(
+        {"hello": SpeakerRole.ICR, "yes tell me": SpeakerRole.CUSTOMER, "": SpeakerRole.ICR}
+    )
+
+    assert changed == 2
+    assert [u.speaker_role for u in call.utterances] == [
+        SpeakerRole.ICR,
+        SpeakerRole.CUSTOMER,  # the line had grown since it was first heard
+        SpeakerRole.CUSTOMER,
+        SpeakerRole.UNKNOWN,
+        SpeakerRole.UNKNOWN,
+    ]
+    # A line that has its speaker is never given another.
+    assert call.name_speakers({"yes tell me, I am listening": SpeakerRole.ICR}) == 0
+    assert call.utterances[1].speaker_role is SpeakerRole.CUSTOMER
+
+
+class _NamingWorkflow(_Workflow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.named: list[dict] = []
+
+    def name_speakers(self, call_id: str, roles_by_words) -> int:
+        from dataclasses import replace
+
+        self.named.append(dict(roles_by_words))
+        changed = 0
+        for index, utterance in enumerate(self.utterances):
+            role = roles_by_words.get(utterance.transcript)
+            if utterance.speaker_role == SpeakerRole.UNKNOWN and role is not None:
+                self.utterances[index] = replace(utterance, speaker_role=role)
+                changed += 1
+        return changed
+
+
+def test_the_opening_lines_of_a_mixed_call_get_their_speaker_once_it_is_known():
+    diarization = _Diarization(
+        [
+            [seg("SPEAKER_00", ICR_VOICE, 0.0, 2.0)],
+            [seg("SPEAKER_00", CUSTOMER_VOICE, 0.0, 2.0)],
+            [seg("SPEAKER_00", _near(ICR_VOICE), 0.0, 2.0)],
+        ]
+    )
+    workflow = _NamingWorkflow()
+    pipeline = AudioProcessingPipeline(
+        asr_provider=_ASR(
+            [
+                ("hello sir good morning", 0.0, 2.0),
+                ("yes tell me", 0.0, 2.0),
+                ("thank you for calling, how may I help you", 0.0, 2.0),
+            ]
+        ),
+        language_provider=_Language(),
+        diarization_provider=diarization,
+        role_provider=SessionRoleIdentificationProvider(SpeakerSession("call-1")),
+        workflow_service=workflow,
+    )
+
+    for index, audio in enumerate((b"a", b"b", b"c")):
+        pipeline.process_audio("call-1", audio, index * 2.0)
+
+    assert [(u.transcript, u.speaker_role) for u in workflow.utterances] == [
+        ("hello sir good morning", SpeakerRole.ICR),
+        ("yes tell me", SpeakerRole.CUSTOMER),
+        ("thank you for calling, how may I help you", SpeakerRole.ICR),
+    ]
+    assert len(workflow.named) == 1
+
+
+def test_a_workflow_that_cannot_name_speakers_is_left_alone():
+    pipeline, workflow, _, _ = _pipeline(
+        [("hello", 0.0, 2.0), ("thank you for calling, how may I help you", 0.0, 2.0)],
+        diarization=_Diarization(
+            [[seg("SPEAKER_00", ICR_VOICE, 0.0, 2.0)], [seg("SPEAKER_00", _near(ICR_VOICE), 0.0, 2.0)]]
+        ),
+    )
+
+    pipeline.process_audio("call-1", b"a", 0.0)
+    pipeline.process_audio("call-1", b"b", 2.0)
+
+    assert [u.speaker_role for u in workflow.utterances] == [SpeakerRole.UNKNOWN, SpeakerRole.ICR]

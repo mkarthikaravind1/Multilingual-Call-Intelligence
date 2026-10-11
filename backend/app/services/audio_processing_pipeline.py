@@ -138,7 +138,35 @@ class AudioProcessingPipeline:
         self._latest_start = utterance.start_time
         if not ends_utterance:
             self._open_utterances[track] = utterance
+        self._name_earlier_speakers(call_id)
         return result
+
+    def _name_earlier_speakers(self, call_id: str) -> bool:
+        """Once the speakers are told apart, the lines stored before that
+        get their speaker. True when a line changed. Never fails the chunk
+        that brought the news."""
+        try:
+            settled = self._role_provider.take_settled_lines()
+            roles = {
+                said: _AI_TO_DOMAIN_ROLE[role]
+                for said, role in settled
+                if _AI_TO_DOMAIN_ROLE.get(role) not in (None, SpeakerRole.UNKNOWN)
+            }
+            name_speakers = getattr(self._workflow_service, "name_speakers", None)
+            if not roles or name_speakers is None:
+                return False
+            changed = name_speakers(call_id, roles)
+        except Exception:
+            logger.exception("Could not name the earlier speakers of call %r", call_id)
+            return False
+        # A line still open keeps its new speaker when it grows.
+        for track, open_utterance in list(self._open_utterances.items()):
+            role = next(
+                (r for said, r in roles.items() if said in open_utterance.transcript), None
+            )
+            if open_utterance.speaker_role == SpeakerRole.UNKNOWN and role is not None:
+                self._open_utterances[track] = replace(open_utterance, speaker_role=role)
+        return bool(changed)
 
     def _build_live_utterance(
         self,

@@ -64,3 +64,9 @@ class RoleIdentificationProvider(ABC):
         known. Returns the speaker's role if it is now known, else None.
         Providers that do not learn from speech ignore it."""
         return None
+
+    def take_settled_lines(self) -> tuple[tuple[str, SpeakerRole], ...]:
+        """What was said earlier by speakers whose role has only now become
+        known, each with that role, handed over once: the lines were
+        stored without a speaker and can now be given one."""
+        return ()

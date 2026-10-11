@@ -34,6 +34,8 @@ class DeferredAnalysisWorkflow(Protocol):
 
     def record_utterance_update(self, call_id: str, utterance: Utterance) -> None: ...
 
+    def name_speakers(self, call_id: str, roles_by_words) -> int: ...
+
     def analyze_latest_speech(self, call_id: str) -> CallAnalysisResult | None: ...
 
     def analyze_call(self, call_id: str) -> CallAnalysisResult: ...
@@ -78,6 +80,14 @@ class LiveAnalysisScheduler:
         self._workflow.record_utterance_update(call_id, utterance)
         self.request_analysis(call_id)
         return self._workflow.analyze_call(call_id)
+
+    def name_speakers(self, call_id: str, roles_by_words) -> int:
+        """Earlier lines get their speaker, now known. The customer's among
+        them were never analysed (nobody knew they were the customer's)."""
+        changed = self._workflow.name_speakers(call_id, roles_by_words)
+        if changed:
+            self.request_analysis(call_id)
+        return changed
 
     def request_analysis(self, call_id: str) -> None:
         with self._lock:

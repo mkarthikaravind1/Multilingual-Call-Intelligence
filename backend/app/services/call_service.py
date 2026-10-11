@@ -78,6 +78,9 @@ class CallService:
     def resume_call(self, call_id: str, at: float) -> Conversation:
         return self._conversation_service.resume(call_id, at)
 
+    def name_speakers(self, call_id: str, roles_by_words) -> int:
+        return self._conversation_service.name_speakers(call_id, roles_by_words)
+
     def rate_utterances(self, call_id: str, ratings) -> Conversation:
         return self._conversation_service.rate_utterances(call_id, ratings)
 

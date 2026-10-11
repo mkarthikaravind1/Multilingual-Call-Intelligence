@@ -231,6 +231,14 @@ class CallWorkflowService:
         self._live_analysis.touch(call_id)
         return conversation
 
+    def name_speakers(self, call_id: str, roles_by_words) -> int:
+        """Lines stored before the speakers were told apart get their
+        speaker (see Conversation.name_speakers); open live views are told."""
+        changed = self._call_service.name_speakers(call_id, roles_by_words)
+        if changed:
+            self._live_analysis.touch(call_id)
+        return changed
+
     def record_utterance_update(self, call_id: str, utterance: Utterance) -> Conversation:
         """Like record_utterance, for the call's latest utterance growing
         (same utterance_id) as live speech continues it."""
