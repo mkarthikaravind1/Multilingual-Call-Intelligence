@@ -6,6 +6,9 @@ pyannote-env/
 tests/
 data/
 scripts/
+# The image needs only the backup restore script (see the Dockerfile).
+!scripts/__init__.py
+!scripts/restore_backup.py
 *.wav
 dev_run_sample_two_speakers.py
 steps_to_run.txt
