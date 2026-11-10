@@ -1,0 +1,31 @@
+# Environments & Secrets
+.env
+.env.*
+!.env.example
+
+# Model weights & Checkpoints
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.gguf
+*.ggml
+
+# Model storage folders
+models/
+adapters/
+checkpoints/
+hf_cache/
+.cache/
+
+# Datasets and Logs
+data/
+logs/
+
+# Python virtual environments & bytecode
+venv/
+.venv/
+__pycache__/
+*.pyc

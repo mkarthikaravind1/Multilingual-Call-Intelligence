@@ -1,0 +1,18 @@
+# Lightweight Python Gateway for Call Analysis LLM Server
+FROM python:3.11-alpine
+
+WORKDIR /app
+
+# The proxy uses Python standard library modules (zero external wheels needed for security & speed)
+COPY proxy/ /app/proxy/
+
+ENV PYTHONUNBUFFERED=1 \
+    PROXY_PORT=8091 \
+    PROXY_HOST=0.0.0.0
+
+EXPOSE 8091
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8091/health || exit 1
+
+ENTRYPOINT ["python", "proxy/main.py"]

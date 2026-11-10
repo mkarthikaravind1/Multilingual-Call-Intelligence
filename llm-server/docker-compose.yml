@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # 1. GPU Production Inference Service (vLLM)
+  # ============================================================================
+  vllm-engine:
+    image: vllm/vllm-openai:latest
+    container_name: callanalysis-vllm-gpu
+    restart: unless-stopped
+    profiles: ["gpu", "default"]
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN:-}
+      - VLLM_LOGGING_LEVEL=INFO
+    volumes:
+      - ${HOME:-~}/.cache/huggingface:/root/.cache/huggingface
+      - ./models:/models
+    ports:
+      - "8000:8000"
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: >
+      --model ${MODEL_PATH:-openai/gpt-oss-20b}
+      --port 8000
+      --host 0.0.0.0
+      --max-model-len ${MAX_MODEL_LEN:-8192}
+      --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION:-0.90}
+      --tensor-parallel-size ${TENSOR_PARALLEL_SIZE:-1}
+      --enable-prefix-caching
+      ${ENABLE_LORA:+--enable-lora --lora-modules ${LORA_ADAPTER_NAME:-automotive-call-lora}=${LORA_ADAPTER_PATH:-/models/lora-adapter}}
+      ${QUANTIZATION:+--quantization ${QUANTIZATION}}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ============================================================================
+  # 2. CPU Development Inference Service (llama.cpp)
+  # ============================================================================
+  llama-cpu:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    container_name: callanalysis-llama-cpu
+    restart: unless-stopped
+    profiles: ["cpu"]
+    volumes:
+      - ./models:/models
+    ports:
+      - "8000:8000"
+    command: >
+      -m ${CPU_GGUF_MODEL_PATH:-/models/gpt-oss-20b-Q4_K_M.gguf}
+      --host 0.0.0.0
+      --port 8000
+      -c ${MAX_MODEL_LEN:-8192}
+      -t ${CPU_THREADS:-8}
+      --alias ${MODEL_PATH:-openai/gpt-oss-20b}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ============================================================================
+  # 3. Gateway / Thin Reverse Proxy (Auth, Overload 429/503 Protection)
+  # ============================================================================
+  api-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    container_name: callanalysis-gateway
+    restart: unless-stopped
+    ports:
+      - "${PROXY_PORT:-8091}:8091"
+    environment:
+      - PROXY_HOST=0.0.0.0
+      - PROXY_PORT=8091
+      - UPSTREAM_ENGINE_URL=http://vllm-engine:8000
+      - API_KEY=${API_KEY:-sk-callanalysis-automotive-dev-secret-token-2026}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-10}
+      - RETRY_AFTER_SECONDS=${RETRY_AFTER_SECONDS:-2}
+      - REQUEST_TIMEOUT_SECONDS=${REQUEST_TIMEOUT_SECONDS:-30}
+      - MODEL_PATH=${MODEL_PATH:-openai/gpt-oss-20b}
+      - ENABLE_LORA=${ENABLE_LORA:-false}
+      - LORA_ADAPTER_NAME=${LORA_ADAPTER_NAME:-automotive-call-lora}
+      - ALLOW_MOCK_FALLBACK=false
+    depends_on:
+      - vllm-engine
