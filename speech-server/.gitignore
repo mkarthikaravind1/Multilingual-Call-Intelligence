@@ -1,0 +1,31 @@
+# Secrets and environment configs
+.env
+.env.*
+!.env.example
+
+# Model weights
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.gguf
+*.ct2
+models/
+data/
+
+# Python environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Audio and media files
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.mp4
+
