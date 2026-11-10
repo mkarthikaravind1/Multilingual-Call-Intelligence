@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "call-analysis-evalkit"
+version = "0.1.0"
+description = "Stand-alone language detection and evaluation kit for automotive service call analysis"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "httpx>=0.28.0",
+    "websockets>=13.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["langid*", "evalkit*"]
+
