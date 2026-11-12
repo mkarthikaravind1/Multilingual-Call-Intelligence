@@ -77,6 +77,10 @@ class ConversationService:
             raise ConversationNotFoundError(call_id)
         return conversation
 
+    def get_conversations(self, call_ids) -> dict[str, Conversation]:
+        """The calls that exist among call_ids, by call_id."""
+        return self._repository.get_many(call_ids)
+
     def list_conversations(self, limit: int, offset: int) -> tuple[Conversation, ...]:
         return self._repository.list_page(limit, offset)
 
