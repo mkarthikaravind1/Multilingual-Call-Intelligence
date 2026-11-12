@@ -90,7 +90,9 @@ jobs:
         run: docker build -t frontend-ci frontend
 
       - name: Check the nginx config
-        run: docker run --rm frontend-ci nginx -t
+        # nginx resolves the upstream name at start-up; "backend" exists only
+        # inside the compose network, so give it a stand-in address here.
+        run: docker run --rm --add-host backend:127.0.0.1 frontend-ci nginx -t
 
   compose:
     name: Docker Compose config
