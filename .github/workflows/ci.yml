@@ -48,7 +48,7 @@ jobs:
         run: python -m pytest -q
 
   frontend:
-    name: Frontend (lint and build)
+    name: Frontend (lint, tests and build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,6 +67,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Unit tests
+        run: npm test
 
       # tsc -b (type check) followed by the production Vite build.
       - name: Type check and build

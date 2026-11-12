@@ -634,6 +634,7 @@ Not implemented today:
 - Promoting accepted emerging themes into the complaint taxonomy.
 - Additional LLM/ASR providers and a WhatsApp provider.
 - GPU or hosted diarization for lower latency.
-- Frontend unit/integration tests (e.g. Vitest + Testing Library).
+- Frontend component and integration tests (Vitest is set up and covers
+  the formatting and error helpers; run `npm test` in `frontend/`).
 - Redis pub/sub for live updates instead of revision polling, and
   reporting dashboards over the stored analytics.
