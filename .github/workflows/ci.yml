@@ -78,6 +78,20 @@ jobs:
       - name: Type check and build
         run: npm run build
 
+  # Builds the web app image and checks its nginx config. The image's
+  # entrypoint renders the config template first, then `nginx -t` tests it.
+  frontend-image:
+    name: Frontend image (build and nginx config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t frontend-ci frontend
+
+      - name: Check the nginx config
+        run: docker run --rm frontend-ci nginx -t
+
   compose:
     name: Docker Compose config
     runs-on: ubuntu-latest
