@@ -5,6 +5,7 @@ import { StatePanel } from '../components/StatePanel'
 import { toEscalationViewModel } from '../features/escalation/adapters/toEscalationViewModel'
 import { EscalationCard } from '../features/escalation/components/EscalationCard'
 import { escalationRestService } from '../features/escalation/services/escalationRestService'
+import { localMidnight } from '../features/admin/logFilters'
 
 import type {
   EscalationQueueFilters,
@@ -57,14 +58,6 @@ const NO_DATES: DateRanges = {
   detectedTo: '',
   acknowledgedFrom: '',
   acknowledgedTo: '',
-}
-
-// <input type="date"> values are local calendar days; the API takes epoch
-// seconds, from inclusive and to exclusive (so "to" is the next midnight).
-function localMidnight(day: string, addDays = 0): number | undefined {
-  const [year, month, date] = day.split('-').map(Number)
-  if (!year || !month || !date) return undefined
-  return new Date(year, month - 1, date + addDays).getTime() / 1000
 }
 
 function toFilters(dates: DateRanges): EscalationQueueFilters {

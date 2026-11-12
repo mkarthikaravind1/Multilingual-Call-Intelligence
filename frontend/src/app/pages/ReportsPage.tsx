@@ -9,6 +9,7 @@ import { PerformancePanel } from '../features/reports/components/PerformancePane
 import { TrendChart, type TrendLine } from '../features/reports/components/TrendChart'
 import { humanizeLabel } from '../format/text'
 import { formatBucket } from '../features/reports/format/bucket'
+import { localMidnight } from '../features/admin/logFilters'
 import {
   reportRestService,
   type ComplaintReportDto,
@@ -69,12 +70,6 @@ const HEAT_STEPS = 6
 function dayValue(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-function localMidnight(day: string, addDays = 0): number | undefined {
-  const [year, month, date] = day.split('-').map(Number)
-  if (!year || !month || !date) return undefined
-  return new Date(year, month - 1, date + addDays).getTime() / 1000
 }
 
 function defaultRange(): { from: string; to: string } {

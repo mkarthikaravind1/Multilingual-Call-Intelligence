@@ -9,6 +9,7 @@ import { callRestService, type CallListFilters } from '../services/callRestServi
 import type { CallDirectoryEntryDto } from '../types/dto'
 import type { CallMetadataViewModel } from '../types/view-models'
 import { CallTable } from './CallTable'
+import { localMidnight } from '../../admin/logFilters'
 
 const PAGE_SIZE = 20
 const SEARCH_DELAY_MS = 300
@@ -48,14 +49,6 @@ const STATUS_OPTIONS = [
 type CallStatusOption = (typeof STATUS_OPTIONS)[number]['value']
 
 const FILTER_PARAMS = Object.values(PARAM).filter((name) => name !== PARAM.offset)
-
-// <input type="date"> values are local calendar days ("2026-10-02"); the API
-// takes epoch seconds, from inclusive and to exclusive.
-function localMidnight(day: string, addDays = 0): number | undefined {
-  const [year, month, date] = day.split('-').map(Number)
-  if (!year || !month || !date) return undefined
-  return new Date(year, month - 1, date + addDays).getTime() / 1000
-}
 
 function toApiFilters(params: URLSearchParams): CallListFilters {
   const day = (name: DateParam, addDays = 0) => localMidnight(params.get(name) ?? '', addDays)
