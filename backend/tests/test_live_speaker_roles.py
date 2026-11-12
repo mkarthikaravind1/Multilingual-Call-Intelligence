@@ -24,7 +24,6 @@ from app.ai.speaker.provider import (
 )
 from app.ai.speaker.session_role_provider import (
     SessionRoleIdentificationProvider,
-    SpeakerEvidenceStore,
 )
 from app.ai.speaker.voice_tracker import VoiceTracker
 from app.core.config import Settings

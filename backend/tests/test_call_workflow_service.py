@@ -42,15 +42,8 @@ from app.estimation.default_pricing import DEFAULT_PRICING_CONFIG
 from app.estimation.detection import KeywordServiceDetector
 from app.estimation.rule_based_provider import RuleBasedEstimationProvider
 from app.services.estimation_service import EstimationService
-from app.ai.sentiment.provider import (
-    SentimentAnalysisProvider,
-    SentimentLabel,
-    SentimentResult,
-)
 from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
-from app.services.next_question_service import NextQuestionService
 from app.services.post_call_summary_service import PostCallSummaryService
-from app.services.sentiment_analysis_service import SentimentAnalysisService
 
 from app.domain.customer_contact import ConsentStatus, CustomerContact
 from app.domain.customer_summary_delivery import DeliveryStatus

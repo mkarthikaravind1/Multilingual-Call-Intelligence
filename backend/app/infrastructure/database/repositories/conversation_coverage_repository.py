@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.domain.complaint_coverage import ComplaintCoverage, ComplaintCoverageStatus
+from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation_coverage import ConversationCoverage
 from app.infrastructure.database.models import (
     ComplaintCoverageModel,

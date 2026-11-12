@@ -105,7 +105,7 @@ class CustomerSummaryMessageService:
         prefix = (
             "Hi there, here is your call summary.\n\n"
             if contact.language is None or contact.language.lower() == "en"
-            else f"Hello, here is your summary.\n\n"
+            else "Hello, here is your summary.\n\n"
         )
         message = f"{prefix}{customer_text}"
         if channel != MessagingChannel.SMS or self._fits(message):

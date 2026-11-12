@@ -1,7 +1,7 @@
 from typing import Any
 import pytest
 from app.domain.learning_feedback import FeedbackType, LearningFeedback
-from app.domain.learning_feedback import FeedbackSource, FeedbackType, LearningFeedback
+from app.domain.learning_feedback import FeedbackSource
 
 def create_feedback() -> LearningFeedback:
     return LearningFeedback(

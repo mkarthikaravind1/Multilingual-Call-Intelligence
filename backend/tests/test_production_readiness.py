@@ -35,7 +35,6 @@ from app.services.conversation_service import ConversationService
 from app.services.in_memory_conversation_repository import InMemoryConversationRepository
 from app.services.live_state_store import InMemoryLiveStateStore, RedisLiveStateStore
 from app.services.post_call_repair_service import (
-    NO_SUMMARY_ERROR,
     CallNotRepairableError,
     PostCallRepairService,
 )

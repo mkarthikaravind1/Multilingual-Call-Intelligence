@@ -87,7 +87,7 @@ from app.infrastructure.database.repositories.call_alert_repository import (
     PostgresQuestionOutcomeRepository,
 )
 from app.services.call_alerts import CallAlertRepository, QuestionOutcomeRepository
-from app.services.recording_archive import RecordingArchive, RecordingRepository
+from app.services.recording_archive import RecordingRepository
 from app.infrastructure.database.repositories.recording_repository import (
     PostgresRecordingRepository,
 )

@@ -8,11 +8,9 @@ from app.ai.asr.provider import ASRProvider, ASRResult
 from app.ai.asr.sarvam_provider import SarvamASRError, SarvamASRProvider
 from app.core.config import Settings
 from app.services import audio_processing_pipeline, call_workflow_service
-from app.ai.asr.provider import ASRProvider
-from app.ai.asr.sarvam_provider import SarvamASRError, SarvamASRProvider
 from app.composition.providers import UnsupportedProviderError, create_asr_provider
 from app.composition import providers
-from app.ai.asr.provider import ASRProvider, ASRResult, TimedText
+from app.ai.asr.provider import TimedText
 
 AUDIO = b"fake-audio-bytes"
 API_KEY = "test-key"

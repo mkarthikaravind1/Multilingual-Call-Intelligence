@@ -225,7 +225,6 @@ def test_missing_base_url_is_rejected():
 def test_specific_errors_share_a_common_base(error_type):
     assert issubclass(error_type, SarvamLanguageError)
 
-from app.ai.language.provider import LanguageIdentificationProvider
 from app.ai.language.sarvam_provider import (
     SarvamLanguageConfigurationError,
     SarvamLanguageProvider,

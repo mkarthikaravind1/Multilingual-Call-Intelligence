@@ -12,7 +12,6 @@ import re
 from dataclasses import dataclass
 
 from app.ai.escalation.provider import EscalationContext, EscalationDetectionProvider
-from app.ai.sentiment.provider import SentimentLabel
 from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.escalation import (
     EscalationAssessment,

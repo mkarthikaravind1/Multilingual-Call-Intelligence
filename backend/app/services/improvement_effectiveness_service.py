@@ -17,7 +17,6 @@ from app.domain.improvement_usage_repository import (
 from app.domain.learning_evidence import (
     EvidenceType,
     LearningComponent,
-    LearningEvidence,
 )
 from app.domain.learning_evidence_repository import (
     LearningEvidenceRepository,

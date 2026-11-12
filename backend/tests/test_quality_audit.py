@@ -25,7 +25,6 @@ from app.api.app_factory import create_app
 from app.api.wiring import build_api_services
 from app.core.config import Settings
 from app.domain.call_alert import QuestionOutcome, QuestionOutcomeChoice
-from app.domain.complaint_coverage import ComplaintCoverageStatus
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage
 from app.domain.escalation import (

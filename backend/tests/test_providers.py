@@ -15,9 +15,7 @@ from app.composition.providers import (
     create_question_provider,
 )
 from app.core.config import Settings
-from types import SimpleNamespace
 
-from app.ai.llm.client import LLMClient, LLMResponse
 
 
 class FakeGroqLLMClient:

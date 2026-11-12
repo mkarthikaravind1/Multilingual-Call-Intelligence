@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from app.core.constants import SUPPORTED_LANGUAGES
 
 @dataclass
 class LanguageSpan:

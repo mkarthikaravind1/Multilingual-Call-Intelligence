@@ -15,7 +15,6 @@ from app.composition.services import (
 )
 from app.composition.speaker_sessions import build_speaker_session_registry
 from app.core.config import Settings
-from app.domain.utterance import SpeakerRole
 from app.services.audio_chunking_service import AudioChunk
 from app.services.call_workflow_service import CallAnalysisResult
 from app.services.live_chunk_processing_service import (

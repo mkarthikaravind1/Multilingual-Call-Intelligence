@@ -1,6 +1,5 @@
 import json
 
-import pytest
 
 from app.ai.emerging_complaint.llm_provider import LLMEmergingComplaintDiscoveryProvider
 from app.ai.emerging_complaint.provider import (

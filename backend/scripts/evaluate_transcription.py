@@ -27,7 +27,6 @@ mode writes them).
 
 import argparse
 import audioop
-import io
 import re
 import shutil
 import subprocess

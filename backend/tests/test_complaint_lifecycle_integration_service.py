@@ -1,6 +1,5 @@
 # backend/tests/test_complaint_lifecycle_integration_service.py
 
-import pytest
 
 from app.domain.conversation import Conversation
 from app.domain.conversation_coverage import ConversationCoverage

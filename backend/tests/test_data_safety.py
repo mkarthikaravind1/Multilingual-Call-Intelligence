@@ -21,7 +21,7 @@ from app.api.app_factory import create_app
 from app.api.wiring import build_api_services
 from app.core.config import Settings
 from app.core.production_checks import configuration_problems
-from app.domain.conversation import Conversation, ConversationStatus
+from app.domain.conversation import Conversation
 from app.domain.user import User, UserRole
 from app.domain.utterance import SpeakerRole, Utterance
 from app.infrastructure.database.base import Base

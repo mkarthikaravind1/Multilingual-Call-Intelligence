@@ -50,7 +50,6 @@ from app.telephony.provider import (
     TelephonyStreamError,
     TelephonyWebhookError,
 )
-from typing import cast
 from app.api.dependencies import ApiServices
 from app.security.stream_token import create_stream_token
 #app_services = cast(ApiServices, client.app.state.services)  # type: ignore[attr-defined]
@@ -551,7 +550,6 @@ def test_answer_webhook_rejects_invalid_signature():
 
 def test_answer_webhook_creates_call_and_returns_stream_xml():
     client, services = _build_client()
-    headers = _signed_headers("test-auth-token", ANSWER_URL)
 
     response = client.post(
         ANSWER_PATH,
@@ -646,7 +644,7 @@ def test_telephony_stream_closes_without_leaking_secrets_when_provider_unconfigu
     client, _ = _build_client(telephony_provider="exotel")
     # Create the call directly through the shared call service, since the
     # answer webhook itself is unavailable without a configured provider.
-    _, services = client, None
+    _ = client
     # Use the app's own call_service to seed a call so we reach the stream
     # handler's provider check rather than the call_not_found branch.
     app_services = client.app.state.services  # type: ignore[attr-defined]

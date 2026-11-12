@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Lint (ruff)
+        run: ruff check .
+
       - name: Check that every module compiles
         run: python -m compileall -q app alembic main.py
 

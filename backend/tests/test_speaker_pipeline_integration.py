@@ -15,11 +15,10 @@ from app.ai.speaker.scripted_diarization_provider import ScriptedDiarizationProv
 from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
 from app.domain.utterance import SpeakerRole
 from app.services.audio_processing_pipeline import (
-    AudioPipelineError,
     AudioProcessingPipeline,
 )
 from typing import cast
-from app.domain.utterance import SpeakerRole, Utterance
+from app.domain.utterance import Utterance
 from app.services.call_workflow_service import CallAnalysisResult
 
 ROLES = {

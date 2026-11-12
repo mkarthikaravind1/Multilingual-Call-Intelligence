@@ -1,4 +1,3 @@
-import pytest
 
 from app.ai.asr.provider import ASRProvider, ASRResult
 from app.ai.language.provider import (
@@ -13,13 +12,7 @@ from app.composition.services import (
     build_call_service,
     build_call_workflow_service,
 )
-from app.composition.speaker_sessions import (
-    build_session_role_provider,
-    build_speaker_session_registry,
-)
 from app.core.config import Settings
-from app.domain.utterance import SpeakerRole
-from app.services.audio_processing_pipeline import AudioPipelineError
 
 
 class FakeLLMClient(LLMClient):

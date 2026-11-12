@@ -22,8 +22,7 @@ from app.api.wiring import build_api_services
 from app.domain.conversation import Conversation
 from app.domain.question_suggestion import QuestionSuggestion, SuggestionSource
 from app.security.jwt import create_access_token
-from app.domain.user import *
-from tests.test_auth_helpers import authenticate_client
+from app.domain.user import User, UserRole
 
 CALL_ID = "call-1"
 BASE = "/api/v1/calls"

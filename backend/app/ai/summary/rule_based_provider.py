@@ -1,4 +1,4 @@
-from app.ai.summary.language_utils import DEFAULT_LANGUAGE, extract_languages
+from app.ai.summary.language_utils import DEFAULT_LANGUAGE
 from app.ai.summary.provider import PostCallSummaryRequest, SummaryGenerationProvider
 from app.domain.complaint_coverage import ComplaintCoverage, ComplaintCoverageStatus
 from app.domain.post_call_summary import ComplaintSummary, PostCallSummary

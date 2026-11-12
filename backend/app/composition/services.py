@@ -60,7 +60,6 @@ from app.estimation.detection import (
     ServiceDetectionProvider,
 )
 from app.services.estimation_service import EstimationService
-from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
 from app.domain.customer_contact import CustomerContact, MessagingChannel
 from app.services.post_call_summary_service import PostCallSummaryService
 from app.services.customer_summary_delivery_service import (
@@ -74,15 +73,6 @@ from app.services.post_call_summary_repository import PostCallSummaryRepository
 from app.services.call_workflow_service import (
     AnalysisLearningRecorder,
     CallWorkflowService,
-)
-from app.domain.active_improvement_repository import (
-    ActiveImprovementRepository,
-)
-from app.domain.improvement_usage_repository import (
-    ImprovementUsageRepository,
-)
-from app.domain.learning_evidence_repository import (
-    LearningEvidenceRepository,
 )
 from app.services.improvement_effectiveness_service import (
     ImprovementEffectivenessService,

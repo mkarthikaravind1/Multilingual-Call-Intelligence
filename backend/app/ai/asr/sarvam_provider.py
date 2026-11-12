@@ -4,7 +4,7 @@ import httpx
 from app.ai.asr.provider import ASRProvider, ASRResult
 from app.core.config import Settings, get_settings
 from app.core.constants import SUPPORTED_LANGUAGES
-from app.ai.asr.provider import ASRProvider, ASRResult, NoSpeechDetected, TimedText
+from app.ai.asr.provider import NoSpeechDetected, TimedText
 import re
 
 _ENDPOINT_PATH = "/speech-to-text"

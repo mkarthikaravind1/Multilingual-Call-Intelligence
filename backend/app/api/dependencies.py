@@ -39,7 +39,6 @@ from app.services.learning_management_service import LearningManagementService
 from app.services.live_chunk_processing_service import LiveChunkProcessingService
 from app.services.telephony_call_service import TelephonyCallService
 from app.telephony.provider import TelephonyProvider
-from starlette.requests import HTTPConnection
 
 if TYPE_CHECKING:
     from app.composition.data_safety import DataSafety

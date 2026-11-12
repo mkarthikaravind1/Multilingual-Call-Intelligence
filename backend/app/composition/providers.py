@@ -14,7 +14,7 @@ from app.ai.asr.sarvam_provider import SarvamASRProvider
 from app.ai.language.provider import LanguageIdentificationProvider
 from app.ai.language.sarvam_provider import SarvamLanguageProvider
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from app.ai.complaint.llm_provider import LLMComplaintProvider
 from app.ai.complaint.provider import ComplaintDetectionProvider
 from app.services.complaint_category_catalog import ComplaintCategoryCatalog
