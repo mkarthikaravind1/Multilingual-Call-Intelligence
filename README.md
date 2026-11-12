@@ -633,7 +633,8 @@ Not implemented today:
 - Real CRM adapters and a dealer-specific pricing source.
 - Additional LLM/ASR providers and a WhatsApp provider.
 - GPU or hosted diarization for lower latency.
-- Frontend component and integration tests (Vitest is set up and covers
-  the formatting and error helpers; run `npm test` in `frontend/`).
+- More frontend tests: Vitest with Testing Library is set up and covers the
+  helpers, the API client and the shared components (`npm test` in
+  `frontend/`); the pages and live-call screens are not covered yet.
 - Redis pub/sub for live updates instead of revision polling, and
   reporting dashboards over the stored analytics.
