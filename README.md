@@ -631,7 +631,6 @@ after, is in [GO-LIVE-CHECKLIST.md](GO-LIVE-CHECKLIST.md).
 Not implemented today:
 
 - Real CRM adapters and a dealer-specific pricing source.
-- Promoting accepted emerging themes into the complaint taxonomy.
 - Additional LLM/ASR providers and a WhatsApp provider.
 - GPU or hosted diarization for lower latency.
 - Frontend component and integration tests (Vitest is set up and covers
