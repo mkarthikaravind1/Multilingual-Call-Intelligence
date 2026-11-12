@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.audit import AuditMiddleware
 from app.api.dependencies import ApiServices
 from app.api.errors import register_exception_handlers
+from app.api.security_headers import SecurityHeadersMiddleware
 from app.api.v1.calls import router as calls_router
 from app.api.v1.calls import stats_router as call_stats_router
 from app.api.v1.live import router as live_router
@@ -57,6 +58,7 @@ def create_app(services: ApiServices) -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Request-ID"],
     )
+    app.add_middleware(SecurityHeadersMiddleware, hsts=get_settings().is_production)
     # Outermost, so it also times and tags CORS preflights and errors.
     app.add_middleware(RequestContextMiddleware)
     app.state.services = services
