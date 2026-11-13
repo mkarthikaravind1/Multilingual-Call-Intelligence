@@ -43,6 +43,10 @@ class CallService:
     def get_call(self, call_id: str) -> Conversation:
         return self._conversation_service.get_conversation(call_id)
 
+    def get_calls(self, call_ids) -> dict[str, Conversation]:
+        """The calls that exist among call_ids, by call_id; unknown ids are left out."""
+        return self._conversation_service.get_conversations(call_ids)
+
     def list_calls(self, limit: int, offset: int) -> tuple[Conversation, ...]:
         return self._conversation_service.list_conversations(limit, offset)
 

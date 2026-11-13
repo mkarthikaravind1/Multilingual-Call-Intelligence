@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { ApiError } from '../api/errors'
+import { RecordTime } from '../components/RecordTime'
 import { StatePanel } from '../components/StatePanel'
 import { ComplaintLifecycleCard } from '../features/complaints/components/ComplaintLifecycleCard'
+import { customerLabel } from '../features/complaints/customerLabel'
 import { complaintRestService } from '../features/complaints/services/complaintRestService'
 import { COMPLAINT_CATEGORIES } from '../features/complaints/types/dto'
 
@@ -30,6 +33,104 @@ const STAGES: { value: ComplaintStage; label: string }[] = [
   { value: 'follow_up', label: 'Follow-up' },
 ]
 
+type GroupBy = 'none' | 'call' | 'customer'
+
+const GROUPINGS: { value: GroupBy; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'call', label: 'Call' },
+  { value: 'customer', label: 'Customer' },
+]
+
+// Remembered per browser; storage may be unavailable (private windows).
+const GROUP_BY_KEY = 'complaints.groupBy'
+
+function storedGroupBy(): GroupBy {
+  try {
+    const value = window.localStorage.getItem(GROUP_BY_KEY)
+    return value === 'call' || value === 'customer' ? value : 'none'
+  } catch {
+    return 'none'
+  }
+}
+
+function storeGroupBy(value: GroupBy) {
+  try {
+    window.localStorage.setItem(GROUP_BY_KEY, value)
+  } catch {
+    // Not remembered; the choice still applies now.
+  }
+}
+
+type ComplaintGroup = {
+  key: string
+  complaints: ComplaintDto[]
+  // Grouped by customer, with the customer identified.
+  isCustomer: boolean
+}
+
+// Groups in the order their first complaint is listed, so the queue's order
+// (follow-ups first, then the oldest) carries over to the groups. A complaint
+// whose customer is not identified is grouped by its call.
+function groupComplaints(complaints: ComplaintDto[], groupBy: Exclude<GroupBy, 'none'>) {
+  const groups = new Map<string, ComplaintGroup>()
+  for (const complaint of complaints) {
+    const byCustomer = groupBy === 'customer' && complaint.customer_id !== null
+    const key = byCustomer ? `customer:${complaint.customer_id}` : `call:${complaint.call_id}`
+    const group = groups.get(key)
+    if (group) {
+      group.complaints.push(complaint)
+    } else {
+      groups.set(key, { key, complaints: [complaint], isCustomer: byCustomer })
+    }
+  }
+  return [...groups.values()]
+}
+
+function GroupHeading({ group }: { group: ComplaintGroup }) {
+  const first = group.complaints[0]
+  const customer = customerLabel(first)
+  const open = group.complaints.filter((c) => c.is_open).length
+  const calls = new Set(group.complaints.map((c) => c.call_id)).size
+  const count = group.complaints.length
+  const counts = [
+    group.isCustomer ? `${calls} ${calls === 1 ? 'call' : 'calls'}` : null,
+    `${count} ${count === 1 ? 'complaint' : 'complaints'}`,
+    `${open} open`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  if (group.isCustomer) {
+    return (
+      <header className="complaint-group__heading">
+        <h2 className="complaint-group__title">
+          {customer ?? `Customer ${first.customer_id}`}
+        </h2>
+        <span className="complaint-group__facts">{counts}</span>
+      </header>
+    )
+  }
+  return (
+    <header className="complaint-group__heading">
+      <h2 className="complaint-group__title">
+        <Link
+          className="text-link"
+          to={`/post-call-analysis?call_id=${encodeURIComponent(first.call_id)}`}
+          title="Open the post-call analysis"
+        >
+          {first.call_id}
+        </Link>
+      </h2>
+      <span className="complaint-group__facts">
+        {first.call_started_at != null && <RecordTime seconds={first.call_started_at} />}
+        <span>ICR: {first.icr_name ?? 'Not recorded'}</span>
+        <span>{customer ? `Customer: ${customer}` : 'Customer not identified'}</span>
+        <span>{counts}</span>
+      </span>
+    </header>
+  )
+}
+
 const EMPTY_MESSAGES: Record<ComplaintQueueState, { title: string; description: string }> = {
   open: {
     title: 'No open complaints',
@@ -54,6 +155,7 @@ export function ComplaintsPage() {
   const [view, setView] = useState<ComplaintQueueState>('open')
   const [categories, setCategories] = useState<string[]>([])
   const [stages, setStages] = useState<ComplaintStage[]>([])
+  const [groupBy, setGroupBy] = useState<GroupBy>(storedGroupBy)
   const [complaints, setComplaints] = useState<ComplaintDto[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -172,6 +274,25 @@ export function ComplaintsPage() {
             ))}
           </fieldset>
 
+          <fieldset className="call-filters__checks">
+            <legend>Group by</legend>
+            {GROUPINGS.map((item) => (
+              <label key={item.value} className="call-filters__check">
+                <input
+                  type="radio"
+                  name="complaint-group-by"
+                  value={item.value}
+                  checked={groupBy === item.value}
+                  onChange={() => {
+                    setGroupBy(item.value)
+                    storeGroupBy(item.value)
+                  }}
+                />
+                {item.label}
+              </label>
+            ))}
+          </fieldset>
+
           <div className="call-filters__actions">
             {view === 'open' && !isLoading && !error && (
               <span className="customer-panel__muted">
@@ -230,7 +351,28 @@ export function ComplaintsPage() {
         />
       )}
 
-      {!isLoading && !error && complaints.length > 0 && (
+      {!isLoading && !error && complaints.length > 0 && groupBy !== 'none' && (
+        <div className="card-stack">
+          {groupComplaints(complaints, groupBy).map((group) => (
+            <section key={group.key} className="panel complaint-group">
+              <GroupHeading group={group} />
+              <div className="card-stack">
+                {group.complaints.map((complaint) => (
+                  <ComplaintLifecycleCard
+                    key={complaint.complaint_id}
+                    complaint={complaint}
+                    showCallLink
+                    groupedBy={group.isCustomer ? 'customer' : 'call'}
+                    onUpdated={handleUpdated}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {!isLoading && !error && complaints.length > 0 && groupBy === 'none' && (
         <div className="card-stack">
           {complaints.map((complaint) => (
             <ComplaintLifecycleCard

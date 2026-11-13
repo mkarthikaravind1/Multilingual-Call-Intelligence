@@ -71,12 +71,17 @@ class ComplaintAnalysisService:
             confidence = getattr(detection, "confidence", None)
             if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
                 complaint.confidence = float(confidence)
-            # Once the ICR has asked about it, it stays probed.
+            # Once the ICR has asked about it, it stays probed; once the ICR
+            # has also said what will be done, it stays covered. Covered
+            # implies probed, so a covered detection walks through both.
+            covered = getattr(detection, "covered", False)
             if (
-                getattr(detection, "probed", False)
+                (getattr(detection, "probed", False) or covered)
                 and complaint.status is ComplaintCoverageStatus.DETECTED
             ):
                 complaint.probe()
+            if covered and complaint.status is ComplaintCoverageStatus.PROBED:
+                complaint.cover()
 
         if self._learning is not None:
             self._learning.record_usage(

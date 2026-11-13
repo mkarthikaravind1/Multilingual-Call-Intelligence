@@ -28,6 +28,9 @@ _GUARDRAILS = (
     "probed is true only when the ICR has asked the customer at least one question about "
     "that complaint (to understand or resolve it); an apology or a promise alone is not "
     "a question.",
+    "covered is true only when the ICR has asked about that complaint and has also told "
+    "the customer what will be done about it (a fix, a next step or an explanation); an "
+    "apology alone does not count. covered true implies probed true.",
     "lines lists the numbers (shown in square brackets) of the conversation lines in which "
     "the customer raises or describes that complaint. A line that covers several complaints "
     "is listed under each of them.",
@@ -38,6 +41,7 @@ _RESPONSE_SHAPE = (
     '"confidence": <number between 0.0 and 1.0>, '
     '"evidence": "<short evidence from the conversation>", '
     '"probed": <true or false>, '
+    '"covered": <true or false>, '
     '"lines": [<line number>, ...]}]'
 )
 
@@ -193,6 +197,7 @@ class LLMComplaintProvider(ComplaintDetectionProvider):
             # Extra: an answer without it (or with something else there)
             # is still a detection, of a complaint not yet asked about.
             probed=_is_true(item.get("probed")),
+            covered=_is_true(item.get("covered")),
             lines=_line_numbers(item.get("lines")),
         )
 
@@ -224,6 +229,7 @@ def _merged(
         confidence=best.confidence,
         evidence=best.evidence,
         probed=first.probed or again.probed,
+        covered=first.covered or again.covered,
         lines=tuple(dict.fromkeys(first.lines + again.lines)),
     )
 
