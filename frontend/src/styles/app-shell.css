@@ -2176,6 +2176,80 @@
   margin: 0;
 }
 
+/* Complaints grouped under a call or a customer. */
+.complaint-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.complaint-group__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+}
+
+.page-shell .complaint-group__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.complaint-group__facts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+}
+
+/* The call a complaint came from: number, start, ICR, customer. */
+.complaint-card__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+}
+
+.complaint-card__call-id {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+/* What the customer said that raised the complaint. */
+.complaint-card__quote {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.complaint-card__quote figcaption {
+  margin-bottom: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.complaint-card__quote blockquote {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.complaint-card__no-quote {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  font-style: italic;
+}
+
 .complaint-panel__subtitle {
   margin: 0;
   color: var(--color-text-muted);

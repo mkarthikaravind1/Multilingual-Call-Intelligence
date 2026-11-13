@@ -9,6 +9,7 @@ from app.domain.emerging_complaint_candidate import (
     EmergingComplaintCandidate,
     EmergingComplaintReviewStatus,
 )
+from app.services.complaint_call_context import ComplaintCallContext
 from app.services.complaint_lifecycle_service import ComplaintView
 from app.services.emerging_complaint_service import DiscoveryRun
 
@@ -44,6 +45,12 @@ class ComplaintResponse(_Response):
     # vehicle registration); null until known.
     customer_name: str | None = None
     vehicle_registration: str | None = None
+    # The call: when it started and the ICR who took it; null when unknown.
+    call_started_at: float | None = None
+    icr_name: str | None = None
+    # What the customer said that raises this complaint, in call order;
+    # empty when no line was tagged with it (older calls).
+    customer_lines: list[str] = Field(default_factory=list)
     first_detected_at: float
     last_updated_at: float
     # Statuses a person can move the complaint to now.
@@ -66,10 +73,15 @@ class ComplaintActionRequest(_Request):
 
 
 def to_complaint_response(
-    view: ComplaintView, customer: CallCustomerLink | None = None
+    view: ComplaintView,
+    customer: CallCustomerLink | None = None,
+    call: ComplaintCallContext | None = None,
 ) -> ComplaintResponse:
     record = view.record
     return ComplaintResponse(
+        call_started_at=None if call is None else call.call_started_at,
+        icr_name=None if call is None else call.icr_name,
+        customer_lines=[] if call is None else list(call.lines_for(record.category)),
         customer_name=None if customer is None else customer.customer_name,
         vehicle_registration=None if customer is None else customer.vehicle_registration,
         complaint_id=record.complaint_id,

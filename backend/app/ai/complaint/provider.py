@@ -13,6 +13,8 @@ class ComplaintDetectionResult:
     evidence: str
     # Whether the ICR has asked the customer about this complaint yet.
     probed: bool = False
+    # Whether the ICR has also told the customer what will be done about it.
+    covered: bool = False
     # The numbers of the call's lines that raise it (1 is the first line),
     # when the provider says; empty when it does not.
     lines: tuple[int, ...] = ()

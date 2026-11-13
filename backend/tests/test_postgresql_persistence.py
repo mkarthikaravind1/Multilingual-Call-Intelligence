@@ -200,6 +200,14 @@ def test_conversation_round_trips_with_ordered_utterances(session_factory):
     assert loaded.utterances[1].confidence == 0.9
     assert repo.get("missing") is None
 
+    # Several calls in one read, with their lines; unknown ids left out.
+    repo.save(Conversation(call_id="call-1b", start_time=5.0))
+    found = repo.get_many(["call-1", "missing", "call-1b", "call-1"])
+    assert sorted(found) == ["call-1", "call-1b"]
+    assert [u.utterance_id for u in found["call-1"].utterances] == ["u1", "u2"]
+    assert found["call-1b"].start_time == 5.0
+    assert repo.get_many([]) == {}
+
 
 # 4. Update/upsert behaviour --------------------------------------------------
 

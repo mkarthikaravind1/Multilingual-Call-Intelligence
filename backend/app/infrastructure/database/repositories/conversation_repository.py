@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
@@ -160,6 +162,18 @@ class PostgresConversationRepository(ConversationRepository):
         with self._session_factory() as session:
             model = session.get(ConversationModel, call_id)
             return None if model is None else _conversation_to_domain(model)
+
+    def get_many(self, call_ids: Iterable[str]) -> dict[str, Conversation]:
+        ids = list(dict.fromkeys(call_ids))
+        if not ids:
+            return {}
+        with self._session_factory() as session:
+            models = session.scalars(
+                select(ConversationModel)
+                .options(selectinload(ConversationModel.utterances))
+                .where(ConversationModel.call_id.in_(ids))
+            ).all()
+            return {model.call_id: _conversation_to_domain(model) for model in models}
 
     def list_page(self, limit: int, offset: int) -> tuple[Conversation, ...]:
         with self._session_factory() as session:
