@@ -48,7 +48,7 @@ jobs:
         run: python -m pytest -q
 
   frontend:
-    name: Frontend (lint and build)
+    name: Frontend (lint, tests and build)
     runs-on: ubuntu-latest
     defaults:
       run:
