@@ -7,7 +7,7 @@ complaints the customer raises, the customer's tone, the next question
 worth asking, an indicative service estimate and an escalation warning.
 When the call ends the system writes a post-call summary, tracks every
 complaint until it is resolved, looks for new kinds of complaints across
-calls, and learns from the agents' corrections under  human review.
+calls, and learns from the agents' corrections under human review.
 
 The backend is FastAPI + PostgreSQL + Redis; the web app is React +
 TypeScript. AI capabilities sit behind provider interfaces (Sarvam for
