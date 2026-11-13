@@ -1,6 +1,6 @@
 # Call Analysis Language Detector & Evaluation Kit
 
-A stand-alone toolkit for an automotive service centre call-analysis system in Tamil Nadu, India.
+A stand-alone toolkit for an automotive service centre call-analysis system in Tamil Nadu,India.
 Transcripts and calls are in **Tamil (`ta`)**, **English (`en`)**, **Telugu (`te`)**, **Kannada (`kn`)**, and **Malayalam (`ml`)**, frequently code-mixed (native scripts and Romanised Tanglish/Tenglish/Kanglish/Manglish).
 
 This repository contains two Python packages:
