@@ -1,0 +1,9 @@
+# Core dependencies (Commercial-friendly licenses: BSD-3-Clause, MIT, Apache-2.0)
+httpx==0.28.1               # BSD-3-Clause
+websockets==15.0.1          # BSD-3-Clause
+typing_extensions==4.16.0   # PSF License
+
+# Testing dependencies
+pytest==8.4.2               # MIT
+pytest-asyncio==1.2.0       # Apache-2.0
+
