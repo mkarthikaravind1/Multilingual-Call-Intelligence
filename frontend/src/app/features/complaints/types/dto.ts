@@ -69,6 +69,12 @@ export interface ComplaintDto {
   // The call's customer as stored when identified; null until known.
   customer_name?: string | null
   vehicle_registration?: string | null
+  // The call: when it started (epoch seconds) and the ICR who took it.
+  call_started_at?: number | null
+  icr_name?: string | null
+  // What the customer said that raises this complaint, in call order;
+  // empty when no line was tagged with it (older calls).
+  customer_lines?: string[]
   first_detected_at: number
   last_updated_at: number
   allowed_actions: ComplaintAction[]

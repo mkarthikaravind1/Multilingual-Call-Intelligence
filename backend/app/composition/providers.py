@@ -28,7 +28,6 @@ from app.ai.speaker.provider import (
 )
 from app.ai.speaker.scripted_diarization_provider import ScriptedDiarizationProvider
 from app.ai.speaker.static_role_provider import StaticRoleIdentificationProvider
-from app.ai.speaker.pyannote_provider import PyannoteDiarizationProvider
 from app.ai.summary.llm_provider import LLMPostCallSummaryProvider
 from app.ai.summary.provider import SummaryGenerationProvider
 from app.ai.summary.rule_based_provider import RuleBasedSummaryProvider
@@ -244,6 +243,10 @@ def _build_scripted_diarization(
 def _build_pyannote_diarization(
     segments: Sequence[DiarizedSegment], settings: Settings
 ) -> DiarizationProvider:
+    # Imported here: numpy and the pyannote stack are only installed with
+    # requirements-diarization.txt (INSTALL_DIARIZATION=true).
+    from app.ai.speaker.pyannote_provider import PyannoteDiarizationProvider
+
     return PyannoteDiarizationProvider(
         model=settings.pyannote_model,
         token=settings.huggingface_token or None,

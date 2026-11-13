@@ -8,6 +8,7 @@ from app.api.dependencies import (
     get_complaint_lifecycle_service,
     get_emerging_complaint_service,
     get_optional_call_customer_service,
+    get_user_repository,
 )
 from app.api.security_dependencies import (
     get_current_user,
@@ -31,8 +32,10 @@ from app.api.v1.complaint_schemas import (
 from app.domain.complaint_lifecycle import ComplaintLifecycleStatus
 from app.domain.emerging_complaint_candidate import EmergingComplaintReviewStatus
 from app.domain.user import User, UserRole
+from app.domain.user_repository import UserRepository
 from app.services.call_customer_service import CallCustomerService
 from app.services.call_service import CallService
+from app.services.complaint_call_context import complaint_call_contexts
 from app.services.complaint_category_catalog import ComplaintCategoryCatalog
 from app.services.complaint_lifecycle_service import ComplaintLifecycleService
 from app.services.emerging_complaint_service import EmergingComplaintService
@@ -48,16 +51,33 @@ ComplaintStage = Literal["detected", "probed", "covered", "outcome", "follow_up"
 
 
 def _responses(
-    views, call_customer_service: CallCustomerService | None, category_names=None
+    views,
+    call_customer_service: CallCustomerService | None,
+    category_names=None,
+    call_service: CallService | None = None,
+    users: UserRepository | None = None,
 ) -> list[ComplaintResponse]:
     """Complaint responses carrying each call's stored customer name and
-    vehicle, under the name each complaint's category has now."""
+    vehicle, and (given call_service) the call's start, ICR and the
+    customer's lines behind each complaint, under the name each
+    complaint's category has now."""
+    call_ids = {view.record.call_id for view in views}
     links = (
-        call_customer_service.stored_links({view.record.call_id for view in views})
+        call_customer_service.stored_links(call_ids)
         if call_customer_service is not None
         else {}
     )
-    responses = [to_complaint_response(view, links.get(view.record.call_id)) for view in views]
+    calls = (
+        complaint_call_contexts(call_ids, call_service, users)
+        if call_service is not None
+        else {}
+    )
+    responses = [
+        to_complaint_response(
+            view, links.get(view.record.call_id), calls.get(view.record.call_id)
+        )
+        for view in views
+    ]
     if category_names is not None:
         for response in responses:
             response.category = category_names(response.category)
@@ -79,13 +99,15 @@ def list_complaints(
         get_optional_call_customer_service
     ),
     catalog: ComplaintCategoryCatalog = Depends(get_complaint_category_catalog),
+    call_service: CallService = Depends(get_call_service),
+    users: UserRepository = Depends(get_user_repository),
     _: User = Depends(get_current_user),
 ) -> list[ComplaintResponse]:
     """Open complaints: follow-ups first, then the oldest first."""
     # A renamed category's complaints are stored under its former names too.
     stored = [name for chosen in category for name in catalog.stored_names(chosen)]
     views = service.list_queue(state, limit, categories=stored, stages=stage)
-    return _responses(views, call_customer_service, catalog.current_name)
+    return _responses(views, call_customer_service, catalog.current_name, call_service, users)
 
 
 # Before /{complaint_id}, which would otherwise match "categories".
@@ -108,10 +130,16 @@ def get_complaint(
         get_optional_call_customer_service
     ),
     catalog: ComplaintCategoryCatalog = Depends(get_complaint_category_catalog),
+    call_service: CallService = Depends(get_call_service),
+    users: UserRepository = Depends(get_user_repository),
     _: User = Depends(get_current_user),
 ) -> ComplaintResponse:
     return _responses(
-        [service.get_view(complaint_id)], call_customer_service, catalog.current_name
+        [service.get_view(complaint_id)],
+        call_customer_service,
+        catalog.current_name,
+        call_service,
+        users,
     )[0]
 
 
@@ -123,12 +151,14 @@ def update_complaint_status(
     call_customer_service: CallCustomerService | None = Depends(
         get_optional_call_customer_service
     ),
+    call_service: CallService = Depends(get_call_service),
+    users: UserRepository = Depends(get_user_repository),
     user: User = Depends(get_current_user),
 ) -> ComplaintResponse:
     view = service.apply_action(
         complaint_id, ComplaintLifecycleStatus(payload.status), user.email, payload.note
     )
-    return _responses([view], call_customer_service)[0]
+    return _responses([view], call_customer_service, None, call_service, users)[0]
 
 
 @call_complaints_router.get("/calls/{call_id}/complaints", response_model=CallComplaintsResponse)
@@ -139,6 +169,7 @@ def get_call_complaints(
     call_customer_service: CallCustomerService | None = Depends(
         get_optional_call_customer_service
     ),
+    users: UserRepository = Depends(get_user_repository),
     _: User = Depends(get_current_user),
 ) -> CallComplaintsResponse:
     """The call's complaints plus the customer's complaints from other calls."""
@@ -154,11 +185,16 @@ def get_call_complaints(
     return CallComplaintsResponse(
         call_id=call_id,
         customer_id=customer_id,
-        complaints=_responses(service.list_for_call(call_id), call_customer_service),
+        complaints=_responses(
+            service.list_for_call(call_id), call_customer_service, None, call_service, users
+        ),
         customer_history=(
             _responses(
                 service.customer_history(customer_id, exclude_call_id=call_id),
                 call_customer_service,
+                None,
+                call_service,
+                users,
             )
             if customer_id is not None
             else []

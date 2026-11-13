@@ -1,8 +1,8 @@
 import pytest
 
+from app.ai.speaker import pyannote_provider
 from app.ai.speaker.provider import DiarizedSegment
 from app.ai.speaker.scripted_diarization_provider import ScriptedDiarizationProvider
-from app.composition import providers
 from app.composition.providers import (
     UnsupportedProviderError,
     create_diarization_provider,
@@ -27,7 +27,7 @@ def test_scripted_still_supported() -> None:
 
 
 def test_pyannote_builds_provider_with_model_and_token(monkeypatch) -> None:
-    monkeypatch.setattr(providers, "PyannoteDiarizationProvider", Recorder)
+    monkeypatch.setattr(pyannote_provider, "PyannoteDiarizationProvider", Recorder)
     settings = Settings(
         diarization_provider=" Pyannote ",
         pyannote_model="custom/model",
@@ -40,7 +40,7 @@ def test_pyannote_builds_provider_with_model_and_token(monkeypatch) -> None:
 
 
 def test_pyannote_empty_token_becomes_none(monkeypatch) -> None:
-    monkeypatch.setattr(providers, "PyannoteDiarizationProvider", Recorder)
+    monkeypatch.setattr(pyannote_provider, "PyannoteDiarizationProvider", Recorder)
     settings = Settings(
         diarization_provider="pyannote",
         pyannote_model="custom/model",

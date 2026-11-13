@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { RecordTime } from '../../../components/RecordTime'
 
 import { ApiError } from '../../../api/errors'
+import { customerLabel } from '../customerLabel'
 import { complaintRestService } from '../services/complaintRestService'
 
 import type {
@@ -45,12 +46,34 @@ export function ComplaintStatusBadge({ status }: { status: ComplaintStatus }) {
   return <span className={`badge ${STATUS_BADGES[status]}`}>{STATUS_LABELS[status]}</span>
 }
 
-// "Customer Name(Vehicle Number)", or as much of it as is known.
-function customerLabel(complaint: ComplaintDto): string | null {
-  if (!complaint.customer_name) return null
-  return complaint.vehicle_registration
-    ? `${complaint.customer_name}(${complaint.vehicle_registration})`
-    : complaint.customer_name
+// Lines shown before "Show more"; the rest stay one click away.
+const LINES_SHOWN = 2
+
+function CustomerLines({ lines }: { lines: string[] }) {
+  const [showAll, setShowAll] = useState(false)
+  if (lines.length === 0) {
+    return <p className="complaint-card__no-quote">No customer line saved for this complaint.</p>
+  }
+  const shown = showAll ? lines : lines.slice(0, LINES_SHOWN)
+  const hidden = lines.length - LINES_SHOWN
+  return (
+    <figure className="complaint-card__quote">
+      <figcaption>Customer said</figcaption>
+      {shown.map((line, index) => (
+        <blockquote key={index}>“{line}”</blockquote>
+      ))}
+      {hidden > 0 && (
+        <button
+          type="button"
+          className="text-link customer-panel__more"
+          aria-expanded={showAll}
+          onClick={() => setShowAll((all) => !all)}
+        >
+          {showAll ? 'Show fewer lines' : `Show ${hidden} more ${hidden === 1 ? 'line' : 'lines'}`}
+        </button>
+      )}
+    </figure>
+  )
 }
 
 function actorLabel(actor: string) {
@@ -131,6 +154,9 @@ type ComplaintLifecycleCardProps = {
   canAct?: boolean
   // Compact cards (e.g. a customer's older complaints) start with less detail.
   compact?: boolean
+  // Listed under a call's or a customer's heading: the card leaves out what
+  // the heading already says.
+  groupedBy?: 'call' | 'customer'
   onUpdated?: (complaint: ComplaintDto) => void
 }
 
@@ -139,6 +165,7 @@ export function ComplaintLifecycleCard({
   showCallLink = false,
   canAct = true,
   compact = false,
+  groupedBy,
   onUpdated,
 }: ComplaintLifecycleCardProps) {
   const current: ComplaintAction | null =
@@ -188,6 +215,8 @@ export function ComplaintLifecycleCard({
     .find((event) => event.note && event.actor !== 'system')
   const idBase = complaint.complaint_id.replace(/[^\w-]/g, '-')
   const customer = showCallLink ? customerLabel(complaint) : null
+  const showCall = showCallLink && groupedBy !== 'call'
+  const showCustomer = showCallLink && groupedBy === undefined
   const prompt = DECISIONS.find((d) => d.value === selected)?.prompt
 
   return (
@@ -201,7 +230,6 @@ export function ComplaintLifecycleCard({
       <div className="complaint-card__top">
         <div className="complaint-card__title">
           <strong className="list-card__title">{complaint.category}</strong>
-          {customer && <span className="complaint-card__customer">{customer}</span>}
           {showCallLink && (
             <Link
               className="text-link complaint-card__call"
@@ -251,6 +279,32 @@ export function ComplaintLifecycleCard({
           )}
         </div>
       </div>
+
+      {(showCall || showCustomer) && (
+        <div className="complaint-card__details">
+          {showCall && (
+            <>
+              <span className="complaint-card__call-id">{complaint.call_id}</span>
+              {complaint.call_started_at != null && (
+                <span>
+                  <RecordTime seconds={complaint.call_started_at} />
+                </span>
+              )}
+              <span>ICR: {complaint.icr_name ?? 'Not recorded'}</span>
+            </>
+          )}
+          {showCustomer &&
+            (customer ? (
+              <span className="complaint-card__customer">Customer: {customer}</span>
+            ) : (
+              <span>Customer not identified</span>
+            ))}
+        </div>
+      )}
+
+      {complaint.customer_lines !== undefined && (
+        <CustomerLines lines={complaint.customer_lines} />
+      )}
 
       <div className="complaint-card__progress">
         {!compact && <LifecycleTrack complaint={complaint} />}

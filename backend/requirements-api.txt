@@ -26,3 +26,6 @@ reportlab==4.5.1
 uharfbuzz==0.56.3
 cryptography==43.0.3
 boto3==1.43.111
+# The speaker-diarization provider imports numpy when the app starts,
+# even without the pyannote stack.
+numpy==2.5.3
