@@ -2,7 +2,7 @@
 
 Real-time AI assistance for automotive service-centre phone calls. A
 customer calls the dealership, and the agent (ICR, *in-call representative*)
-sees the conversation transcribed live in the customer's language, the
+sees the conversation transcribed live in the customer's language,  the
 complaints the customer raises, the customer's tone, the next question
 worth asking, an indicative service estimate and an escalation warning.
 When the call ends the system writes a post-call summary, tracks every
