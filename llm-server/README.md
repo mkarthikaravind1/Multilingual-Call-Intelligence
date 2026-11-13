@@ -2,7 +2,7 @@
 
 A self-hosted, OpenAI-compatible LLM serving stack tailored for real-time customer telephone call analysis in automotive service centres across Tamil Nadu, India.
 
-The system processes code-mixed live audio transcripts (**English**, **Tamil**, and **Tanglish**) and returns structured JSON containing complaint categories, customer mood metrics, escalation flags, suggested next questions, and post-call summaries.
+The system processes code-mixed live audio transcripts (**English**, **Tamil**, and **Tanglish**) and returns structured JSON containing complaint categories, customer mood metrics, escalation flags, suggested next questions, and post-call summaries .
 
 ---
 
